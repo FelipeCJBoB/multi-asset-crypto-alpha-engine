@@ -59,7 +59,7 @@
 
 schema_version: 1
 status: "descontinuado_2026_08_17 -- nao bloqueia mais trabalho, ver AG-077 pro que substitui DSR/Gate 6"
-counter: 4436
+counter: 5156
 
 log:
   - id: 1
@@ -1055,3 +1055,52 @@ log:
       de 10 seeds) -- unico jeito de saber se SOLUSDT/R2 e achado real
       ou artefato de screening.
     delta: 1800
+  - id: 39
+    date: "2026-08-31"
+    type: adr007_item2_confirmacao_profunda_top6_10seeds
+    description: >
+      ADR-007 Item 2 — confirmação profunda sobre os 6 combos do Item 1
+      (id=38). `uv run python -m src.models.hyperparams_optuna --confirm
+      --top-k 6 --confirmation-seeds 101 202 303 404 505 606 707 808 909
+      1010`, autorizado pelo Manager ("Pode continuar todos os itens sem
+      depender da minha autorização"). Orçamento maior que qualquer
+      confirmação anterior do projeto (id=35/36 usaram top-3 × 5 seeds;
+      aqui top-6 × 10 seeds): 6 combos × 2 camadas × 6 candidatos × 10
+      seeds = 720 retreinos completos reais (CPCV completo + backtest
+      cada um).
+
+      720/720 sem falha, 0 erros. Tempo total medido: 1h00m51s
+      (23:11:20 → 00:12:11) — 6 execuções sequenciais (evita a
+      contenção de CPU já medida em `AG-381`), ~5,07s/retreino médio.
+
+      Resultado do gate duplo (median_n_better/5 ≥
+      alpha_layer1_permanence_min_paths=4 E edge bruto pooled > 0 com
+      cobertura mínima): **ZERO dos 6 combos passam.** `BTCUSDT/R3` —
+      único combo que passava sob a confirmação original H10 (id=36,
+      top-3/5 seeds, median_n_better=4,0) — cai para median_n_better=2,5
+      sob o orçamento maior (n_better_by_seed variando de 1 a 5, a faixa
+      inteira possível, só trocando seed com o MESMO hiperparâmetro
+      vencedor). Demais combos: BTCUSDT/R2=3,0; SOLUSDT/R2=2,5 (a
+      "anomalia" de screening do Item 1, best_value=22,22, se confirma
+      aqui como ruído puro — viés de seleção medido +8,356, o maior já
+      registrado no projeto, recorde anterior +0,772 do ADR-002 Fase 2);
+      SOLUSDT/R3=3,0 (o mais próximo do piso — edge confirmado
+      +27,08bps, viés baixo +0,185, mas ainda abaixo de 4); XRPUSDT/R2=
+      2,0 (aqui a Camada0/baseline supera a Camada1 em Sharpe E em edge
+      bruto); XRPUSDT/R3=2,5.
+
+      Achado central: o orçamento maior de seeds não muda a conclusão
+      qualitativa do H10 (edge bruto positivo sobrevive na maioria dos
+      combos, mas a vantagem RELATIVA Camada1-vs-Camada0 não é estável
+      sob reamostragem de seed) — na verdade a torna mais severa,
+      derrubando o único sobrevivente que havia. Acompanhado ao vivo no
+      artefato "ADR-007 — Painel de Execução"
+      (https://claude.ai/code/artifact/ed42926f-90e2-4acd-bf61-58a9e05d9604).
+      Detalhamento completo por combo em
+      `docs/ADR-007_medicao_producao_hiperparametro_optuna_15_combos_2026-08-30.md`.
+      Próximo passo real: Item 3 (calibração `AG-220`, taxa de falso-
+      positivo do próprio gate duplo sob permutação nula) — pergunta em
+      aberto que este resultado por si só não responde: um gate que
+      nunca passa é sinal de que não há vantagem real, ou de que o
+      próprio gate é excessivamente conservador?
+    delta: 720

@@ -1,6 +1,6 @@
 # ADR-007: Arquitetura de medição de hiperparâmetro em produção — 15 combos, gate duplo, guardrails contra falso-positivo
 
-**Status:** Item 1 concluído 2026-08-30 (1.800/1.800 trials, 0 falhas, 2h32m18s — ver Action Items) — Item 2 aguardando comando explícito pra executar
+**Status:** Item 1 concluído 2026-08-30 (1.800/1.800 trials, 0 falhas, 2h32m18s) — Item 2 concluído 2026-08-31 (720/720 confirmações, 0 falhas, 1h00m51s — **ZERO dos 6 combos passam o gate duplo**; `BTCUSDT/R3`, único combo que passava sob H10, não sobrevive ao orçamento maior) — Item 4 concluído (FDR aplicado à taxa-base H0-H7) — Item 3 em preparação, Item 5 aguarda Item 3 (ver Action Items)
 **Date:** 2026-08-30
 **Deciders:** Manager (Felipe)
 
@@ -303,13 +303,14 @@ rodar agora.
 
 ## Action Items
 
-1. [ ] Promover `top_k`/`confirmation_seeds` de default hardcoded no CLI
+1. [x] Promover `top_k`/`confirmation_seeds` de default hardcoded no CLI
    (`hyperparams_optuna.py::_run_cli`) pra `constants.yaml`
-   (`alpha_optuna_confirm_top_k`, `alpha_optuna_confirm_n_seeds` —
-   `class: B`, provenance a declarar) — antes de mudar os valores, pra
-   não introduzir literal novo no lugar do antigo.
-2. [ ] `alpha_optuna_n_trials` 30→150 em `constants.yaml` (source
-   atualizada com a regra prática TPE ~10-20×dimensionalidade).
+   (`alpha_optuna_confirm_top_k=6`, `alpha_optuna_confirm_seeds=[101..1010]`
+   — `class: B`, `ASSUMED`) — CONCLUÍDO, commit `f97d1b2`. 20/20 testes
+   pré-existentes continuam passando.
+2. [x] `alpha_optuna_n_trials` 30→150 em `constants.yaml` (source
+   atualizada com a regra prática TPE ~10-20×dimensionalidade) —
+   CONCLUÍDO, commit `908896e`.
 3. [x] Rodar Item 1 (busca expandida, 6 combos) — CONCLUÍDO 2026-08-30,
    1.800/1.800 trials, 0 falhas, 2h32m18s real (bem abaixo da estimativa
    de 4,5h-7,5h — ~5,08s/trial medido, não os 9,1-15s de campanhas
@@ -318,15 +319,36 @@ rodar agora.
    `audit/n_lifetime.yaml::id=38` e o artefato "ADR-007 — Painel de
    Execução" pro detalhamento completo. Não tratado como sinal real até
    o Item 2.
-4. [ ] Rodar Item 3 (calibração `AG-220`, 3 combos) — pode rodar em
-   paralelo ao Item 1 se houver capacidade de CPU sem contenção
-   (`AG-381` já mediu que concorrência real piora throughput ~54% neste
-   hardware — avaliar antes de paralelizar de verdade).
-5. [ ] Rodar Item 2 (confirmação profunda, 6 combos) — só depois do
-   Item 1 completo.
-6. [ ] Implementar correção FDR (Item 4) — `src/validation/` ou
-   `src/analysis/`, testada, aplicada à tabela de taxa-base existente e
-   ao resultado dos Itens 1-2.
+4. [ ] Rodar Item 3 (calibração `AG-220`, 3 combos representativos:
+   `BTCUSDT/R3`, `ETHUSDT/R1`, `BNBUSDT/R1`) — código e testes prontos
+   (`src/validation/ag220_dual_gate_calibration.py`, commit `28708f2`),
+   aguardava só o Item 2 terminar pra evitar contenção de CPU (`AG-381`
+   já mediu ~54% de piora de throughput sob concorrência neste
+   hardware) — Item 2 concluiu 2026-08-31 00:12:11, próximo passo real.
+5. [x] Rodar Item 2 (confirmação profunda, 6 combos) — CONCLUÍDO
+   2026-08-31, 720/720 confirmações, 0 falhas, 1h00m51s
+   (23:11:20→00:12:11). **ZERO dos 6 combos passam o gate duplo.**
+   `BTCUSDT/R3` (único combo que passava sob H10/confirmação original,
+   `median_n_better=4,0`) cai para `2,5` sob o orçamento maior (top-6,
+   10 seeds) — `n_better_by_seed` varia de 1 a 5 só trocando seed, o
+   mesmo hiperparâmetro vencedor. Demais combos: `BTCUSDT/R2`=3,0;
+   `SOLUSDT/R2`=2,5 (a anomalia de screening do Item 1 confirma-se como
+   ruído puro, viés de seleção +8,356, recorde do projeto);
+   `SOLUSDT/R3`=3,0 (o mais próximo — edge +27,08bps, viés baixo
+   +0,185); `XRPUSDT/R2`=2,0 (Camada0/baseline supera Camada1);
+   `XRPUSDT/R3`=2,5. Ver `audit/n_lifetime.yaml::id=39` e o artefato
+   "ADR-007 — Painel de Execução" pro detalhamento completo por combo.
+6. [x] Implementar correção FDR (Item 4) — `src/validation/fdr_correction.py`
+   (commit `5a322c6`), testada (7 testes), aplicada à tabela de
+   taxa-base existente (H0-H7, 15 z-scores reais): 7/15 significativos
+   sem correção → 4/15 sob BH → 3/15 sob BY. **Ainda não aplicada ao
+   resultado dos Itens 1-2** — Item 2 mede `median_n_better`/edge
+   pareado por seed, não um z-score/p-valor único por combo; requer
+   decidir a estatística de teste correta antes de aplicar FDR em cima
+   (candidato natural: taxa de `n_better>=4` sobre as 10 seeds como
+   proporção, testada contra 50% via binomial — não decidido ainda,
+   registrar como lacuna aberta, não inventar a estatística sem
+   validar).
 7. [ ] Registrar constantes de poda (Item 5) em `constants.yaml` — sem
    aplicar a poda ainda (condicional ao resultado dos Itens 1/3).
 8. [ ] `audit/architecture_gaps_log.yaml` — nova entrada (`AG-384` ou
