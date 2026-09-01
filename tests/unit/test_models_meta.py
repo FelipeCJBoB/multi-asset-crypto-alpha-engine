@@ -560,6 +560,9 @@ def test_run_meta_fold_ajusta_modelo_quando_amostra_suficiente() -> None:
     assert result.test_predictions.height == 40
     assert result.test_predictions["p_meta"].null_count() == 0
     assert set(result.test_predictions["side_final"].unique().to_list()) <= {-1, 0, 1}
+    assert result.train_predictions is not None
+    assert result.train_predictions.height == 200
+    assert result.train_predictions["p_meta"].null_count() == 0
 
 
 def test_run_meta_fold_passthrough_quando_amostra_insuficiente() -> None:
@@ -575,6 +578,7 @@ def test_run_meta_fold_passthrough_quando_amostra_insuficiente() -> None:
     )
     assert result.fold_status == mds.META_STATUS_INSUFFICIENT_SAMPLE
     assert result.tau_meta is None
+    assert result.train_predictions is None
     out = result.test_predictions
     assert out.height == 10
     assert out["p_meta"].null_count() == 10

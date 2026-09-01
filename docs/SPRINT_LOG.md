@@ -6374,3 +6374,41 @@ sai do roadmap") está tecnicamente disparada — **NÃO aplicada
 unilateralmente nesta sessão**, registrada em `evidence_ledger.yaml`
 (vermelho) e `architecture_gaps_log.yaml::AG-404` (aberto, severidade <!-- check-sprint-log: skip -->
 alta) para decisão do Manager.
+
+## 2026-09-01 — Meta F6: orquestração + ablação real — 0 de 5 símbolos passam (AG-409) <!-- check-sprint-log: skip -->
+
+Ver `PLANO_MESTRE_PRINCE2.md` §15.39 para o detalhe completo. Manager:
+"não é impeditivo agora, finalize a construção do meta model mesmo
+assim... continue" — segue apesar do `AG-404`.
+
+`src/models/meta.py` ganhou `run_meta_fold`/`run_all_meta_folds`/
+`run_meta_sprint` (commit `90061dc`) — a orquestração fold-a-fold que
+faltava entre F5 e F6. 2 achados reais rodando contra `BTCUSDT/R2`:
+mensagem de erro com "Σ" (grego) quebrava `logger.warning` em console
+Windows cp1252 (corrigido pra "soma de"); `sklearn.predict_proba`
+recusa array de 0 linhas quando toda a população de teste do fold é
+vetada por regime desconhecido (guardado). Smoke test real: 15 folds
+— 10 OK, 4 `INSUFFICIENT_SAMPLE`, 1 `RANK_DEFICIENT` (status novo, <!-- check-sprint-log: skip -->
+`meta_dataset.py` — achado real de posto deficiente por nível de
+regime nunca observado no treino do fold).
+
+`src/models/meta_ablation.py` (F6, commit `8951b7f`) — A0/A1/A2(nulo,
+embaralha scores reais de A1)/A3(top-k pareado, vira gate). Decisão do
+Manager perguntada antes de implementar: `meta_logit_c` fica FIXO
+(sem busca em-fold) — o design doc não especificava grade/critério
+suficientes pra construir a busca com segurança. 1 achado real:
+`np.concatenate([])` quebra quando um path tem 3/3 folds pass-through <!-- check-sprint-log: skip -->
+(guardado).
+
+**Resultado real** (5 combos de produção, `n_seeds=200`):
+**0 de 5 símbolos passam o critério primário do §9**. `SOLUSDT/R3` e
+`XRPUSDT/R3` têm ZERO de 15 folds ajustando modelo (amostra insuficiente
+pra grade R3). Jaccard(A1,A3) = 1,000 exato na maioria dos paths de 4
+dos 5 combos — o Meta é, na prática, uma reparametrização de `tau`
+sobre `p_alpha`, não seleção por `regime` (evidência contra D-01).
+`XRPUSDT/R2` disparou `exposure_reduction_suspected=True`.
+
+**Terceira medição negativa independente convergente** (Alpha 0/20, <!-- check-sprint-log: skip -->
+Gate E0 0/5, agora F6 0/5) — registrada (`evidence_ledger.yaml`, <!-- check-sprint-log: skip -->
+`AG-409`), não bloqueante por decisão explícita do Manager. Próximo <!-- check-sprint-log: skip -->
+passo: F6b (walk-forward), F7 (enforcement), F8 (constantes). <!-- check-sprint-log: skip -->

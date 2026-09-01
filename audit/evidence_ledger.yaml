@@ -4241,3 +4241,67 @@ entries:
     pre-declarada, pausa, ou outra acao) NAO foi tomada aqui -- e do
     Manager. Ver audit/architecture_gaps_log.yaml::AG-404 (achado
     consolidado).
+
+- id_curto: meta-f6-ablacao-0-de-5-simbolos-2026-09-01
+  data: '2026-09-01'
+  fase: 'Meta-model F6 (docs/meta_model_design_doc_2026-08-22.md Sec9) -- ablacao
+    real (A0/A1/A2-nulo/A3-gate) sobre os 5 combos de producao (decisao do
+    Manager: "nao e impeditivo agora, finalize a construcao mesmo assim")'
+  symbol: 'BTCUSDT/R2, SOLUSDT/R2, SOLUSDT/R3, XRPUSDT/R2, XRPUSDT/R3 -- os 5
+    combos com hiperparametro de producao confirmado'
+  tf: 'dollar-bar R2/R3, Camada1'
+  lado: 'long e short pooled no universo (side_hat != 0)'
+  regime: 'quantile_classifier_v1 -- sem artefato HMM persistido ainda'
+  feature_ou_filtro: 'src.models.meta_ablation.run_ablation_for_combo -- A2 (nulo)
+    embaralha os scores REAIS de A1 (nao reajusta modelo), n_seeds=200 por path'
+  metrica_tipo: 'Criterio primario do Sec9 (permanencia sobre os 5 SIMBOLOS, nao
+    sobre paths): sharpe(A1) > p95(nulo A2) E sharpe(A1) > sharpe(A3) em >=4 dos
+    5 paths, contando so paths com TODOS os folds fold_status==OK'
+  metrica_valor: >
+    **0 de 5 simbolos passam o criterio PRIMARIO** (nenhum combo tem >=4/5
+    paths aprovados -- na verdade nenhum combo tem sequer 1 path aprovado).
+
+    Achado adicional severo, nao previsto antes de medir: `SOLUSDT/R3` e
+    `XRPUSDT/R3` tem **ZERO de 15 folds** ajustando modelo (100%
+    pass-through, por amostra insuficiente ou posto deficiente) -- o Meta
+    NUNCA treina de verdade nesses 2 combos, a grade R3 (dollar bar mais
+    grosso) tem sinal escasso demais pro piso de EPV (90 eventos
+    efetivos) do Sec7.3. `SOLUSDT/R2` tem so 1/15, `XRPUSDT/R2` 2/15.
+    `BTCUSDT/R2` (o combo com mais historico) e o unico com maioria de
+    folds ajustando modelo (10/15).
+
+    **Jaccard(A1,A3) = 1,000 EXATO** (o conjunto aceito pelo Meta e
+    IDENTICO ao do baseline ingenuo top-k por p_alpha) em quase todos os
+    paths de `SOLUSDT/R2`, `SOLUSDT/R3`, `XRPUSDT/R3`, e na maioria de
+    `XRPUSDT/R2` -- sinal direto e limpo de que o filtro aprendido pelo
+    Meta e, na pratica, uma REPARAMETRIZACAO de `tau` sobre `p_alpha`,
+    exatamente o resultado nulo mais provavel que o Sec3.4 do design doc
+    ja antecipava como o mais esperado dado o desenho. `BTCUSDT/R2` e o
+    UNICO combo com Jaccard visivelmente < 1 (0,817-1,000) -- alguma
+    diferenciacao real, ainda que insuficiente pro gate.
+
+    `XRPUSDT/R2` disparou `exposure_reduction_suspected=True` -- o modo
+    de falha concreto que abre o Sec9 do design doc (accuracy nao supera
+    a taxa base, mas pass_rate caiu) materializado como campo medido,
+    nao so como historia de aviso.
+
+    **Convergencia com as outras 2 medicoes independentes desta mesma
+    janela**: `adr008-walkforward-real-0-de-20-2026-08-31` (Alpha via
+    walk-forward real) e `meta-p3-gate-e0-0-de-5-2026-08-31` (Gate E0 via
+    permutacao). TRES metodologias completamente diferentes, mesma
+    conclusao qualitativa -- nenhuma camada do motor (Alpha nem Meta)
+    demonstra edge robusto fora da amostra nos 5 candidatos reais.
+  n: 5
+  status: vermelho
+  fonte_arquivo: 'experiments/meta_f6_ablation_2026-09-01.json'
+  fonte_secao: 'src/models/meta_ablation.py::run_ablation_for_combo; tools/diagnostics/measure_meta_f6_ablation.py;
+    PLANO_MESTRE_PRINCE2.md Sec15.39'
+  nota: >
+    VERMELHO -- terceira medicao negativa independente na mesma janela,
+    mesma conclusao qualitativa que as duas anteriores (Alpha 0/20,
+    Gate E0 0/5). Decisao do Manager (2026-08-31/09-01): a consequencia
+    pre-declarada do Sec9 ("Meta sai do roadmap") NAO foi aplicada --
+    "nao e impeditivo agora, finalize a construcao do Meta-model mesmo
+    assim". Achado registrado para o Manager decidir depois, nao
+    bloqueante pra F7/F8 prosseguirem. Ver
+    audit/architecture_gaps_log.yaml::AG-409 (achado consolidado).
