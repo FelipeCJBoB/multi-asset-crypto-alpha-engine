@@ -255,6 +255,22 @@ class WalkForwardFoldMetrics:
     # fold, pra comparar direto contra `target_signal_rate` (AG-395). NaN
     # se `n_test_bars == 0` (mesmo caso degenerado acima).
     signal_rate_realized: float
+    # AG-393 item 3 -- `True` por lado quando `y_calib` daquele fold/lado
+    # tinha 1 classe só (`SideModelResult.calib_target_single_class`) --
+    # a calibração isotônica colapsou pra uma constante, achado real em
+    # SOLUSDT/R2 fold_id=3/short. `{}` (dict vazio) quando o fold é
+    # degenerado por 0 barras de teste (run_fold nunca chamado, nenhum
+    # `SideModelResult` existe pra reportar).
+    calib_degenerate_by_side: dict[str, bool]
+    # AG-401 -- piso de trades REALIZADOS aplicado por lado, não só ao
+    # fold combinado (`backtest_lite.PathBacktestResult.n_filled_long`/
+    # `_short`, novos). Não substitui `degenerado` (continua gateando o
+    # agregado de Sharpe/edge_bps/win_rate do fold, ambos os lados juntos
+    # -- mudar esse contrato é decisão separada) -- é informação ADICIONAL
+    # pra quem quiser saber se um lado específico do fold é confiável.
+    # `{}` no fold degenerado por 0 barras de teste (mesmo contrato dos
+    # campos acima).
+    degenerado_by_side: dict[str, bool]
     # População REAL de treino por lado, pós-filtro (`ds.side_subset`,
     # R2/warmup/NOFILL já aplicados) -- `alpha.FoldResult.n_train_long`/
     # `n_train_short`, calculados por `run_fold` e antes DESCARTADOS
@@ -414,6 +430,8 @@ def run_walk_forward_for_combo(
                     tau_long=float("nan"),
                     tau_short=float("nan"),
                     signal_rate_realized=float("nan"),
+                    calib_degenerate_by_side={},
+                    degenerado_by_side={},
                     n_train_long=0,
                     n_train_short=0,
                     score_quality_by_side={},
@@ -532,6 +550,18 @@ def run_walk_forward_for_combo(
                     n_signals_fold / fold_result.n_test_bars  # noqa: unguarded-ratio -- guardado pelo ternario: só divide quando n_test_bars>0
                     if fold_result.n_test_bars > 0
                     else float("nan")
+                ),
+                calib_degenerate_by_side={
+                    "long": fold_result.long_result.calib_target_single_class,
+                    "short": fold_result.short_result.calib_target_single_class,
+                },
+                degenerado_by_side=(
+                    {
+                        "long": path_result.n_filled_long < min_trades,
+                        "short": path_result.n_filled_short < min_trades,
+                    }
+                    if path_result
+                    else {}
                 ),
                 n_train_long=fold_result.n_train_long,
                 n_train_short=fold_result.n_train_short,

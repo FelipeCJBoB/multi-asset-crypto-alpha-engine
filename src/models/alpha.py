@@ -1176,6 +1176,17 @@ class SideModelResult:
     fit_segment: InSampleSegmentScores | None = None
     stop_segment: InSampleSegmentScores | None = None
     calib_segment: InSampleSegmentScores | None = None
+    # AG-393 item 3 (auditoria adversarial, achado real: SOLUSDT/R2
+    # fold_id=3/short, Camada1 e Camada0 produziam `score_quality_by_side`
+    # BYTE-IDÊNTICO apesar de boosters diferentes) -- só é possível se
+    # `y_calib` tiver 1 classe só: `IsotonicRegression.fit` sob y
+    # constante devolve a MESMA constante independente de `x` (do próprio
+    # score do booster), então dois modelos distintos calibram pro mesmo
+    # número. Não é necessariamente ERRADO (é a resposta aritmética certa
+    # pra um alvo degenerado), mas era invisível antes -- nada sinalizava
+    # que a calibração daquele fold/lado não carrega informação real do
+    # score. `True` quando `np.unique(y_calib).shape[0] < 2`.
+    calib_target_single_class: bool = False
 
 
 def compute_monotone_screen(
@@ -1673,6 +1684,24 @@ def fit_side_model(
     # valor.
     raw_calib = np.asarray(model.predict_proba(X_calib))[:, 1]
     calibrator = IsotonicRegression(out_of_bounds="clip", y_min=0.0, y_max=1.0)
+    # AG-393 item 3 -- `y_calib` de 1 classe só faz `IsotonicRegression.
+    # fit` devolver uma constante (a resposta aritmética correta pro
+    # alvo degenerado, não um bug do fit em si) -- mas SILENCIOSAMENTE:
+    # nada sinalizava isso antes, e dois modelos com boosters distintos
+    # calibram pro MESMO número sem aviso algum. Logado aqui, nunca
+    # corrigido às cegas (CLAUDE.md, "nunca remediar sem achar causa
+    # raiz") -- a causa raiz é upstream (por que o split de calib deste
+    # fold/lado ficou degenerado), não este ponto.
+    calib_target_single_class = bool(np.unique(y_calib).shape[0] < 2)
+    if calib_target_single_class:
+        logger.warning(
+            "models.alpha.fit_side_model_calib_alvo_classe_unica",
+            side=side,
+            variant=variant,
+            n_calib=int(y_calib.shape[0]),
+            detail="y_calib com 1 classe so -- IsotonicRegression.fit devolve constante, "
+            "calibracao deste fold/lado nao carrega informacao real do score (AG-393 item 3)",
+        )
     # AG-312 -- o peso do CALIBRADOR nao e o mesmo peso da PERDA. Ver o
     # bloco de `CALIB_WEIGHT_*` para a medicao e o principio. `w_fit` (com
     # `|ret_net|`) segue alimentando `model.fit` acima: B10/§3.5 intactos.
@@ -1767,6 +1796,7 @@ def fit_side_model(
         fit_segment=_segment(fit_idx),
         stop_segment=_segment(stop_idx),
         calib_segment=_segment(calib_idx),
+        calib_target_single_class=calib_target_single_class,
     )
 
 

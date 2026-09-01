@@ -214,6 +214,14 @@ class PathBacktestResult:
     std_trade_ret: float
     trades_per_year: float
     win_rate: float
+    # AG-401 (auditoria adversarial externa, achado N4) -- `n_filled_
+    # trades` soma os 2 lados; um fold/path com 10 trades pode ter 8
+    # long e 2 short, e o piso de degeneração (`alpha.MIN_OCCURRENCES_
+    # ABOVE_TAU`) nunca via o lado thin. Aditivo, não muda o significado
+    # de `n_filled_trades` nem de nenhum campo já existente -- consumidor
+    # que quiser o piso por lado usa estes 2 novos campos.
+    n_filled_long: int = 0
+    n_filled_short: int = 0
 
 
 def backtest_by_path(
@@ -231,6 +239,10 @@ def backtest_by_path(
         n_signals = sub.height
         filled = sub.filter(pl.col("barrier_hit") != "NOFILL")
         n_filled = filled.height
+        # AG-401 -- contagem por lado, mesma população `filled` (side_hat
+        # sobrevive ao join, ver docstring de `join_signals_to_labels`).
+        n_filled_long = filled.filter(pl.col("side_hat") == 1).height
+        n_filled_short = filled.filter(pl.col("side_hat") == -1).height
         fill_rate = float(n_filled) / float(n_signals) if n_signals > 0 else float("nan")
         span = span_seconds(filled["t0"])
         rets = filled["ret_net"].to_numpy().astype(np.float64)
@@ -254,6 +266,8 @@ def backtest_by_path(
             std_trade_ret=std_ret,
             trades_per_year=tpy,
             win_rate=win_rate,
+            n_filled_long=n_filled_long,
+            n_filled_short=n_filled_short,
         )
     logger.info(
         "models.backtest_lite.backtest_by_path",

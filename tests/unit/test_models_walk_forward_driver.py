@@ -143,10 +143,12 @@ class _FakeSideModelResult:
         model: lgb.LGBMClassifier,
         *,
         tau: float = 0.5,  # noqa: magic-number -- default de teste, sem significado de produção
+        calib_target_single_class: bool = False,
     ) -> None:
         self.gain_by_column_raw = gain_by_column_raw
         self.model = model
         self.tau = tau
+        self.calib_target_single_class = calib_target_single_class
 
 
 class _FakeFoldResult:
@@ -442,6 +444,49 @@ def test_run_walk_forward_persiste_tau_e_taxa_de_sinal_por_fold(
     assert 0.0 < fold0.signal_rate_realized <= 1.0
 
 
+def test_run_walk_forward_persiste_calib_degenerado_por_lado(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """AG-393 item 3 -- `calib_target_single_class` de `SideModelResult`
+    (novo, sinaliza `y_calib` de 1 classe só -- IsotonicRegression.fit
+    devolve constante) propagado por lado em `calib_degenerate_by_side`."""
+    mf_data = _synthetic_mf_data()
+    fake = _make_fake_run_fold()
+
+    def _fake_com_calib_degenerado(*args: Any, **kwargs: Any) -> _FakeFoldResult:
+        result = fake(*args, **kwargs)
+        result.long_result.calib_target_single_class = True
+        result.short_result.calib_target_single_class = False
+        return result
+
+    monkeypatch.setattr(alpha, "run_fold", _fake_com_calib_degenerado)
+
+    result = wf.run_walk_forward_for_combo(mf_data, **_base_kwargs())
+
+    fold0 = next(fm for fm in result.fold_results if fm.fold_id == 0)
+    assert fold0.degenerado is False
+    assert fold0.calib_degenerate_by_side == {"long": True, "short": False}
+
+
+def test_run_walk_forward_degenerado_by_side_reflete_populacao_real_por_lado(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """AG-401 -- o fake só sinaliza `side_hat=1` (long) em 100% das
+    barras; short nunca tem trade nenhum. `degenerado` (fold combinado)
+    fica `False` (long sozinho já supera o piso), mas `degenerado_by_
+    side['short']` precisa ser `True` -- exatamente o cenário que N4
+    descreve (lado thin escondido dentro de um fold que passa no
+    agregado)."""
+    mf_data = _synthetic_mf_data()
+    monkeypatch.setattr(alpha, "run_fold", _make_fake_run_fold())
+
+    result = wf.run_walk_forward_for_combo(mf_data, **_base_kwargs())
+
+    fold0 = next(fm for fm in result.fold_results if fm.fold_id == 0)
+    assert fold0.degenerado is False
+    assert fold0.degenerado_by_side == {"long": False, "short": True}
+
+
 def test_run_walk_forward_fold_sem_barra_valida_tem_tau_nan(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -478,6 +523,8 @@ def test_run_walk_forward_fold_sem_barra_valida_tem_tau_nan(
     assert np.isnan(fold0.tau_short)
     assert np.isnan(fold0.signal_rate_realized)
     assert fold0.score_quality_full_population_by_side == {}
+    assert fold0.calib_degenerate_by_side == {}
+    assert fold0.degenerado_by_side == {}
 
 
 def test_run_walk_forward_score_quality_full_population_cobre_os_2_lados(
