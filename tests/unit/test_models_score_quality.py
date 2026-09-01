@@ -203,6 +203,15 @@ def test_compute_score_quality_dispersao_de_ic_por_fold_conferida_a_mao() -> Non
     assert r.ic_ir == pytest.approx(expected_ir)
     assert r.ic_tstat == pytest.approx(expected_tstat)
     assert r.pct_ic_positive == pytest.approx(2.0 / 3.0)
+    # Achado real (2026-09-01): `tstat = mean / (std / np.sqrt(n))` sem
+    # `float(...)` explícito vazava `numpy.float64` -- `orjson.dumps`
+    # despacha por `type(x) is float` (não `isinstance`), quebra com
+    # "Type is not JSON serializable: numpy.float64" mesmo numpy.float64
+    # sendo subclasse de `float`. Nunca disparou em `score_quality_by_
+    # side` nos artefatos existentes (poucos folds tipicamente sob o piso
+    # de dispersão), só apareceu ao escrever `train_val_test_gap` (pooled
+    # entre muitos folds) pela primeira vez.
+    assert type(r.ic_tstat) is float
 
 
 def test_compute_score_quality_um_fold_so_dispersao_nan() -> None:

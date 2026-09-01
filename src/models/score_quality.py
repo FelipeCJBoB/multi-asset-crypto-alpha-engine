@@ -214,7 +214,17 @@ def _ic_dispersion_stats(fold_ics: list[float]) -> tuple[float, float, float, fl
     if std == 0.0:
         return mean, median, std, float("nan"), pct_positive, float("nan")
     ic_ir = mean / std
-    tstat = mean / (std / np.sqrt(n))  # noqa: unguarded-ratio -- std!=0.0 e n>=_MIN_FOLDS_FOR_DISPERSION ja garantidos pelos 2 early-return acima nesta funcao
+    # `np.sqrt(n)` devolve numpy.float64 -- sem o `float(...)` explicito
+    # aqui, `tstat` vaza numpy.float64 pro dataclass (`ScoreQualityResult.
+    # ic_tstat: float`, violado em runtime) e `orjson.dumps` quebra com
+    # "Type is not JSON serializable: numpy.float64" (orjson despacha por
+    # `type(x) is float`, nao `isinstance` -- numpy.float64 falha mesmo
+    # sendo subclasse). Achado real: nunca disparou em `score_quality_by_
+    # side` (poucos folds tipicamente sob o piso de dispersao), mas
+    # `train_val_test_gap` pooled entre MUITOS folds por segmento
+    # atravessa o piso quase sempre -- so apareceu ao escrever o artefato
+    # com esse campo novo pela primeira vez.
+    tstat = float(mean / (std / np.sqrt(n)))  # noqa: unguarded-ratio -- std!=0.0 e n>=_MIN_FOLDS_FOR_DISPERSION ja garantidos pelos 2 early-return acima nesta funcao
     return mean, median, std, ic_ir, pct_positive, tstat
 
 
