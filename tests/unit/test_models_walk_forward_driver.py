@@ -12,8 +12,9 @@ sintético."""
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
-from typing import Any, Callable
+from typing import Any
 
 import lightgbm as lgb
 import numpy as np
@@ -135,7 +136,11 @@ class _FakeSideModelResult:
     Fase 7 -- precisa ser um booster REAL pra `shap.TreeExplainer`
     funcionar, não dá pra fingir; `.tau` -- AG-395, persistido por fold
     no artefato -- default arbitrário, testes que precisam de um valor
-    específico sobrescrevem depois de construído)."""
+    específico sobrescrevem depois de construído; `.fit_segment`/
+    `.stop_segment`/`.calib_segment` -- P3 do Exhibit VIII ("Caso 0/20"),
+    `score_quality.compute_train_val_test_gap` lê os 3, default `None`
+    igual ao dataclass real -- gap fica vazio pro fold fake, sem
+    AttributeError)."""
 
     def __init__(
         self,
@@ -149,6 +154,9 @@ class _FakeSideModelResult:
         self.model = model
         self.tau = tau
         self.calib_target_single_class = calib_target_single_class
+        self.fit_segment = None
+        self.stop_segment = None
+        self.calib_segment = None
 
 
 class _FakeFoldResult:
@@ -466,6 +474,44 @@ def test_run_walk_forward_persiste_calib_degenerado_por_lado(
     fold0 = next(fm for fm in result.fold_results if fm.fold_id == 0)
     assert fold0.degenerado is False
     assert fold0.calib_degenerate_by_side == {"long": True, "short": False}
+
+
+def test_run_walk_forward_popula_train_val_test_gap_via_fit_segment_real(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """P3 do Exhibit VIII ("Caso 0/20") -- `WalkForwardResult.
+    train_val_test_gap` vem de `score_quality.compute_train_val_test_gap`
+    sobre os `alpha.FoldResult` reais já coletados em `pending`, não um
+    campo novo desconectado. `fit_segment` real (5 trades, piso `_MIN_
+    OBS_FOR_SMALL_SAMPLE_METRICS`) no lado long de todos os folds --
+    long precisa aparecer na tupla resultante; short (sem segmento
+    nenhum) fica fora, mesmo contrato de `compute_train_val_test_gap`
+    testado em `test_models_score_quality.py`."""
+    mf_data = _synthetic_mf_data()
+    fake = _make_fake_run_fold()
+    fit_seg = alpha.InSampleSegmentScores(
+        n=5,  # noqa: magic-number -- piso _MIN_OBS_FOR_SMALL_SAMPLE_METRICS
+        calibrated_score=np.array([0.1, 0.3, 0.5, 0.7, 0.9]),  # noqa: magic-number
+        label=np.array([0, 0, 0, 1, 1]),
+        ret_net=np.array([-0.003, -0.002, -0.001, 0.002, 0.004]),  # noqa: magic-number
+    )
+
+    def _fake_com_fit_segment(*args: Any, **kwargs: Any) -> _FakeFoldResult:
+        result = fake(*args, **kwargs)
+        result.long_result.fit_segment = fit_seg
+        return result
+
+    monkeypatch.setattr(alpha, "run_fold", _fake_com_fit_segment)
+
+    result = wf.run_walk_forward_for_combo(mf_data, **_base_kwargs())
+
+    sides_presentes = {g["side"] for g in result.train_val_test_gap}
+    assert sides_presentes == {"long"}
+    gap_long = next(g for g in result.train_val_test_gap if g["side"] == "long")
+    assert gap_long["fit"] is not None
+    assert gap_long["fit"]["n_trades"] == fit_seg.n * len(result.fold_results)
+    assert gap_long["stop"] is None
+    assert gap_long["calib"] is None
 
 
 def test_run_walk_forward_degenerado_by_side_reflete_populacao_real_por_lado(

@@ -335,6 +335,16 @@ class WalkForwardResult:
     min_trades_threshold: int
     fold_results: tuple[WalkForwardFoldMetrics, ...]
     aggregate: dict[str, dict[str, float]]
+    # P3 do Exhibit VIII ("Caso 0/20") -- `score_quality.
+    # compute_train_val_test_gap` sobre os `alpha.FoldResult` reais desta
+    # combo (fit/stop/calib in-sample, pooled entre folds por lado).
+    # Custo ZERO adicional -- `fold_results_ok` (a lista de `alpha.
+    # FoldResult`) já existe em memória pra `backtest_lite.backtest_by_
+    # path`, só nunca tinha sido repassada pra essa metrica. Sempre
+    # populado (não é opt-in como `keep_predictions` -- não guarda dado
+    # OOF nem aumenta o artefato de forma proporcional ao numero de
+    # trades, só os 3 sub-splits pooled).
+    train_val_test_gap: tuple[dict[str, Any], ...] = ()
 
 
 def run_walk_forward_for_combo(
@@ -612,6 +622,10 @@ def run_walk_forward_for_combo(
         for stat_key in ("mean", "median", "std", "min", "max")
     }
 
+    train_val_test_gap = tuple(
+        asdict(r) for r in score_quality.compute_train_val_test_gap(fold_results_ok)
+    )
+
     logger.info(
         "models.walk_forward.combo_concluido",
         symbol=symbol,
@@ -633,4 +647,5 @@ def run_walk_forward_for_combo(
         min_trades_threshold=min_trades,
         fold_results=tuple(fold_metrics),
         aggregate=aggregate,
+        train_val_test_gap=train_val_test_gap,
     )
