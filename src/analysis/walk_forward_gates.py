@@ -102,12 +102,19 @@ cada gate mede, não só o limiar; sujeitas a correção):
   `n_folds>=2` (desvio-padrão amostral indefinido com 1 ponto) — `NaN`
   ou `n_folds<2` SEMPRE falha, ausência de dado nunca é aprovação por
   omissão.
-- **Alpha**: existe edge econômico líquido positivo (edge_bps médio
-  pooled sobre os folds usáveis, nível combo×variant, MESMO threshold
-  que o edge gate de CPCV já usa — break-even)? Comparação ESTRITA
-  (`>`, não `>=`) — mesma convenção documentada em `edge_gate_pass`
-  (`hyperparams_optuna.py`/`ag220_dual_gate_calibration.py`), `NaN`
-  sempre falha."""
+- **Alpha**: existe edge econômico líquido positivo, com significância
+  estatística (teste-t unicaudal sobre o edge_bps médio dos folds
+  usáveis, H0: edge_bps_médio<=`alpha_layer1_permanence_min_edge_bps`,
+  MESMO threshold que o edge gate de CPCV já usa — break-even), nível
+  combo×variant? Correção AG-400 (2026-08-31, auditoria adversarial
+  externa achado N1) -- ANTES comparava só o ponto estimado
+  (`edge_bps_mean > min_edge_bps`, sem erro-padrão, sem teste; o único
+  "passa" da ADR-008 original tinha t=0,35 e mediana negativa). Mesmo
+  nível de significância do eixo Model (mesmo `significance_level`,
+  já travado pelo sweep do `AG-391`) -- estritamente mais conservador
+  que o critério antigo: exigir significância nunca aprova uma célula
+  que o ponto estimado sozinho já reprovava. `NaN` (inclui `n_folds<2`
+  e `std==0,0`) sempre falha."""
 
 from __future__ import annotations
 
@@ -116,7 +123,6 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
-import numpy as np
 from scipy.stats import t as student_t
 
 from src.analysis.stability_matrix import StabilityMatrixResult
@@ -169,11 +175,49 @@ def model_gate_passes(
     return p_value < significance_level
 
 
-def alpha_gate_passes(edge_bps_mean: float, *, min_edge_bps: float) -> bool:
-    """Definição operacional: ver docstring do módulo, eixo "Alpha"."""
-    if not np.isfinite(edge_bps_mean):
+def alpha_gate_p_value(
+    edge_bps_mean: float, edge_bps_std: float, n_folds: int, *, min_edge_bps: float
+) -> float:
+    """AG-400 (auditoria adversarial externa, achado N1) -- p-valor
+    UNICAUDAL do teste-t de uma amostra (H0: edge_bps_médio<=min_edge_bps,
+    H1: edge_bps_médio>min_edge_bps) — MESMO núcleo de `model_gate_p_
+    value`, mesmos guards (`NaN` se não computável, `n_folds<_MIN_FOLDS_
+    FOR_TTEST`, ou `std==0,0` — ausência de teste válido nunca decide pela
+    média sozinha, achado real que motivou N1: o único "passa" da ADR-008
+    original, `BTCUSDT/R2` Camada0, tinha t=0,35 e mediana negativa)."""
+    if not math.isfinite(edge_bps_mean) or not math.isfinite(edge_bps_std):
+        return float("nan")
+    if n_folds < _MIN_FOLDS_FOR_TTEST:
+        return float("nan")
+    if edge_bps_std == 0.0:
+        return float("nan")
+    t_stat = (edge_bps_mean - min_edge_bps) / (
+        edge_bps_std / math.sqrt(n_folds)
+    )  # noqa: unguarded-ratio -- edge_bps_std!=0.0 e n_folds>=2 ja garantidos pelos early-return acima nesta funcao, sqrt(n_folds) nunca e 0
+    return float(student_t.sf(t_stat, df=n_folds - 1))
+
+
+def alpha_gate_passes(
+    edge_bps_mean: float,
+    edge_bps_std: float,
+    n_folds: int,
+    *,
+    min_edge_bps: float,
+    significance_level: float,
+) -> bool:
+    """Definição operacional: ver docstring do módulo, eixo "Alpha" —
+    AG-400 substitui a comparação de ponto estimado (`edge_bps_mean >
+    min_edge_bps`, sem barra de erro) por teste-t de uma amostra
+    unicaudal, mesmo padrão já usado no eixo Model. Estritamente mais
+    conservador que o critério antigo (significância exige `edge_bps_mean
+    > min_edge_bps` como pré-condição do sinal do teste-t — nunca aprova
+    uma célula que o critério antigo já reprovava, só reprova mais
+    células que o critério antigo aprovava por acaso de amostra pequena).
+    `NaN` (inclui `n_folds<2` e `std==0,0`) sempre falha."""
+    p_value = alpha_gate_p_value(edge_bps_mean, edge_bps_std, n_folds, min_edge_bps=min_edge_bps)
+    if math.isnan(p_value):
         return False
-    return edge_bps_mean > min_edge_bps
+    return p_value < significance_level
 
 
 @dataclass(frozen=True, slots=True)
@@ -185,6 +229,11 @@ class GateVerdict:
     frac_folds_usados: float
     data_gate_pass: bool
     edge_bps_mean: float
+    edge_bps_std: float
+    # AG-400 -- p-valor bruto (unicaudal) do teste-t do eixo Alpha, mesmo
+    # espírito de `auc_p_value_by_side` pro eixo Model — NÃO ajustado por
+    # múltiplas comparações.
+    edge_bps_p_value: float
     alpha_gate_pass: bool
     auc_mean_by_side: dict[str, float]
     auc_std_by_side: dict[str, float]
@@ -201,7 +250,7 @@ def evaluate_gates(
     stability: StabilityMatrixResult,
     *,
     data_min_folds_usados: int,
-    model_significance_level: float,
+    significance_level: float,
     alpha_min_edge_bps: float,
 ) -> GateVerdict:
     """`walk_forward_payload` — um `variant` dentro do JSON da Fase 4
@@ -209,7 +258,13 @@ def evaluate_gates(
     consome). `stability` — o resultado já construído sobre o MESMO
     payload (`build_stability_matrix(walk_forward_payload, ...)`) —
     passado já pronto em vez de reconstruído aqui, pra não pagar o
-    custo duas vezes quando o chamador já tem os dois."""
+    custo duas vezes quando o chamador já tem os dois.
+
+    `significance_level` — AG-400 (2026-08-31): mesmo nível usado nos
+    DOIS eixos com teste-t (Model e Alpha), não mais só o Model — o
+    critério estatístico é o mesmo em espírito nos dois (H0: sem edge/
+    sem discriminação, ao nível já travado pelo sweep de sensibilidade
+    do `AG-391`), não há razão medida pra usar níveis diferentes."""
     n_folds_total = walk_forward_payload["n_folds_total"]
     n_folds_usados = walk_forward_payload["n_folds_usados"]
     frac_folds_usados = (
@@ -217,7 +272,20 @@ def evaluate_gates(
         if n_folds_total > 0
         else float("nan")
     )
+    # `None` (JSON `null` -- `_aggregate_stats` devolve `NaN` quando
+    # `n<2`, mas `orjson.dumps` grava `NaN` como `null`, `json.load`
+    # devolve `None`; mesmo achado real já corrigido em `stability_
+    # matrix.py::_float_or_nan`, aqui reincidente porque este payload é
+    # lido direto do artefato, não via `WalkForwardFoldMetrics` tipado)
+    # normalizado pra `float("nan")` explícito ANTES de qualquer
+    # `math.isfinite`, que não aceita `None`.
     edge_bps_mean = walk_forward_payload["aggregate"]["mean"]["edge_bps"]
+    edge_bps_mean = float("nan") if edge_bps_mean is None else edge_bps_mean
+    edge_bps_std_raw = walk_forward_payload["aggregate"]["std"]["edge_bps"]
+    edge_bps_std = float("nan") if edge_bps_std_raw is None else edge_bps_std_raw
+    edge_bps_p_value = alpha_gate_p_value(
+        edge_bps_mean, edge_bps_std, n_folds_usados, min_edge_bps=alpha_min_edge_bps
+    )
 
     auc_mean_by_side: dict[str, float] = {}
     auc_std_by_side: dict[str, float] = {}
@@ -234,9 +302,7 @@ def evaluate_gates(
         auc_std_by_side[side] = auc_std
         n_folds_auc_by_side[side] = n_folds_auc
         auc_p_value_by_side[side] = p_value
-        model_gate_pass_by_side[side] = (
-            not math.isnan(p_value) and p_value < model_significance_level
-        )
+        model_gate_pass_by_side[side] = not math.isnan(p_value) and p_value < significance_level
 
     return GateVerdict(
         combo=f"{stability.symbol}/{stability.resolution_id}",
@@ -246,7 +312,15 @@ def evaluate_gates(
         frac_folds_usados=frac_folds_usados,
         data_gate_pass=data_gate_passes(n_folds_usados, min_folds=data_min_folds_usados),
         edge_bps_mean=edge_bps_mean,
-        alpha_gate_pass=alpha_gate_passes(edge_bps_mean, min_edge_bps=alpha_min_edge_bps),
+        edge_bps_std=edge_bps_std,
+        edge_bps_p_value=edge_bps_p_value,
+        alpha_gate_pass=alpha_gate_passes(
+            edge_bps_mean,
+            edge_bps_std,
+            n_folds_usados,
+            min_edge_bps=alpha_min_edge_bps,
+            significance_level=significance_level,
+        ),
         auc_mean_by_side=auc_mean_by_side,
         auc_std_by_side=auc_std_by_side,
         n_folds_auc_by_side=n_folds_auc_by_side,

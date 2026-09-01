@@ -79,7 +79,7 @@ def main(argv: list[str] | None = None) -> int:
                 payload,
                 sm,
                 data_min_folds_usados=data_min,
-                model_significance_level=model_sig,
+                significance_level=model_sig,
                 alpha_min_edge_bps=alpha_min_edge,
             )
             verdicts.append(gv)

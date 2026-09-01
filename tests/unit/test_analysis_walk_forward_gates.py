@@ -127,27 +127,84 @@ def test_model_gate_significance_level_maior_facilita_passagem() -> None:
 
 
 # ============================================================================
-# alpha_gate_passes -- > min_edge_bps (comparação ESTRITA, mesma
-# convenção de edge_gate_pass sobre CPCV) -- inalterado nesta correção
+# alpha_gate_passes -- teste-t unicaudal (H0: edge_bps_medio<=min_edge_bps),
+# não mais comparação de ponto estimado sem barra de erro (AG-400,
+# correção 2026-08-31, achado N1 da auditoria adversarial externa)
 # ============================================================================
 
 
-def test_alpha_gate_passa_com_edge_positivo() -> None:
-    assert wfg.alpha_gate_passes(5.0, min_edge_bps=0.0) is True  # noqa: magic-number
+def test_alpha_gate_nan_edge_bps_mean_sempre_falha() -> None:
+    assert wfg.alpha_gate_passes(
+        float("nan"), 2.0, 10, min_edge_bps=0.0, significance_level=0.05  # noqa: magic-number
+    ) is False
 
 
-def test_alpha_gate_fronteira_exata_falha_comparacao_estrita() -> None:
-    """`>`, não `>=` -- break-even exato não é edge, mesma convenção
-    documentada em `edge_gate_pass` (ag220_dual_gate_calibration.py)."""
-    assert wfg.alpha_gate_passes(0.0, min_edge_bps=0.0) is False
+def test_alpha_gate_nan_edge_bps_std_sempre_falha() -> None:
+    assert wfg.alpha_gate_passes(
+        5.0, float("nan"), 10, min_edge_bps=0.0, significance_level=0.05  # noqa: magic-number
+    ) is False
 
 
-def test_alpha_gate_falha_com_edge_negativo() -> None:
-    assert wfg.alpha_gate_passes(-5.0, min_edge_bps=0.0) is False  # noqa: magic-number
+def test_alpha_gate_menos_de_2_folds_sempre_falha() -> None:
+    assert wfg.alpha_gate_passes(
+        5.0, 2.0, 1, min_edge_bps=0.0, significance_level=0.05  # noqa: magic-number
+    ) is False
 
 
-def test_alpha_gate_nan_sempre_falha() -> None:
-    assert wfg.alpha_gate_passes(float("nan"), min_edge_bps=0.0) is False
+def test_alpha_gate_std_zero_sempre_falha_mesmo_com_media_acima_do_piso() -> None:
+    """Mesma convenção de `model_gate_passes` no mesmo caso degenerado --
+    dispersão zero nunca decide pela média sozinha, mesmo com
+    `edge_bps_mean > min_edge_bps`."""
+    assert wfg.alpha_gate_passes(
+        5.0, 0.0, 5, min_edge_bps=0.0, significance_level=0.05  # noqa: magic-number
+    ) is False
+
+
+def test_alpha_gate_p_value_std_zero_e_nan_nao_zero_nem_um() -> None:
+    assert math.isnan(wfg.alpha_gate_p_value(5.0, 0.0, 5, min_edge_bps=0.0))  # noqa: magic-number
+
+
+def test_alpha_gate_p_value_conferido_a_mao_contra_scipy_t_sf() -> None:
+    edge_mean, edge_std, n = 8.0, 3.0, 10  # noqa: magic-number
+    t_stat = (edge_mean - 0.0) / (edge_std / math.sqrt(n))
+    expected_p = float(student_t.sf(t_stat, df=n - 1))
+    assert wfg.alpha_gate_p_value(edge_mean, edge_std, n, min_edge_bps=0.0) == pytest.approx(
+        expected_p
+    )
+    assert (expected_p < 0.05) == wfg.alpha_gate_passes(  # noqa: magic-number
+        edge_mean, edge_std, n, min_edge_bps=0.0, significance_level=0.05
+    )
+
+
+def test_alpha_gate_conferido_a_mao_caso_que_deve_passar() -> None:
+    """Edge grande, dispersão pequena, n razoável -- t bem acima do
+    crítico, deve passar."""
+    edge_mean, edge_std, n = 8.0, 3.0, 10  # noqa: magic-number
+    alpha = 0.05
+    t_stat = (edge_mean - 0.0) / (edge_std / math.sqrt(n))
+    t_crit = float(student_t.ppf(1.0 - alpha, df=n - 1))
+    assert t_stat > t_crit
+    assert (
+        wfg.alpha_gate_passes(edge_mean, edge_std, n, min_edge_bps=0.0, significance_level=alpha)
+        is True
+    )
+
+
+def test_alpha_gate_conferido_a_mao_caso_que_deve_falhar_apesar_de_media_positiva() -> None:
+    """AG-400, o achado central: média positiva, mas dispersão grande
+    demais pro n disponível -- passava no critério antigo, falha no
+    teste-t. Mesmos números do achado real (`BTCUSDT/R2` Camada0: mean
+    ~1,35, std~10,3, n=7 -> t~0,35, não significativo)."""
+    edge_mean, edge_std, n = 1.348, 10.303, 7  # noqa: magic-number
+    alpha = 0.05
+    t_stat = (edge_mean - 0.0) / (edge_std / math.sqrt(n))
+    t_crit = float(student_t.ppf(1.0 - alpha, df=n - 1))
+    assert t_stat < t_crit
+    assert edge_mean > 0.0  # o criterio ANTIGO (ponto estimado) teria aprovado
+    assert (
+        wfg.alpha_gate_passes(edge_mean, edge_std, n, min_edge_bps=0.0, significance_level=alpha)
+        is False
+    )
 
 
 # ============================================================================
@@ -201,20 +258,24 @@ def _stability_result(
 
 
 def _walk_forward_payload(
-    n_folds_total: int, n_folds_usados: int, edge_bps_mean: float
+    n_folds_total: int, n_folds_usados: int, edge_bps_mean: float, edge_bps_std: float = 2.0  # noqa: magic-number -- default de teste, sobrescrito quando o caso precisa de um valor específico
 ) -> dict[str, Any]:
     return {
         "n_folds_total": n_folds_total,
         "n_folds_usados": n_folds_usados,
-        "aggregate": {"mean": {"sharpe": 0.0, "edge_bps": edge_bps_mean, "win_rate": 0.5}},  # noqa: magic-number
+        "aggregate": {
+            "mean": {"sharpe": 0.0, "edge_bps": edge_bps_mean, "win_rate": 0.5},  # noqa: magic-number
+            "std": {"sharpe": 0.0, "edge_bps": edge_bps_std, "win_rate": 0.0},
+        },
     }
 
 
 def test_evaluate_gates_composicao_real_conferida_a_mao() -> None:
-    """10/12 folds usados (>= piso 10 -- Data passa), edge_bps médio=5,0
-    (> 0,0 -> Alpha passa), long: AUC=0,65 std=0,10 n=8 (teste-t passa a
-    alpha=0,05), short: AUC=0,52 std=0,10 n=8 (teste-t falha)."""
-    payload = _walk_forward_payload(12, 10, 5.0)  # noqa: magic-number
+    """10/12 folds usados (>= piso 10 -- Data passa); edge_bps médio=5,0,
+    std=2,0, n=10 (teste-t: t~7,9, passa a alpha=0,05 -> Alpha passa);
+    long: AUC=0,65 std=0,10 n=8 (teste-t passa a alpha=0,05), short:
+    AUC=0,52 std=0,10 n=8 (teste-t falha)."""
+    payload = _walk_forward_payload(12, 10, 5.0, 2.0)  # noqa: magic-number
     stability = _stability_result(
         auc_long=0.65, std_long=0.10, n_long=8, auc_short=0.52, std_short=0.10, n_short=8  # noqa: magic-number
     )
@@ -223,7 +284,7 @@ def test_evaluate_gates_composicao_real_conferida_a_mao() -> None:
         payload,
         stability,
         data_min_folds_usados=10,  # noqa: magic-number
-        model_significance_level=0.05,
+        significance_level=0.05,
         alpha_min_edge_bps=0.0,
     )
 
@@ -232,14 +293,38 @@ def test_evaluate_gates_composicao_real_conferida_a_mao() -> None:
     assert verdict.frac_folds_usados == pytest.approx(10.0 / 12.0)  # noqa: magic-number
     assert verdict.data_gate_pass is True
     assert verdict.alpha_gate_pass is True
+    assert verdict.edge_bps_std == pytest.approx(2.0)  # noqa: magic-number
+    assert verdict.edge_bps_p_value < 0.05  # noqa: magic-number
     assert verdict.model_gate_pass_by_side == {"long": True, "short": False}
     assert verdict.auc_mean_by_side["long"] == pytest.approx(0.65)  # noqa: magic-number
     assert verdict.auc_std_by_side["long"] == pytest.approx(0.10)  # noqa: magic-number
     assert verdict.n_folds_auc_by_side["long"] == 8  # noqa: magic-number
 
 
+def test_evaluate_gates_edge_positivo_mas_disperso_demais_falha_alpha_gate() -> None:
+    """AG-400 -- o achado central reproduzido em nível de `evaluate_gates`:
+    edge_bps médio positivo (o critério ANTIGO teria aprovado), mas
+    dispersão grande demais pro `n` disponível (mesmos números do achado
+    real, `BTCUSDT/R2` Camada0) -- Alpha gate falha sob o teste-t."""
+    payload = _walk_forward_payload(19, 7, 1.348, 10.303)  # noqa: magic-number
+    stability = _stability_result(
+        auc_long=0.5, std_long=0.1, n_long=4, auc_short=0.5, std_short=0.1, n_short=4  # noqa: magic-number
+    )
+
+    verdict = wfg.evaluate_gates(
+        payload,
+        stability,
+        data_min_folds_usados=10,  # noqa: magic-number
+        significance_level=0.05,
+        alpha_min_edge_bps=0.0,
+    )
+
+    assert verdict.edge_bps_mean > 0.0  # criterio antigo teria aprovado
+    assert verdict.alpha_gate_pass is False  # teste-t reprova
+
+
 def test_evaluate_gates_zero_folds_totais_frac_nan_data_gate_falha() -> None:
-    payload = _walk_forward_payload(0, 0, float("nan"))
+    payload = _walk_forward_payload(0, 0, float("nan"), float("nan"))
     stability = _stability_result(
         auc_long=float("nan"), std_long=float("nan"), n_long=0,
         auc_short=float("nan"), std_short=float("nan"), n_short=0,
@@ -249,12 +334,45 @@ def test_evaluate_gates_zero_folds_totais_frac_nan_data_gate_falha() -> None:
         payload,
         stability,
         data_min_folds_usados=10,  # noqa: magic-number
-        model_significance_level=0.05,
+        significance_level=0.05,
         alpha_min_edge_bps=0.0,
     )
 
     assert math.isnan(verdict.frac_folds_usados)
     assert verdict.data_gate_pass is False
+
+
+def test_evaluate_gates_std_none_do_json_nao_quebra_math_isfinite() -> None:
+    """Achado real (`scripts/evaluate_walk_forward_gates.py` contra os
+    artefatos canônicos, 2026-08-31): `_aggregate_stats` devolve `NaN`
+    com `n<2` folds, mas `orjson`/`json.load` grava/lê isso como `null`
+    -- `None` no payload real (`SOLUSDT/R2`, 1 fold usável). `math.
+    isfinite(None)` levanta `TypeError` sem o guard explícito."""
+    payload: dict[str, Any] = {
+        "n_folds_total": 12,  # noqa: magic-number
+        "n_folds_usados": 1,
+        "aggregate": {
+            "mean": {"sharpe": None, "edge_bps": None, "win_rate": None},
+            "std": {"sharpe": None, "edge_bps": None, "win_rate": None},
+        },
+    }
+    stability = _stability_result(
+        auc_long=float("nan"), std_long=float("nan"), n_long=0,
+        auc_short=float("nan"), std_short=float("nan"), n_short=0,
+    )
+
+    verdict = wfg.evaluate_gates(
+        payload,
+        stability,
+        data_min_folds_usados=10,  # noqa: magic-number
+        significance_level=0.05,
+        alpha_min_edge_bps=0.0,
+    )
+
+    assert math.isnan(verdict.edge_bps_mean)
+    assert math.isnan(verdict.edge_bps_std)
+    assert math.isnan(verdict.edge_bps_p_value)
+    assert verdict.alpha_gate_pass is False
 
 
 # ============================================================================
@@ -273,6 +391,8 @@ def _minimal_gate_verdict(*, combo: str, p_long: float, p_short: float) -> wfg.G
         frac_folds_usados=10.0 / 12.0,  # noqa: magic-number
         data_gate_pass=True,
         edge_bps_mean=5.0,  # noqa: magic-number
+        edge_bps_std=2.0,  # noqa: magic-number
+        edge_bps_p_value=0.01,  # noqa: magic-number
         alpha_gate_pass=True,
         auc_mean_by_side={"long": 0.6, "short": 0.6},  # noqa: magic-number
         auc_std_by_side={"long": 0.1, "short": 0.1},  # noqa: magic-number
