@@ -267,18 +267,119 @@ Registrados aqui para continuidade, caso o Manager peça para seguir:
 
 1. **Q10-Q1 (spread de decil) pooled em portfólio** — métrica de rank
    não-linear; AUC/edge médio são lineares e podem não captar sinal
-   concentrado só nos extremos de confiança.
+   concentrado só nos extremos de confiança. **Executado 2026-08-31**,
+   `scripts/measure_q10_q1_pooled.py`, commit `9cdfb9d` (`AG-407`) — não
+   refuta "0/20".
 2. **Bootstrap em bloco** (não paramétrico), respeitando a autocorrelação
    já medida em `AG-392` item 1 (lag-1 negativo, -0,216 média), em vez da
-   aproximação normal usada nos Ângulos 7/8.
+   aproximação normal usada nos Ângulos 7/8. **Executado 2026-09-01**, ver
+   Seção 6.1 abaixo (`AG-414`).
 3. **Condicionamento por regime** — `E05f_time_to_funding_h`/
    `E16f_global_ls_ratio` (features dominantes por SHAP, Seção 8.2 do
    documento-fonte) como eixo de estratificação; sinal pode existir só num
-   subconjunto de regime, mascarado na média incondicional.
+   subconjunto de regime, mascarado na média incondicional. **Executado
+   2026-09-01** (proxy fold-a-fold, não barra-a-barra), ver Seção 6.2
+   abaixo (`AG-415`).
 
 ---
 
-## 5. Proveniência
+## 6. Itens 15/16 do roadmap "Caso 0/20" — executados 2026-09-01
+
+### 6.1 Bootstrap em bloco (item 15, `AG-414`)
+
+`scripts/measure_pooled_block_bootstrap.py` — reamostra FOLDS em blocos de
+`L` (1=i.i.d., 2=respeita lag-1) através dos 5 combos, recomputando o
+mesmo pooled ponderado por variância-inversa dos Ângulos 7/8 a cada
+réplica (2000 réplicas, seed=`alpha_random_seed`=42). Não paramétrico —
+não assume normalidade nem a fórmula teórica de SE.
+
+**AUC pooled (Ângulo 7) — o bootstrap CONFIRMA com SE menor que o
+paramétrico:**
+
+| | observado | SE paramétrico | SE bootstrap (L=1/L=2) | IC90 bootstrap (L=2) | p empírico (L=2) |
+|---|---:|---:|---:|---:|---:|
+| Camada1 | 0,5025 | 0,0190 | 0,0101 / 0,0089 | [0,4887; 0,5172] | 0,382 |
+| Camada0 | 0,4951 | 0,0217 | 0,0120 / 0,0095 | [0,4781; 0,5092] | 0,290 |
+
+SE bootstrap é **menor** que o paramétrico Hanley-McNeil — consistente com
+a autocorrelação lag-1 predominantemente negativa medida em `AG-392` item
+1 (dependência negativa reduz variância do agregado). O pooled de AUC fica
+ainda mais robustamente perto de 0,50 do que a aproximação normal sugeria.
+
+**Edge pooled (Ângulo 8) — o bootstrap ALARGA a incerteza significativamente:**
+
+| | observado (bps) | SE paramétrico | SE bootstrap (L=1/L=2) | IC90 bootstrap (L=2) | p empírico (L=2) |
+|---|---:|---:|---:|---:|---:|
+| Camada1 (produção) | -3,32 | 1,84 | 4,57 / 3,79 | [-8,97; 2,64] | 0,158 |
+| Camada0 | -0,84 | 2,24 | 2,74 / 2,34 | [-3,68; 3,87] | 0,354 |
+
+Aqui o SE bootstrap é **2-2,5x maior** que o paramétrico — a identidade via
+`sharpe_naive` subestimava a incerteza real do edge pooled. O IC90 inclui
+zero folgadamente em ambos os casos — não muda o veredito "0/20" (edge
+pooled continua indistinguível de zero, com ou sem a correção), mas revela
+que a confiança original de "z=-1,805, quase significativo na direção
+negativa" era otimista demais quanto à precisão.
+
+**A única célula que cruzava p<0,05** (`XRPUSDT/R3` Camada0, edge
+pooled=+26,73bps): sensível ao comprimento do bloco — **não sobrevive**
+sob L=1/i.i.d. (IC90 cruza zero, p=0,086) mas **sobrevive marginalmente**
+sob L=2 (IC90=[3,16; 47,29], p=0,022). k=6 folds é pequeno demais pra um
+bootstrap em bloco ter poder de decidir entre as duas hipóteses de
+dependência — resultado honestamente indeterminado, consistente com a
+mesma fragilidade já registrada em `R11`/`AG-410` (sensibilidade a seed).
+
+**Veredito:** não refuta "0/20" a nível de portfólio — se algo, reforça a
+conclusão de AUC≈0,50 com uncertainty menor, e revela (sem mudar o
+veredito) que o edge pooled tinha mais incerteza real do que a aproximação
+normal indicava.
+
+### 6.2 Condicionamento por regime — proxy fold-a-fold (item 16, `AG-415`)
+
+`scripts/measure_regime_conditioning_proxy.py`. **Não é o teste ideal**
+(condicionamento por BARRA exigiria `p_long`/`p_short` por barra,
+não persistidas nos artefatos existentes — reconstruir custaria um novo
+walk-forward retreinado, `n_lifetime` real, não autorizado nesta rodada).
+Versão executada: mediana de `E05f_time_to_funding_h`/
+`E16f_global_ls_ratio` DENTRO da janela de teste de cada fold
+(`build_modeling_frame`, leitura pura, sem treino), correlacionada
+(Spearman) com a AUC/edge_bps já medida daquele fold.
+
+**Heterogeneidade entre folds (teste direto de `R10`):**
+
+| Feature | Range típico entre folds | Interpretação |
+|---|---|---|
+| `E05f_time_to_funding_h` | ~3,7h–4,1h em todos os 5 combos | Quase constante — mas é uma feature cíclica de 8h, a mediana de qualquer janela longa converge pro meio do ciclo independente de regime; não é evidência forte de regime único |
+| `E16f_global_ls_ratio` | BTCUSDT 0,76–1,97 (2,6x); XRPUSDT/R2 2,22–5,32 (2,4x); SOLUSDT/R3 1,22–3,51 (2,9x) | Heterogeneidade REAL entre folds — contradiz parcialmente `R10` |
+
+`R10` ("janela de teste é um único regime macro") não se sustenta
+uniformemente: verdadeiro para `E05f` (mas por motivo estrutural da
+feature, não por regime homogêneo), falso para `E16f`.
+
+**Correlação fold-a-fold (proxy de regime × performance, pooled 5 combos × 2 camadas):**
+
+| Feature | vs. AUC (n, ρ, p) | vs. edge_bps (n, ρ, p) |
+|---|---|---|
+| `E05f_time_to_funding_h` | n=46, ρ=0,014, p=0,929 | n=36, ρ=0,000, p=1,000 |
+| `E16f_global_ls_ratio` | n=46, ρ=-0,028, p=0,852 | n=36, ρ=-0,181, p=0,291 |
+
+Nenhuma correlação estatisticamente significativa, nem mesmo para
+`E16f_global_ls_ratio` (a feature com heterogeneidade real entre folds) —
+mas `n=36-46` a nível de FOLD tem poder estatístico muito baixo comparado
+a um teste de barra (dezenas de milhares de observações). Sinal
+concentrado num subconjunto de regime, se existir, não seria detectável
+nesta granularidade.
+
+**Veredito:** não refuta "0/20" no nível testável sem custo de retreino.
+Achado real e não-trivial: `R10` está errado especificamente pra
+`E16f_global_ls_ratio` (heterogeneidade real de regime existe na janela de
+teste), mesmo que isso não se traduza em correlação detectável com
+performance neste proxy grosseiro. Condicionamento por BARRA continua
+como o próximo passo genuíno, caso o Manager autorize o custo de um novo
+walk-forward com `keep_predictions=True`.
+
+---
+
+## 7. Proveniência
 
 | Item | Proveniência |
 |---|---|
@@ -286,5 +387,8 @@ Registrados aqui para continuidade, caso o Manager peça para seguir:
 | Identidade `t_stat = sharpe_naive · √(span_years)` | `DERIVED` — álgebra exata a partir de `backtest_lite.py::sharpe_naive`, verificada nesta sessão |
 | Todos os valores de AUC/edge/n por fold | `MEASURED` — lidos direto de `experiments/alpha_walk_forward_*.json`, validados contra Seção 9.1 do documento-fonte |
 | Aproximação normal para p-valor (Zelen & Severo 1964) | `LITERATURE` |
+| SE/IC90/p empírico do bootstrap em bloco (item 15) | `MEASURED` — 2000 réplicas, seed=`alpha_random_seed`, `scripts/measure_pooled_block_bootstrap.py` |
+| Comprimento de bloco L=1/L=2 | `DERIVED` — L=2 é o menor bloco que captura dependência lag-1; L=1 (i.i.d.) reportado como sensibilidade dado que `AG-392` item 1 mediu autocorrelação predominantemente negativa/fraca (não exige bloco longo) |
+| Mediana de `E05f`/`E16f` por janela de teste de fold, correlação Spearman (item 16) | `MEASURED` — `scripts/measure_regime_conditioning_proxy.py`, `build_modeling_frame` leitura pura |
 
 *Fim do documento.*

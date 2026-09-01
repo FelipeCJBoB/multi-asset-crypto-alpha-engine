@@ -27154,3 +27154,97 @@ entries:
     resolved_by_commit: null
     resolution: null
     status: "aberto -- decisao do Manager (2026-09-01, mesma sessao de AG-404/AG-409/AG-412): consequencia pre-declarada do design doc NAO aplicada, 'finalize a construcao do Meta-model mesmo assim'. Registrado para decisao futura do Manager; nao bloqueante pra F7/F8 prosseguirem."
+
+  - id: AG-414
+    date: "2026-09-01"
+    file: "scripts/measure_pooled_block_bootstrap.py (novo)"
+    related_file: "AG-392 (item 1, autocorrelacao lag-1); docs/adendo_angulos_7_8_pooled_meta_analise_gate_model_alpha_2026-08-31.md Secao 6.1; item 15 do roadmap 'Caso 0/20'"
+    numeracao: "AG-414."
+    found_by: "Backlog item 2 do adendo Angulos 7/8, autoexecutado apos autorizacao do Manager 'Pode continuar para P3 e os demais em diante' (2026-09-01)."
+    gap: >
+      Os pooled dos Angulos 7 (AUC) e 8 (edge_bps) usavam aproximacao
+      normal (Zelen & Severo 1964) sobre SE parametrico (Hanley-McNeil/
+      identidade via sharpe_naive), nunca testada contra a autocorrelacao
+      REAL medida entre folds (AG-392 item 1: lag-1 predominantemente
+      negativo, media -0,216). Bootstrap em bloco (2000 replicas, L=1 e
+      L=2, seed=alpha_random_seed) substitui a aproximacao por
+      reamostragem nao-parametrica respeitando a ordem temporal dos
+      folds dentro de cada combo.
+
+      **Resultado -- direcoes OPOSTAS pra AUC vs edge**: pooled de AUC
+      (Angulo 7) tem SE bootstrap MENOR que o parametrico (0,0089-0,0101
+      vs 0,0190 em Camada1) -- consistente com a autocorrelacao negativa
+      medida, reforca "0/20" com incerteza ainda menor. Pooled de edge
+      (Angulo 8) tem SE bootstrap 2-2,5x MAIOR que o parametrico
+      (3,79-4,57 vs 1,84bps em Camada1) -- a identidade via sharpe_naive
+      subestimava a incerteza real; IC90 continua incluindo zero
+      folgadamente, nao muda o veredito, mas revela que a confianca
+      original ("z=-1,805, quase significativo negativo") era otimista
+      demais. A unica celula que cruzava p<0,05 (XRPUSDT/R3 C0,
+      +26,73bps) e sensivel ao comprimento do bloco: NAO sobrevive sob
+      L=1/i.i.d. (p=0,086) mas sobrevive marginalmente sob L=2
+      (p=0,022) -- k=6 folds e pequeno demais pra decidir entre as
+      hipoteses de dependencia, resultado honestamente indeterminado
+      (mesma fragilidade de R11/AG-410).
+    severity: "baixa -- checagem de robustez de metodologia propria (Angulos 7/8), nao achado sobre o pipeline de producao"
+    layer: "analysis (scripts de auditoria pos-hoc, sem interacao com pipeline de producao)"
+    consequence: >
+      Nao refuta "0/20" a nivel de portfolio -- reforca AUC pooled~0,50
+      com incerteza menor, alarga (sem reverter) a incerteza do edge
+      pooled. Confirma que a unica celula proxima de significancia
+      (XRPUSDT/R3 C0) nao e robusta a escolha metodologica, adicionando
+      um terceiro angulo de fragilidade (apos seed/AG-410 e trial-count/
+      AG-411) sobre esse candidato especifico.
+    resolved_by_commit: null
+    resolution: "medido -- nao e um bug a corrigir, e uma checagem de robustez que confirma o veredito existente com metodologia mais rigorosa."
+    status: "concluido -- item 15 do roadmap 'Caso 0/20' fechado, resultado nao muda nenhum veredito publicado."
+
+  - id: AG-415
+    date: "2026-09-01"
+    file: "scripts/measure_regime_conditioning_proxy.py (novo)"
+    related_file: "AG-393 (documento-fonte R10); docs/adendo_angulos_7_8_pooled_meta_analise_gate_model_alpha_2026-08-31.md Secao 6.2; item 16 do roadmap 'Caso 0/20'"
+    numeracao: "AG-415."
+    found_by: "Backlog item 3 do adendo Angulos 7/8, autoexecutado apos autorizacao do Manager 'Pode continuar para P3 e os demais em diante' (2026-09-01)."
+    gap: >
+      R10 (documento-fonte) sinaliza que a janela de teste walk-forward
+      e dominada por um unico regime macro -- se verdade, sinal
+      concentrado num subconjunto de regime ficaria mascarado na media
+      incondicional dos gates oficiais. Teste IDEAL (condicionamento por
+      BARRA, usando p_long/p_short reais) exigiria um novo walk-forward
+      retreinado com keep_predictions=True (nao persistido nos artefatos
+      existentes ate 986e527) -- custo real de n_lifetime, NAO autorizado
+      nesta rodada (mesma logica de custo do item 12/AG-411). Versao
+      executada e um PROXY mais fraco: mediana de E05f_time_to_funding_h/
+      E16f_global_ls_ratio (features SHAP-dominantes) DENTRO da janela de
+      teste de cada fold (build_modeling_frame, leitura pura sem treino),
+      correlacionada (Spearman) com a AUC/edge_bps ja medida daquele
+      fold.
+
+      **Heterogeneidade entre folds (teste direto de R10)**: E05f e quase
+      CONSTANTE entre folds nos 5 combos (~3,7h-4,1h) -- mas por ser
+      feature ciclica de 8h, isso e esperado estruturalmente, nao
+      evidencia de regime homogeneo. E16f VARIA de verdade entre folds
+      (BTCUSDT 0,76-1,97; XRPUSDT/R2 2,22-5,32; SOLUSDT/R3 1,22-3,51,
+      todos >2x de range) -- contradiz R10 parcialmente: heterogeneidade
+      de regime real existe na janela de teste, pelo menos no eixo do
+      long-short ratio.
+
+      **Correlacao fold-a-fold (n=36-46, pooled 5 combos x 2 camadas)**:
+      nenhuma correlacao estatisticamente significativa, nem para E16f
+      (rho=-0,028 vs AUC p=0,852; rho=-0,181 vs edge p=0,291) nem E05f
+      (rho~0 em ambos). Poder estatistico baixo dado n pequeno a nivel
+      de fold, comparado a um teste de barra (dezenas de milhares de
+      observacoes).
+    severity: "baixa -- checagem de robustez adicional, nao achado sobre o pipeline de producao; achado colateral sobre R10 e informativo mas nao decisivo"
+    layer: "analysis (scripts de auditoria pos-hoc, sem interacao com pipeline de producao)"
+    consequence: >
+      Nao refuta "0/20" no nivel testavel sem custo de retreino. Achado
+      real: R10 esta ERRADO especificamente pra E16f_global_ls_ratio
+      (heterogeneidade real de regime existe), mesmo isso nao se
+      traduzindo em correlacao detectavel com performance neste proxy
+      grosseiro de fold. Condicionamento por BARRA continua como proximo
+      passo genuino, condicionado a autorizacao do Manager pro custo de
+      n_lifetime de um novo walk-forward com keep_predictions=True.
+    resolved_by_commit: null
+    resolution: "medido -- nao e um bug a corrigir; teste ideal (barra-a-barra) permanece backlog, condicionado a autorizacao de custo de retreino."
+    status: "concluido (versao proxy) -- item 16 do roadmap 'Caso 0/20' fechado nesta granularidade; versao barra-a-barra fica registrada como proximo passo condicional, nao decidida unilateralmente."
