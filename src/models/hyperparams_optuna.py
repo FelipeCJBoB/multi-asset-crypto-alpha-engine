@@ -276,6 +276,8 @@ def build_search_frame(
     *,
     vol_estimator_id: str | None = None,
     feature_ids: tuple[str, ...] | None = None,
+    t0_start: str | None = None,
+    t0_end: str | None = None,
 ) -> tuple[ds.ModelingFrame, tuple[cpcv.CPCVSplit, ...], tuple[str, ...]]:
     """Replica `pipeline.run_layer1_sprint` (linhas ~895-971: resolve
     `feature_ids_effective`, valida `defeito_construcao`, resolve
@@ -284,7 +286,16 @@ def build_search_frame(
     Manager). Chamada 1x por combinação por `run_search_for_combo`, reusada
     entre todos os trials da mesma campanha (mesmo padrão de custo já
     medido em `AG-371-ADDENDUM-17`: setup ~28s pago 1x, treino 10-33s por
-    trial, repetido)."""
+    trial, repetido).
+
+    `t0_start`/`t0_end` (AG-398/AG-411, achado E1 da auditoria adversarial
+    externa) -- ANTES hardcoded `None` inline, sem parâmetro nenhum: a
+    busca via sempre o dataset INTEIRO, incluindo o período que o
+    walk-forward (Fase 4/ADR-008) trata como fora-da-amostra -- viés
+    otimista estrutural, o HPO escolhia hiperparâmetro vendo dado que a
+    validação subsequente reivindicava nunca ter visto. `None` (default)
+    preserva o comportamento de sempre -- corte só acontece quando o
+    chamador passa `t0_end` explícito."""
     extra_feature_ids = (
         tuple(f for f in feature_ids if f not in features_build.T1_FEATURE_IDS)
         if feature_ids is not None
@@ -302,8 +313,8 @@ def build_search_frame(
         tf="15m",
         resolution_id=resolution_id,
         vol_estimator_id=vol_estimator_id_effective,
-        t0_start=None,
-        t0_end=None,
+        t0_start=t0_start,
+        t0_end=t0_end,
         extra_feature_ids=extra_feature_ids,
     )
     max_feature_lookback_ms = features_build.compute_max_feature_lookback_ms(
@@ -629,6 +640,8 @@ def run_search_for_combo(
     dsr_n_trials: int | None = None,
     storage_dir: Path | None = None,
     scratch: bool = False,
+    t0_start: str | None = None,
+    t0_end: str | None = None,
 ) -> OptunaSearchResult:
     """Executa (ou retoma) 1 study Optuna real e persiste o vencedor.
     `n_trials`/`sampler_seed` sentinela `None` resolve de `constants.yaml`
@@ -640,15 +653,38 @@ def run_search_for_combo(
     `AG-371-ADDENDUM-17`). Trials rodam SEQUENCIAIS (`n_jobs=1`) de
     propósito: `alpha.fit_side_model` já usa `n_jobs=-1` dentro do
     LightGBM -- paralelizar trials por cima oversubscreveria CPU (ou
-    disputaria a única GPU, depois do WSL2)."""
+    disputaria a única GPU, depois do WSL2).
+
+    `t0_start`/`t0_end` (AG-398/AG-411, item 12 do roadmap "Caso 0/20") --
+    passthrough pra `build_search_frame`. **Deliberadamente NÃO entram em
+    `compute_search_config_hash`** (o hash de identidade content-addressed
+    permanece só sobre `feature_ids`/`search_space`/`n_trials`/`sampler` --
+    mudar essa identidade é decisão maior, fora do escopo desta validação).
+    Consequência: um study com `t0_end` diferente do de sempre teria o
+    MESMO `study_name`/`config_hash` de um sem corte -- risco real de
+    colisão/retomada indevida sob `load_if_exists=True`. Mitigado exigindo
+    `storage_dir` EXPLÍCITO (não o `OPTUNA_STUDIES_DIR` de produção)
+    sempre que `t0_end` for passado — falha alto em vez de arriscar."""
     if variant not in ALL_VARIANTS:
         raise ValueError(
             f"run_search_for_combo: variant={variant!r} desconhecido -- "
             f"esperado um de {ALL_VARIANTS}"
         )
+    if t0_end is not None and storage_dir is None:
+        raise ValueError(
+            "run_search_for_combo: t0_end passado sem storage_dir explícito -- "
+            "um study com corte de data usaria o MESMO study_name/config_hash de "
+            "um sem corte (t0_end não entra no hash de identidade), risco real de "
+            "colidir/retomar indevidamente o study de produção sob load_if_exists=True"
+        )
 
     mf, splits, feature_ids_effective = build_search_frame(
-        symbol, resolution_id, vol_estimator_id=vol_estimator_id, feature_ids=feature_ids
+        symbol,
+        resolution_id,
+        vol_estimator_id=vol_estimator_id,
+        feature_ids=feature_ids,
+        t0_start=t0_start,
+        t0_end=t0_end,
     )
 
     n_trials_resolved = (

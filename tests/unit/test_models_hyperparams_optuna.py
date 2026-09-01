@@ -776,3 +776,33 @@ def test_derived_sampler_seed_varia_por_symbol_resolution_variant() -> None:
 def test_derived_sampler_seed_dentro_do_range_valido_do_tpesampler() -> None:
     seed = mod._derived_sampler_seed(42, "SOLUSDT", "R3", "camada0")
     assert 0 <= seed < 2_147_483_647
+
+
+# ============================================================================
+# run_search_for_combo -- guard de t0_end sem storage_dir (item 12 do
+# roadmap "Caso 0/20" / AG-411: t0_end nao entra no hash de identidade
+# content-addressed, entao exige storage_dir explicito pra nao arriscar
+# colidir/retomar o study de producao)
+# ============================================================================
+
+
+def test_run_search_for_combo_t0_end_sem_storage_dir_levanta_valueerror() -> None:
+    """O guard precisa disparar ANTES de qualquer trabalho caro (build_
+    search_frame/Optuna) -- este teste não deve custar mais que um
+    ValueError imediato."""
+    with pytest.raises(ValueError, match="storage_dir"):
+        mod.run_search_for_combo(
+            symbol="BTCUSDT",
+            resolution_id="R2",
+            variant=alpha.VARIANT_CAMADA1,
+            t0_end="2022-01-01",
+        )
+
+
+def test_run_search_for_combo_variant_desconhecido_levanta_antes_do_guard_t0_end() -> None:
+    """`variant` inválido é checado primeiro -- ordem de validação não
+    esconde um erro atrás do outro."""
+    with pytest.raises(ValueError, match="variant"):
+        mod.run_search_for_combo(
+            symbol="BTCUSDT", resolution_id="R2", variant="camada_invalida", t0_end="2022-01-01"
+        )
