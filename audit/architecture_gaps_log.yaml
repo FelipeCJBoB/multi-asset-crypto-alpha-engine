@@ -27247,7 +27247,97 @@ entries:
       n_lifetime de um novo walk-forward com keep_predictions=True.
     resolved_by_commit: null
     resolution: "medido -- nao e um bug a corrigir; teste ideal (barra-a-barra) permanece backlog, condicionado a autorizacao de custo de retreino."
-    status: "concluido (versao proxy) -- item 16 do roadmap 'Caso 0/20' fechado nesta granularidade; versao barra-a-barra fica registrada como proximo passo condicional, nao decidida unilateralmente."
+    status: "concluido (versao proxy) -- item 16 do roadmap 'Caso 0/20' fechado nesta granularidade; versao barra-a-barra fica registrada como proximo passo condicional, nao decidida unilateralmente. ATUALIZACAO: versao barra-a-barra rodada em AG-418 (autorizacao do Manager, 2026-09-01) -- resultado convergente, nao muda o veredito."
+
+  - id: AG-417
+    date: "2026-09-01"
+    file: "scripts/measure_trade_level_edge.py (novo)"
+    related_file: "AG-393 item 1 (n=1 SOLUSDT/R2); item P2 do Exhibit VIII, roadmap 'Caso 0/20'; experiments/alpha_walk_forward_predictions_*.parquet"
+    numeracao: "AG-417."
+    found_by: "Item P2 do Exhibit VIII, autorizado pelo Manager ('Aprovo sua recomendacao, pode executar retreino tambem', 2026-09-01)."
+    gap: >
+      `edge_bps` so existia agregado por FOLD (`fold_result.edge_bps`,
+      media). `scripts/measure_trade_level_edge.py` usa as predicoes
+      OOS reais (`keep_predictions=True`, commit `c3547a0`) pra montar a
+      distribuicao de `edge_bps` por TRADE individual, pooled entre
+      todos os folds de cada combo/camada -- mesmo join de `score_
+      quality._join_oof_predictions_to_labels` reimplementado (funcao
+      privada do modulo).
+
+      **Achado real -- mediana consistentemente MAIOR que media na
+      maioria das celulas** (padrao mais forte que o ja conhecido
+      mean-vs-mediana por FOLD do Exhibit V): ex. `BTCUSDT/R2` C1
+      pooled mean=+2,05bps vs mediana=+24,88bps; `XRPUSDT/R2` C1 pooled
+      mean=-15,63bps vs mediana=+37,02bps; `XRPUSDT/R3` C0 pooled
+      mean=+17,41bps vs mediana=+84,65bps. Isso e SKEW NEGATIVO real: a
+      maioria dos trades individuais fica moderadamente positiva, mas
+      um numero pequeno de perdas GRANDES (`edge_bps_min` chega a
+      -999,89bps em `XRPUSDT/R2` C1 -- uma unica perda de ~10% no
+      trade) arrasta a media pra baixo. `frac_trades_positivos` fica
+      perto de 50% na maioria das celulas (consistente com AUC~0,50 ja
+      medido), e `sharpe_per_trade_nao_anualizado` (media/desvio, sem
+      anualizar) fica pequeno em magnitude, as vezes negativo.
+    severity: "media -- nao muda o veredito '0/20' (fold-level ja mostrava skew, isto so quantifica na granularidade certa), mas acha um padrao de risco de cauda que merece atencao de quem for revisar a mecanica de barreira/stop"
+    layer: "analysis (script pos-hoc, sem interacao com pipeline de producao)"
+    consequence: >
+      Nao refuta '0/20'. Achado colateral acionavel: a cauda esquerda
+      pesada (perdas individuais >200-1000bps) e o que domina a media
+      negativa/fraca reportada, nao ausencia uniforme de sinal -- a
+      maioria dos trades individuais tem retorno mediano positivo.
+      Levanta a pergunta (nao respondida aqui) se a mecanica de
+      execucao/barreira se comporta como esperado nos trades de maior
+      perda, ou se e risco de cauda inerente ao ativo (gap/slippage
+      real em cripto) -- proximo passo condicional, nao decidido
+      unilateralmente.
+    resolved_by_commit: null
+    resolution: "medido -- fecha P2 do Exhibit VIII."
+    status: "concluido -- item P2 do roadmap 'Caso 0/20' fechado."
+
+  - id: AG-418
+    date: "2026-09-01"
+    file: "scripts/measure_bar_level_regime_conditioning.py (novo)"
+    related_file: "AG-415 (proxy fold-a-fold); AG-393 (documento-fonte R10); item 16 do roadmap 'Caso 0/20'; experiments/alpha_walk_forward_predictions_*.parquet"
+    numeracao: "AG-418."
+    found_by: "Item 16 do Exhibit VIII, versao barra-a-barra, autorizado pelo Manager ('Aprovo Retreino junto', 2026-09-01)."
+    gap: >
+      `AG-415` mediu o proxy fold-a-fold (n=36-46, poder estatistico
+      baixo) sem correlacao detectavel entre regime (`E05f`/`E16f`) e
+      performance. `scripts/measure_bar_level_regime_conditioning.py`
+      usa as predicoes OOS reais pra testar a granularidade IDEAL:
+      tercis GLOBAIS das 2 features SHAP-dominantes sobre TODA barra
+      OOS (n~70.000 por bucket pra AUC via `_join_full_population_to_
+      labels`, mesmo nucleo do `AG-394`; n~600 trades por bucket pra
+      `edge_bps` via trades realizados).
+
+      **AUC condicional por bucket -- nenhum bucket cruza perto do
+      limiar de significancia economica**: `E05f_time_to_funding_h`
+      varia de 0,4955 a 0,5108 entre os 3 buckets x 2 lados; `E16f_
+      global_ls_ratio` varia de 0,5004 a 0,5112. Com n~70.000 por
+      celula, o erro-padrao e ~0,0019 -- tecnicamente alguns buckets
+      cruzam significancia ESTATISTICA (ex. 0,5108 e ~5-6 desvios de
+      0,50), mas NENHUM se aproxima do limiar de ~0,54-0,55 necessario
+      pra sustentar edge liquido depois de custo (medido em `AG-406`).
+
+      **`edge_bps` condicional por bucket**: `E05f` mostra uma
+      tendencia quase-monotonica (bucket baixo mean=-16,72bps -> bucket
+      alto mean=+3,06bps) -- pode ser efeito real de microestrutura de
+      funding ou ruido sobre n~600/bucket, nao decisivo com so 3
+      buckets. `E16f` NAO mostra padrao monotonico (bucket do meio se
+      destaca como pior, sem tendencia clara) -- consistente com ruido,
+      nao regime real.
+    severity: "baixa -- checagem de robustez decisiva sobre um angulo ja testado (proxy fold-a-fold de AG-415), nao achado sobre o pipeline de producao"
+    layer: "analysis (script pos-hoc, sem interacao com pipeline de producao)"
+    consequence: >
+      Nao refuta '0/20' -- com poder estatistico ORDENS DE MAGNITUDE
+      maior que qualquer teste anterior nesta auditoria (n~70.000 por
+      celula de AUC), nenhum bucket de regime cruza o limiar de
+      significancia ECONOMICA. Fecha item 16 definitivamente nesta
+      dimensao (2 features SHAP-dominantes) -- resultado convergente
+      com `AG-415`, agora com poder suficiente pra ser conclusivo, nao
+      so inconclusivo por falta de dado.
+    resolved_by_commit: null
+    resolution: "medido -- fecha item 16 do Exhibit VIII na granularidade ideal."
+    status: "concluido -- item 16 do roadmap 'Caso 0/20' fechado, resultado nao refuta '0/20'."
 
   - id: AG-416
     date: "2026-09-01"

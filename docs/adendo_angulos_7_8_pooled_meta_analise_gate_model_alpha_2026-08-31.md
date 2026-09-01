@@ -377,6 +377,37 @@ performance neste proxy grosseiro. Condicionamento por BARRA continua
 como o próximo passo genuíno, caso o Manager autorize o custo de um novo
 walk-forward com `keep_predictions=True`.
 
+**Atualização 2026-09-01 — versão barra-a-barra rodada (`AG-418`):**
+Manager autorizou o retreino com `keep_predictions=True`
+(`scripts/run_walk_forward_with_predictions.py`, commit `c3547a0`).
+`scripts/measure_bar_level_regime_conditioning.py` repete o teste na
+granularidade IDEAL — tercis globais sobre TODA barra OOS (n~70.000 por
+bucket para AUC via o mesmo núcleo do `AG-394`; n~600 trades por bucket
+para `edge_bps`). **Resultado convergente com o proxy, agora decisivo**:
+AUC condicional varia de 0,4955 a 0,5112 entre buckets — nenhum se
+aproxima do limiar de ~0,54-0,55 necessário pra edge líquido (medido em
+`AG-406`), mesmo com poder estatístico ordens de magnitude maior que
+qualquer teste anterior desta auditoria. `edge_bps` por bucket mostra uma
+tendência quase-monotônica em `E05f` (bucket baixo −16,72bps → bucket
+alto +3,06bps, possível efeito de microestrutura de funding, não
+decisivo com só 3 buckets) mas nenhum padrão em `E16f`. Fecha o item 16
+definitivamente.
+
+### Item P2 — `edge_bps`/`sharpe` por trade individual (`AG-417`)
+
+Mesmo retreino, `scripts/measure_trade_level_edge.py` — a média por fold
+já reportada esconde skew negativo real ao nível de trade: a MEDIANA por
+trade é consistentemente MAIOR que a MÉDIA na maioria das células (ex.
+`XRPUSDT/R2` C1 pooled: mean=−15,63bps vs. mediana=+37,02bps). A maioria
+dos trades individuais fica moderadamente positiva, mas perdas
+individuais raras e grandes (`edge_bps_min` chega a −999,89bps —
+~10% de perda num único trade) arrastam a média pra baixo.
+`frac_trades_positivos` fica perto de 50% na maioria das células
+(consistente com AUC≈0,50). Não refuta "0/20", mas levanta uma pergunta
+acionável não respondida aqui: a mecânica de barreira/stop se comporta
+como esperado nos trades de maior perda, ou é risco de cauda inerente ao
+ativo?
+
 ---
 
 ## 7. Proveniência
