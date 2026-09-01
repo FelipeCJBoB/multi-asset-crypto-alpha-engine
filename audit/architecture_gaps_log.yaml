@@ -11822,9 +11822,35 @@ entries:
       AUSENTE entre séries, e nenhum dos 14 testes de leakage olha para
       tempo cross-símbolo. Classe B09 (split de CV sem purge por `t1`),
       mas por um caminho que o B09 como escrito não descreve.
-    resolved_by_commit: null
-    resolution: null
-    status: "aberto -- BLOQUEANTE para qualquer pooling cross-símbolo (declarado como pré-requisito de F1 no design doc do Meta, §4.5). Fix recomendado: calcular `edges_ms` UMA VEZ sobre a UNIÃO dos `t0` dos símbolos do pool e reaplicar a cada símbolo, em vez de `linspace` per-símbolo. Custo em amostra: TBD -- medir (grupos alinhados por calendário deixam os símbolos de histórico curto com grupos iniciais vazios). Alternativa conservadora enquanto não existir: rodar POR SÍMBOLO, nunca pooled, e exigir permanência cross-símbolo em vez de cross-path."
+    resolved_by_commit: "cc83208"
+    resolution: >
+      `assign_time_groups`/`generate_splits` (`src/validation/cpcv.py`)
+      ganharam `edges_ms` opcional -- `None` (default) preserva o
+      comportamento de sempre byte-a-byte, provado pelo golden capturado
+      ANTES da edição (`tests/golden/test_validation_cpcv_pooling_non_
+      regression.py`, F0, commit `7b86a16`). Nova `compute_pooled_edges_
+      ms(t0_ms_by_symbol, n_groups)` calcula as fronteiras sobre a UNIÃO
+      de `t0` de vários símbolos, exatamente a correção recomendada.
+      Verificado: 72/72 em `test_validation_cpcv.py` (9 testes novos,
+      incluindo a prova de bit-exatidão para o símbolo de maior extensão
+      do pool), 15/15 no golden de não-regressão contra os 15 artefatos
+      reais símbolo×resolução do `evidence_ledger`, 2709/2710 na suíte
+      unit completa (1 falha pré-existente sem dependência de
+      `cpcv`/`validation`).
+    status: >
+      RESOLVIDO 2026-08-31 (commit `cc83208`) -- primitiva pronta e
+      testada, P1 do Gate E0 fechado (`docs/meta_model_design_doc_2026-
+      08-22.md` §15.2). Escopo deliberadamente contido à primitiva: a
+      ORQUESTRAÇÃO de carregamento pooled multi-símbolo (chamar
+      `compute_pooled_edges_ms` sobre vários `load_labels_v1` e então
+      `generate_splits(..., edges_ms=...)` por símbolo) ainda NÃO existe
+      -- não é escopo de P1, é o próprio F1 de pooling cross-símbolo do
+      Meta-model, que segue rodando símbolo-a-símbolo em produção hoje
+      (consequência original do gap não muda até esse pooling ser
+      exercitado de verdade). Custo em amostra sob calendário
+      compartilhado (grupos iniciais vazios para símbolos de histórico
+      curto) continua `TBD -- medir quando pooling for exercitado`, não
+      escondido.
 
   - id: AG-152
     date: "2026-08-22"

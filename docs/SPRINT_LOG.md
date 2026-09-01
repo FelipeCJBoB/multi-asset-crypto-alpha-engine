@@ -6207,3 +6207,37 @@ correção. Item 2 (denominadores) resolvido por decisão, not-a-bug.
 Item 3 (piso de 10) medido — <!-- check-sprint-log: skip --> |Sharpe| máximo cai monotonicamente com
 `n` (10-14: 23,0 → 50+: 5,5), sem blow-up em bucket ≥10 — piso <!-- check-sprint-log: skip -->
 validado. Item 4 (`Metric`) adiado deliberadamente, backlog.
+
+## 2026-08-31 (continuação) — Meta P1/AG-151: purge cross-símbolo, edges_ms sobre união temporal (D-16) <!-- check-sprint-log: skip -->
+
+Ver `PLANO_MESTRE_PRINCE2.md` §15.34 para o detalhe completo. Resumo:
+
+Enquanto a trilha ADR-007/ADR-008 (seções acima) media o edge real do
+Alpha (achado: 0/20, `AG-393`), retomei o Meta-model
+(`docs/meta_model_design_doc_2026-08-22.md` §15.2) onde a sessão
+anterior parou — F6 segue bloqueado por P0 (nulo do Gate E0) e P1
+(`AG-151`, purge cross-símbolo). P1 é código puro, ortogonal ao edge do
+Alpha, então segue sem depender do resultado da outra trilha.
+
+`src/validation/cpcv.py` (commit `cc83208`): `assign_time_groups`/
+`generate_splits` ganham `edges_ms` opcional — `None` (default)
+preserva o comportamento de sempre byte-a-byte, provado pelo golden
+capturado no F0 (commit `7b86a16`) ANTES desta edição. Nova
+`compute_pooled_edges_ms(t0_ms_by_symbol, n_groups)` calcula as
+fronteiras sobre a UNIÃO de `t0` de vários símbolos — bit-exata para o
+símbolo de maior extensão do pool (BTCUSDT), não invalida nenhuma
+medição single-symbol já feita. 9 testes novos em
+`test_validation_cpcv.py` (72/72 no arquivo), golden de não-regressão
+15/15 nos combos símbolo×resolução reais, suíte unit completa
+2709/2710 (a 1 falha é pré-existente, sem dependência de
+`cpcv`/`validation` — dado de `experiments/` em fluxo pela sessão
+paralela do ADR-008).
+
+`AG-151` fechado (`resolved_by_commit: cc83208`). Escopo deliberadamente <!-- check-sprint-log: skip -->
+contido à primitiva — a orquestração de carregamento pooled
+multi-símbolo (F1 de pooling cross-símbolo do Meta) ainda não existe, <!-- check-sprint-log: skip -->
+não era escopo de P1. <!-- check-sprint-log: skip -->
+
+**Próximo passo**: P0 (validação do nulo do Gate E0, circular-shift-by-
+block) — módulo novo `src/analysis/meta_fp_inventory.py`, ainda não
+iniciado, exige rodar contra dado real (execução do Manager).
