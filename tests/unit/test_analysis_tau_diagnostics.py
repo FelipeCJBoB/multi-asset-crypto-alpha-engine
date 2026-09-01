@@ -337,7 +337,20 @@ def _load_real_report_and_constants() -> tuple[dict[str, Any], float, float]:
     return report, target_signal_rate, bars_per_year
 
 
+@pytest.mark.integration
 def test_integracao_real_diagnostico_roda_e_produz_metrics_bem_formados() -> None:
+    """`experiments/alpha_layer1_report.json` é um artefato COMPARTILHADO e
+    volátil (ver docstring de `_load_real_report_and_constants` acima —
+    qualquer agente rodando o pipeline pode regerá-lo pra outro combo
+    symbol/resolution a qualquer momento) -- não há garantia de que o
+    combo presente no disco AGORA tenha 0 caminhos degenerados. Achado
+    real (2026-09-01): o arquivo já apareceu com um caminho 100%
+    degenerado (`n_filled_trades=0`) real, não um bug -- `tau_
+    diagnostics.py:231-233` trata isso deliberadamente como
+    `NOT_COMPUTABLE` em vez de dividir por zero (mesmo contrato já
+    coberto pelos testes sintéticos do bloco 2 acima). Este teste
+    verifica a FORMA bem-formada do resultado sobre QUALQUER combo real
+    presente, não assume ausência de degeneração."""
     report, target_signal_rate, bars_per_year = _load_real_report_and_constants()
     result = tau.tau_realization_diagnostic(
         report, target_signal_rate=target_signal_rate, bars_per_year=bars_per_year
@@ -348,18 +361,34 @@ def test_integracao_real_diagnostico_roda_e_produz_metrics_bem_formados() -> Non
     assert len(result.paths) == report["n_backtest_paths"]
 
     for p in result.paths:
-        # dado real de hoje não tem caminho degenerado
-        assert p.n_signals_per_year.valid is True
-        assert p.n_filled_per_year.valid is True
-        # pre-fill >= post-fill sempre (fill é subconjunto dos sinais)
-        assert p.n_signals_per_year.value >= p.n_filled_per_year.value
+        # caminho degenerado (n_filled_trades==0) é NOT_COMPUTABLE por
+        # desenho (tau_diagnostics.py:231-233), não uma falha de forma --
+        # os 2 campos concordam em validade (ambos derivam do mesmo
+        # período implícito back-derivado) e nunca levantam exceção.
+        assert p.n_signals_per_year.valid == p.n_filled_per_year.valid
+        if p.n_signals_per_year.valid:
+            assert p.n_signals_per_year.value >= 0.0
+            assert p.n_filled_per_year.value >= 0.0
+            # pre-fill >= post-fill sempre (fill é subconjunto dos sinais)
+            assert p.n_signals_per_year.value >= p.n_filled_per_year.value
+        else:
+            assert p.n_signals_per_year.invalid_reason
+            assert p.n_filled_per_year.invalid_reason
+
+    n_paths_validos = sum(1 for p in result.paths if p.n_signals_per_year.valid)
+    if n_paths_validos == 0:
+        pytest.skip(
+            "todos os caminhos do combo presente em alpha_layer1_report.json estao "
+            "degenerados agora -- nada a verificar sobre mean/dispersao neste run"
+        )
 
     assert result.mean_n_signals_per_year.valid is True
     assert result.mean_n_filled_per_year.valid is True
-    assert result.dispersion_pre_fill.valid is True
-    assert result.dispersion_post_fill.valid is True
-    assert result.dispersion_pre_fill.value >= 1.0  # max/min de valores positivos nunca é < 1
-    assert result.dispersion_post_fill.value >= 1.0
+    if n_paths_validos >= 2:  # noqa: magic-number -- piso de graus de liberdade pra dispersao (max/min), mesmo do modulo sob teste
+        assert result.dispersion_pre_fill.valid is True
+        assert result.dispersion_post_fill.valid is True
+        assert result.dispersion_pre_fill.value >= 1.0  # max/min de valores positivos nunca é < 1
+        assert result.dispersion_post_fill.value >= 1.0
 
 
 _RATIO_BAND = (0.8, 1.2)  # invariante proposto pela task: realizado dentro de +/-20% do alvo
@@ -377,6 +406,7 @@ def _invariant_holds(
     )
 
 
+@pytest.mark.integration
 @pytest.mark.parametrize("versao", ["pre_fill", "post_fill"])
 def test_invariante_tau_realizado_perto_do_alvo_e_dispersao_baixa(versao: str) -> None:
     """Invariante NOVO proposto pela task (§ "O que construir") — NÃO é um
