@@ -27504,3 +27504,73 @@ entries:
     resolved_by_commit: null
     resolution: "aplicado -- decisao de negocio do Manager executada. '0/20' reafirmado, nao revertido."
     status: "concluido -- producao promovida, artefatos canonicos regenerados, gates reavaliados. Nenhum dos 5 candidatos passa mesmo apos a correcao do AG-399."
+
+  - id: AG-421
+    date: "2026-09-01"
+    file: "src/features/build.py::T1_FEATURE_IDS; src/features/registry.yaml (6 entradas)"
+    related_file: "scripts/extract_feature_gain_ranking.py (novo); experiments/feature_gain_ranking_5_candidatos_20260901.json; AG-420 (hiperparametro sob o qual o gain foi medido); AG-362/AG-371 (precedente do erro estrutural que o PRINCIPIO DE GATE do registry.yaml foi escrito pra evitar)"
+    numeracao: "AG-421."
+    found_by: >-
+      Claude, respondendo a pedido do Manager de otimizar o vetor de
+      features (top-15/20 por candidato) -- ao extrair `gain_by_side`
+      real dos 5 candidatos pos-AG-420 pra fundamentar a resposta, notei
+      que qualquer corte baseado nessa leitura contraria o cabecalho do
+      proprio `registry.yaml` (linhas 62-89, "PRINCIPIO DE GATE",
+      `AG-372`/ADR-006): item 6 declara gain/SHAP "confirmacao pos-hoc,
+      NUNCA descoberta primaria", com motivo explicito -- calibrar
+      decisao de vetor pela leitura de importancia "e o mesmo erro
+      estrutural que o gate de correlacao marginal cometia" (abolido por
+      `AG-362` exatamente por isso). Reportei a tensao ao Manager antes
+      de executar (AskUserQuestion) em vez de aplicar silenciosamente.
+    gap: >
+      Manager pediu corte de 6 features do T1 (`K03_is_weekend`,
+      `K04_session_asia`, `E12f_price_oi_divergence`,
+      `B15_efficiency_ratio_h3`, `B16_log_range_ratio_1`,
+      `B17_directional_pressure_h3`) com base em `share_mean` baixo de
+      `gain_by_side` (leitura pos-hoc de 1 unico treino, sob o
+      hiperparametro de producao recem-promovido em `AG-420`, ele
+      proprio uma busca de 1 seed/150 trials nunca validada por
+      ablation). Confrontado com a tensao, Manager confirmou override
+      explicito pras 6 (nao so pras 3 com justificativa adicional de
+      construcao) -- decisao de negocio, registrada aqui em vez de
+      silenciosamente reinterpretada ou bloqueada.
+
+      Assimetria real entre as 6, reportada ao Manager antes da decisao:
+      `K03_is_weekend`/`K04_session_asia` (flags binarias 0/1,
+      estruturalmente pobres em informacao de split) e
+      `E12f_price_oi_divergence` (`sign(A04_log_return_12) x
+      sign(Δoi_12)` discretizado em {-1,0,1} -- versao COM PERDA de
+      2 sinais continuos ja no vetor, `A04`/`E10f`) tem justificativa de
+      CONSTRUCAO alem do gain baixo. `B15_efficiency_ratio_h3`/
+      `B16_log_range_ratio_1`/`B17_directional_pressure_h3` (Lote D2,
+      `AG-372`, as features MAIS NOVAS do vetor, cada uma com tese
+      economica propria declarada no registry) NAO tem essa segunda
+      linha de defesa -- corte apoiado SO no gain pos-hoc de 1 run, sem
+      passar pelos passos 1-5 do proprio gate (auditoria algebrica,
+      mecanismo, horizonte, redundancia, valor incremental walk-forward
+      in-fold).
+    severity: "media -- decisao de producao real (T1_FEATURE_IDS 36->30), mas reversivel (features continuam calculadas por compute_t1_features, disponiveis via extra_feature_ids, nao deletadas) e as 5 celulas canonicas ja estao 0/20 antes e depois deste corte -- nao muda o veredito de deploy, so a superficie do vetor pro proximo retreino"
+    layer: "features (registry + T1_FEATURE_IDS) -- primeira reducao do vetor T1 desde a expansao 7->22->36 (AG-362/AG-372)"
+    consequence: >
+      `T1_FEATURE_IDS` cai de 36 para 30 (verificado: `test_registry_
+      cobre_todo_o_vetor_t1` passa, registry T1 == build.py T1, 30==30).
+      `registry.yaml` das 6: `tier: T2`, `layer: [L4]` (mesmo tratamento
+      de retirada sem `defeito_construcao`, precedente
+      `B11_bb_position_20`), nota `[RETIRADA DO T1, AG-421]` documentando
+      o `share_mean` medido e a justificativa (ou ausencia dela alem do
+      gain) por feature. Qualquer retreino dos 5 candidatos a partir de
+      agora usa o vetor de 30 -- proximo ablation real (pendente,
+      "mantem o resto ate o ablation", decisao do Manager) precisa
+      comparar 30 vs. 36 pra medir se o corte custou incremental value
+      real, nao so assumir que gain baixo implica valor incremental
+      zero (a propria premissa que o PRINCIPIO DE GATE contesta).
+      `uv run pytest tests/unit/test_features_build.py tests/unit/
+      test_features_groups.py tests/unit/test_features_support.py
+      tests/unit/test_models_walk_forward_driver.py tests/unit/
+      test_models_alpha.py tests/unit/test_models_pipeline.py tests/
+      unit/test_analysis_attribution.py -m "not slow and not
+      integration"`: 284 passed, 1 skipped (pre-existente, sem relacao),
+      1 deselected -- nenhuma quebra mecanica.
+    resolved_by_commit: null
+    resolution: "aplicado -- override explicito do Manager sobre o PRINCIPIO DE GATE do proprio registry.yaml, documentado nesta entrada e nas notas das 6 features. Nao e uma correcao de bug, e uma decisao de negocio deliberada e informada."
+    status: "concluido -- vetor T1 reduzido a 30, registry/build.py sincronizados, testes mecanicos verdes. Retreino dos 5 candidatos sob o vetor novo E o ablation 30 vs. 36 seguem pendentes -- nao executados nesta entrada."

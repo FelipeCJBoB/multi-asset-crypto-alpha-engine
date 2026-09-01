@@ -58,6 +58,35 @@
 # intervalo de calendário importa mais que a contagem de barras para
 # alguma dessas janelas, a ablação vai mostrar.
 # ============================================================================
+#
+# PRINCÍPIO DE GATE pra feature nova (2026-08-28, `AG-372`/ADR-006,
+# decisão do Manager) — sequência aplicada ANTES de qualquer leitura de
+# feature importance/SHAP, nesta ordem:
+#
+#   1. auditoria algébrica     -- é identidade/combinação linear/transformação
+#      monotônica de algo já no vetor? (ex. A08+|A07|+A09=1, B03=exp(A04)-1)
+#   2. auditoria de mecanismo  -- tem tese econômica declarada, com contraparte
+#      identificável ("quem está do outro lado")? "é indicador clássico" NÃO
+#      é mecanismo (ADR-005 §5.3 item 3).
+#   3. alinhamento de horizonte -- a janela/lag da feature está calibrada
+#      contra o holding period real do motor (H, medido -- não herdada de
+#      indicador de barra de relógio)? Ver `h_sobre_H` em
+#      `audit/feature_thesis/fichas_69_2026-08-25.yaml`.
+#   4. eliminação de redundância -- mede o mesmo conceito que outra feature
+#      já no vetor, só sob janela/parametrização diferente?
+#   5. walk-forward / informação incremental in-fold (CPCV purgado, B06) --
+#      o Alpha de fato ganha algo com ela? PENDENTE de protocolo formal
+#      desde `AG-362` (cai do lado `src/models/`, sessão de ML).
+#   6. LightGBM / SHAP / estabilidade -- confirmação pós-hoc, NUNCA
+#      descoberta primária -- a régua de entrada não é "teve gain/SHAP
+#      alto", é ter sobrevivido aos passos 1-5 primeiro.
+#
+# Motivo: SHAP/gain lido do LightGBM pode estar contaminado por capacidade
+# de árvore/hiperparâmetro desincronizado do vetor ativo (`AG-371`) --
+# calibrar entrada de feature pela leitura de importância é o mesmo erro
+# estrutural que o gate de correlação marginal cometia (`AG-362`), só
+# trocando qual instrumento mais fraco decide por antecipação.
+# ============================================================================
 
 - id: A05_ret_vol_norm_4
   tier: T1
@@ -558,12 +587,15 @@
   parity_tested: true
   version: v1
   added: 2026-08-24
-  nota: "ver nota de A08 sobre a convenção H=L."
+  nota: >-
+    ver nota de A08 sobre a convenção H=L. **[SUPERSEDIDA 2026-08-28,
+    `AG-372`/ADR-006]** consolidada em `B12_close_location_h3` junto com
+    B09/B10/B11 — permanece `layer: L4`, não reativada.
 
 - id: A11_true_range_pct
-  tier: T2
+  tier: T1
   group: A
-  layer: [L4]
+  layer: [L2]
   quarentena: false
   defeito_construcao: false
   formula: "TR_t / C_{t-1}, TR_t = max(H-L, |H-C_{t-1}|, |L-C_{t-1}|)"
@@ -578,7 +610,197 @@
   parity_tested: true
   version: v1
   added: 2026-08-24
-  nota: "insumo direto de C09_range_pctile_expanding (reaproveitado, não recomputado — ver build.py::compute_t1_features)."
+  nota: >-
+    insumo direto de C09_range_pctile_expanding (reaproveitado, não
+    recomputado — ver build.py::compute_t1_features). **[REATIVADA
+    2026-08-28, `AG-372`/ADR-006, override deliberado do Manager — NÃO é
+    a anistia de `AG-362`, que cobre só `layer: L3`]** estava `layer: L4`
+    ("aposentada"), já testada e REPROVADA sob o gate de correlação
+    marginal (ADR-005 §1.3, 5/15 células) antes desse gate ser abolido.
+    Tese NOVA, declarada aqui, substitui a leitura antiga genérica de
+    "true range percentual": sob dollar bar, o volume em dólar por barra
+    é quase constante (`quote_volume ≈ threshold_quote`, `AG-321`) — TR/
+    close mede deslocamento de preço por atividade monetária
+    aproximadamente constante, ou seja, uma leitura de impacto de preço
+    NORMALIZADA POR PREÇO (evita o confundidor de nível de preço entre
+    símbolos que `A17_log_tr_per_overshoot_ratio` — a variante em
+    atividade monetária — não evita sozinha, embora a redação 2026-08-28
+    de A17, AG-373, também tenha corrigido a normalização interna dela).
+    `quem_esta_do_outro_lado`: quem consome
+    liquidez rápido (ordem que atravessa o book) paga o impacto que TR/
+    close mede; quem fornece liquidez (maker) captura o spread do lado
+    oposto. Testar A11 e A17 lado a lado é intencional — ver ADR-006.
+
+- id: A16_return_3
+  tier: T1
+  group: A
+  layer: [L2]
+  quarentena: false
+  defeito_construcao: false
+  formula: "ln(C_t / C_{t-3})"
+  sources: [D03]
+  lookback_bars: 3
+  min_warmup_bars: 200
+  tf: 15m
+  dtype: float64
+  range: [-.inf, .inf]
+  nan_policy: "NaN até lookback_bars=3; null antes de min_warmup_bars"
+  causal_proof: "usa só close[t-3..t] (janela rolante <= t, sem lookahead) — testado em tests/unit/test_features_groups.py::test_a16_causalidade"
+  parity_tested: true
+  version: v1
+  added: 2026-08-28
+  nota: >-
+    **[NOVO, `AG-372`/ADR-006]** Preenche o gap entre A02 (lag 2) e A03
+    (lag 4) na escala medida do holding period real do motor (`n_bars_
+    held` mediana=1, p75=3, `feature_a16_return_lag_bars`) — insumo
+    direto de B13/B14.
+
+- id: A17_log_tr_per_overshoot_ratio
+  tier: T1
+  group: A
+  layer: [L2]
+  quarentena: false
+  defeito_construcao: false
+  formula: "ln1p( (TR_t/C_{t-1}) / (overshoot_t/threshold_quote_t) ), overshoot_t = quote_volume_t - threshold_quote_t"
+  sources: [D03, dollar_bar_quote_volume, dollar_bar_threshold_quote]
+  lookback_bars: 2
+  min_warmup_bars: 200
+  tf: 15m
+  dtype: float64
+  range: [0.0, .inf]
+  nan_policy: >-
+    NaN quando overshoot_t<=0 ou threshold_quote_t<=0 (guardas
+    explícitas — overshoot_t<=0 acontece de fato 1x por
+    símbolo×resolução, última barra de cada stream, subdimensionada por
+    construção, ver AG-373); NaN na primeira barra (sem C_{t-1}); NaN
+    inteiro sob bar_source=time_15m (sem quote_volume/threshold_quote
+    nesse grid); null antes de min_warmup_bars
+  causal_proof: "TR via support.true_range (primitiva causal), C_{t-1} é close[t-1]; overshoot/threshold_quote são do próprio bar t (sem lookahead) — testado em tests/unit/test_features_groups.py::test_a17_causalidade"
+  parity_tested: true
+  version: v2
+  added: 2026-08-28
+  nota: >-
+    **[NOVO, `AG-372`/ADR-006; REDESENHADA no mesmo dia, `AG-373`]**
+    v1 (`TR_t/overshoot_t` cru) tinha defeito dimensional real —
+    `TR_t` em unidade de preço (`$/coin`), `overshoot_t` em notional
+    ($) — razão residual `1/coin`, risco de deriva com o nível de preço
+    do próprio ativo ao longo do histórico de treino (mesma classe de
+    defeito que `group_a.py` cabeçalho já trata como não-negociável pra
+    A05 vs A13). v2 normaliza os dois lados contra sua própria escala de
+    referência antes de dividir (`TR/C_{t-1}` == A11, sobre `overshoot/
+    threshold_quote`, ambos adimensionais) e aplica `ln1p` pra domar a
+    cauda pesada (overshoot pequeno relativo ao threshold é o caso
+    ECONOMICAMENTE esperado — `AG-321`, a barra fecha quase exatamente
+    no threshold — não um evento raro; mesmo tratamento que A18-A21/B16
+    já aplicam, por consistência). Tese econômica preservada:
+    deslocamento de preço por unidade de atividade monetária MARGINAL
+    relativa ao threshold-alvo — overshoot pequeno com TR grande é sinal
+    de iliquidez/impacto alto. Deliberadamente NÃO chamada "Amihud"/
+    "Kyle lambda" — analogia conceitual, não replicação da métrica
+    original. Testar junto de A11 (TR/close) é intencional — as duas
+    capturam o mesmo fenômeno por normalizações diferentes (preço vs.
+    atividade monetária relativa ao threshold), ver ADR-006/AG-373.
+
+- id: A18_body_log
+  tier: T1
+  group: A
+  layer: [L2]
+  quarentena: false
+  defeito_construcao: false
+  formula: "ln(C_t / O_t)"
+  sources: [D03]
+  lookback_bars: 0
+  min_warmup_bars: 200
+  tf: 15m
+  dtype: float64
+  range: [-.inf, .inf]
+  nan_policy: "nunca NaN (O_t>0 sempre); null antes de min_warmup_bars"
+  causal_proof: "só usa O_t/C_t da própria barra, sem lookahead — testado em tests/unit/test_features_groups.py::test_a18_causalidade"
+  parity_tested: true
+  version: v1
+  added: 2026-08-28
+  nota: >-
+    **[NOVO, `AG-372`/ADR-006, validação da especificação de Candle
+    Features do usuário]** deslocamento open→close DENTRO da própria
+    barra, em log — diferente de A01 (close-a-close ENTRE barras).
+    Sobrevivente da poda: `candle_body_pct`/`body_log` da especificação
+    original não tinha análogo no vetor.
+
+- id: A19_log_range
+  tier: T1
+  group: A
+  layer: [L2]
+  quarentena: false
+  defeito_construcao: false
+  formula: "ln(H_t / L_t)"
+  sources: [D03]
+  lookback_bars: 0
+  min_warmup_bars: 200
+  tf: 15m
+  dtype: float64
+  range: [0.0, .inf]
+  nan_policy: "nunca NaN (H_t=L_t dá ln(1)=0, sem divisão); null antes de min_warmup_bars"
+  causal_proof: "só usa H_t/L_t da própria barra, sem lookahead — testado em tests/unit/test_features_groups.py::test_a19_causalidade_e_flat_da_zero"
+  parity_tested: true
+  version: v1
+  added: 2026-08-28
+  nota: >-
+    **[NOVO, `AG-372`/ADR-006]** range cru de 1 barra, não suavizado —
+    diferente de `C02_atr_20_pct` (média de Wilder, 20 barras).
+    Deliberadamente só a forma log (não também `RangePct=(H-L)/C` linear
+    — as duas são quase-monotônicas entre si pra range pequeno, LightGBM
+    não ganha nada com as duas; especificação original propunha ambas).
+
+- id: A20_log_duration
+  tier: T1
+  group: A
+  layer: [L2]
+  quarentena: false
+  defeito_construcao: false
+  formula: "ln(1 + (close_time_ms - open_time_ms)/1000)"
+  sources: [D03]
+  lookback_bars: 0
+  min_warmup_bars: 200
+  tf: 15m
+  dtype: float64
+  range: [0.0, .inf]
+  nan_policy: "nunca NaN (close_time_ms >= open_time_ms sempre; log1p seguro em duração=0); null antes de min_warmup_bars"
+  causal_proof: "só usa open_time_ms/close_time_ms da própria barra, sem lookahead — testado em tests/unit/test_features_groups.py::test_a20_causalidade_e_log1p_de_zero"
+  parity_tested: true
+  version: v1
+  added: 2026-08-28
+  nota: >-
+    **[NOVO, `AG-372`/ADR-006]** exclusivo de dollar bar — quanto tempo
+    o mercado precisou pra negociar aquele quantum de valor. Continua
+    computável sob `time_15m` (não é NaN, diferente de A17/A21) mas
+    degenera pra quase-constante (~15min sempre) nesse grid — baixa
+    informação, não um erro.
+
+- id: A21_log_dollar_velocity
+  tier: T1
+  group: A
+  layer: [L2]
+  quarentena: false
+  defeito_construcao: false
+  formula: "ln(1 + quote_volume_t / duracao_s_t)"
+  sources: [D03, dollar_bar_quote_volume]
+  lookback_bars: 0
+  min_warmup_bars: 200
+  tf: 15m
+  dtype: float64
+  range: [0.0, .inf]
+  nan_policy: >-
+    NaN quando duracao_s<=0 (barra de 1 trade instantâneo, guarda
+    explícita); NaN inteiro sob bar_source=time_15m (sem quote_volume
+    nesse grid, mesma limitação de A17); null antes de min_warmup_bars
+  causal_proof: "quote_volume_t e duração usam só dado da própria barra, sem lookahead — testado em tests/unit/test_features_groups.py::test_a21_causalidade_e_guarda_duracao_zero"
+  parity_tested: true
+  version: v1
+  added: 2026-08-28
+  nota: >-
+    **[NOVO, `AG-372`/ADR-006]** intensidade de atividade monetária por
+    segundo — eixo ORTOGONAL a A17 (A17 mede impacto de preço por
+    overshoot; isto mede velocidade de atividade sem olhar pro preço).
 
 # A12_gap_pct REMOVIDA 2026-08-27 (AG-316): media "(O_t - C_{t-1}) / C_{t-1}",
 # "gap de sessão" -- mecanismo que não existe em mercado 24/7 contíguo (não
@@ -759,7 +981,9 @@
     holding H=5). Classificada no grupo "Momentum e reversão" mas sem
     papel alternativo declarado em código, sem mecanismo econômico
     declarado (SEM_MECANISMO na ficha de tese). Correção proposta, não
-    implementada: declarar papel de regime explícito.
+    implementada: declarar papel de regime explícito. **[SUPERSEDIDA
+    2026-08-28, `AG-372`/ADR-006]** consolidada em `B12_close_location_h3`
+    junto com A10/B10/B11 — permanece `layer: L4`, não reativada.
 
 - id: B11_bb_position_20
   tier: T2
@@ -779,7 +1003,223 @@
   parity_tested: true
   version: v1
   added: 2026-08-24
-  nota: "std_multiplier=2.0 é a convenção padrão de Bollinger Bands (John Bollinger), validada via pesquisa web nesta sessão — feature_b11_bb_std_multiplier em constants.yaml, provenance LITERATURE."
+  nota: >-
+    std_multiplier=2.0 é a convenção padrão de Bollinger Bands (John
+    Bollinger), validada via pesquisa web nesta sessão —
+    feature_b11_bb_std_multiplier em constants.yaml, provenance
+    LITERATURE. **[SUPERSEDIDA 2026-08-28, `AG-372`/ADR-006]** consolidada
+    em `B12_close_location_h3` junto com A10/B09/B10 (4 features do
+    mesmo conceito, vereditos em `audit/feature_thesis/
+    fichas_69_2026-08-25.yaml`) — permanece `layer: L4`, não reativada.
+
+- id: B12_close_location_h3
+  tier: T1
+  group: B
+  layer: [L2]
+  quarentena: false
+  defeito_construcao: false
+  formula: "((C - min(L)_window) / (max(H)_window - min(L)_window)) * 2 - 1, window=3"
+  sources: [D03]
+  lookback_bars: 3
+  min_warmup_bars: 200
+  tf: 15m
+  dtype: float64
+  range: [-1.0, 1.0]
+  nan_policy: "0.0 (ponto médio) se range_=0 na janela inteira (preço flat); null antes de min_warmup_bars"
+  causal_proof: "min/max rolantes fixos [t-2,t] via polars.rolling_min/max (min_samples=window) — testado em tests/unit/test_features_groups.py::test_b12_causalidade"
+  parity_tested: true
+  version: v1
+  added: 2026-08-28
+  nota: >-
+    **[NOVO, `AG-372`/ADR-006]** Consolida A10_close_location/
+    B09_zscore_close_48/B10_stoch_k_14/B11_bb_position_20 — as 4
+    julgadas o MESMO conceito ("posição do close na distribuição
+    recente") sob janelas (1/48/14/20) nunca calibradas contra o holding
+    period real, veredito `SEM_MECANISMO`/`INCOERENTE_DIMENSIONAL` em
+    `audit/feature_thesis/fichas_69_2026-08-25.yaml`. Janela = 3 (`n_bars_
+    held` p75, medido 2026-08-28). Reescalada pra `[-1,1]` (convenção de
+    B01), não `[0,100]` de B10 nem `[-1,1]` sem múltiplo de B09/B11 — uma
+    escala só pra toda a família consolidada.
+
+- id: B13_extension_h3
+  tier: T1
+  group: B
+  layer: [L2]
+  quarentena: false
+  defeito_construcao: false
+  formula: "|ret_3| / realized_vol_3"
+  sources: [D03]
+  lookback_bars: 3
+  min_warmup_bars: 200
+  tf: 15m
+  dtype: float64
+  range: [0.0, .inf]
+  nan_policy: >-
+    NaN até warmup de ret_3/realized_vol_3 (3 barras); NaN quando
+    realized_vol_3<=0 (3 barras de retorno idêntico -- achado de
+    /audit_engineering 2026-08-28, check_unguarded_ratios.py, corrigido
+    antes de virar inf silencioso); null antes de min_warmup_bars
+  causal_proof: "ret_3 (A16) e realized_vol_3 (support.realized_vol) são ambos janela <= t — testado em tests/unit/test_features_groups.py::test_b13_causalidade/test_b13_guarda_realized_vol_zero"
+  parity_tested: true
+  version: v1
+  added: 2026-08-28
+  nota: >-
+    **[NOVO, `AG-372`/ADR-006]** Magnitude do movimento de 3 barras
+    relativo à volatilidade realizada típica na mesma janela — "quão
+    extremo é o movimento recente". Condição de entrada da tese de
+    reversão (extensão grande é candidato a exaustão, não confirmação
+    por si só — ver B14, que testa se a extensão de fato falhou em
+    continuar).
+
+- id: B14_rejection_after_extension
+  tier: T1
+  group: B
+  layer: [L2]
+  quarentena: false
+  defeito_construcao: false
+  formula: "-sign(ret_3_{t-1}) * ret_1_t / atr_20_pct_t"
+  sources: [D03]
+  lookback_bars: 4
+  min_warmup_bars: 200
+  tf: 15m
+  dtype: float64
+  range: [-.inf, .inf]
+  nan_policy: "NaN até warmup de ret_3 deslocado (4 barras); null antes de min_warmup_bars"
+  causal_proof: "ret_3_{t-1} usa só close[t-4..t-1] (deslocado 1 barra antes de entrar na fórmula, build.py::compute_t1_features); ret_1_t/atr_20_pct_t usam só dado até t — testado em tests/unit/test_features_groups.py::test_b14_causalidade"
+  parity_tested: true
+  version: v1
+  added: 2026-08-28
+  nota: >-
+    **[NOVO, `AG-372`/ADR-006]** A feature de "exaustão"/falha de
+    continuação — combina uma extensão de 3 barras JÁ ENCERRADA em `t-1`
+    (não inclui a barra atual) com o retorno da barra atual: extensão de
+    alta seguida de reversão na barra `t` produz sinal positivo
+    (rejeição); extensão confirmada produz sinal negativo (continuação).
+    `quem_esta_do_outro_lado`: quem entrou tarde na extensão original e
+    fica preso quando o movimento falha em continuar.
+
+- id: B15_efficiency_ratio_h3
+  tier: T2
+  group: B
+  layer: [L4]
+  quarentena: false
+  defeito_construcao: false
+  formula: "|C_t - C_{t-3}| / Σ_{i=t-2}^{t} |C_i - C_{i-1}|"
+  sources: [D03]
+  lookback_bars: 3
+  min_warmup_bars: 200
+  tf: 15m
+  dtype: float64
+  range: [0.0, 1.0]
+  nan_policy: "NaN até warmup (3 barras); null antes de min_warmup_bars"
+  causal_proof: "mesmo núcleo causal de B07/B08 (support.efficiency_ratio, janela rolante <= t) — testado em tests/unit/test_features_groups.py::test_b15_causalidade"
+  parity_tested: true
+  version: v1
+  added: 2026-08-28
+  nota: >-
+    **[NOVO, `AG-372`/ADR-006]** Kaufman's Efficiency Ratio (mesmo núcleo
+    de B07=48/B08=16) na escala do holding period real (3) — consistência
+    direcional do movimento que o trade de fato captura (reto/tendência
+    vs. ruidoso/zigue-zague), não um regime mais lento.
+    **[RETIRADA DO T1, `AG-421`, 2026-09-01, override explícito do
+    Manager]** `share_mean` médio de `gain_by_side` = 0,0079 (penúltima
+    do vetor de 36, 5/5 candidatos consistente) sob o hiperparâmetro de
+    produção recém-promovido (`AG-420`). Decisão de negócio, não critério
+    de engenharia -- nunca passou pelos passos 1-5 do PRINCÍPIO DE GATE
+    acima além da entrada; corte apoiado só em gain pós-hoc de 1 run é
+    exatamente o que o item 6 desse princípio adverte contra. Continua
+    calculada por `compute_t1_features`, disponível via
+    `extra_feature_ids` -- não deletada, reversível pelo ablation
+    pendente (`mantém o resto até o ablation`, decisão do Manager).
+
+- id: B16_log_range_ratio_1
+  tier: T2
+  group: B
+  layer: [L4]
+  quarentena: false
+  defeito_construcao: false
+  formula: "ln(Range_t / Range_{t-1}), Range_t = H_t - L_t"
+  sources: [D03]
+  lookback_bars: 1
+  min_warmup_bars: 200
+  tf: 15m
+  dtype: float64
+  range: [-.inf, .inf]
+  nan_policy: "NaN quando Range_t<=0 ou Range_{t-1}<=0 (barra flat); null antes de min_warmup_bars"
+  causal_proof: "usa só Range[t-1..t] (janela <= t, sem lookahead) — testado em tests/unit/test_features_groups.py::test_b16_causalidade_e_guarda_range_zero"
+  parity_tested: true
+  version: v1
+  added: 2026-08-28
+  nota: >-
+    **[NOVO, `AG-372`/ADR-006, validação da especificação de Candle
+    Features do usuário]** expansão/compressão de range em 1 barra
+    (lag=1, a mediana exata de `H`) — diferente de C06/C10/C11
+    (suavizados 12/96 barras).
+    **[RETIRADA DO T1, `AG-421`, 2026-09-01, override explícito do
+    Manager]** `share_mean` médio de `gain_by_side` = 0,0142 sob o
+    hiperparâmetro de produção recém-promovido (`AG-420`). Mesmo
+    fundamento/ressalva de `B15_efficiency_ratio_h3` acima -- decisão de
+    negócio, corte apoiado só em gain pós-hoc de 1 run, reversível pelo
+    ablation pendente.
+
+- id: B17_directional_pressure_h3
+  tier: T2
+  group: B
+  layer: [L4]
+  quarentena: false
+  defeito_construcao: false
+  formula: "Σbody_i / Σ|body_i|, body_i = C_i - O_i, janela=3"
+  sources: [D03]
+  lookback_bars: 3
+  min_warmup_bars: 200
+  tf: 15m
+  dtype: float64
+  range: [-1.0, 1.0]
+  nan_policy: "NaN quando Σ|body_i|=0 (3 barras de corpo exatamente zero); null antes de min_warmup_bars"
+  causal_proof: "janela rolante fixa [t-2,t] (polars.rolling_sum) — testado em tests/unit/test_features_groups.py::test_b17_causalidade_e_guarda_soma_body_zero"
+  parity_tested: true
+  version: v1
+  added: 2026-08-28
+  nota: >-
+    **[NOVO, `AG-372`/ADR-006]** pressão direcional via CORPO
+    (open→close intra-barra), diferente de B15 (via close-a-close entre
+    barras) — mesma janela=3, ângulo de medição genuinamente distinto.
+    Sobrevivente da poda: `up_body_fraction`/`direction_streak` da
+    especificação original ficam de fora por informação mais pobre que
+    esta, uma vez que ela exista.
+    **[RETIRADA DO T1, `AG-421`, 2026-09-01, override explícito do
+    Manager]** `share_mean` médio de `gain_by_side` = 0,0070 (última do
+    vetor de 36) sob o hiperparâmetro de produção recém-promovido
+    (`AG-420`). Mesmo fundamento/ressalva de `B15_efficiency_ratio_h3`
+    acima -- decisão de negócio, corte apoiado só em gain pós-hoc de 1
+    run, reversível pelo ablation pendente.
+
+- id: B18_engulfing_atr
+  tier: T1
+  group: B
+  layer: [L2]
+  quarentena: false
+  defeito_construcao: false
+  formula: "-sign(body_atr_{t-1}) * body_atr_t, body_atr = (C-O)/ATR_20"
+  sources: [D03]
+  lookback_bars: 1
+  min_warmup_bars: 200
+  tf: 15m
+  dtype: float64
+  range: [-.inf, .inf]
+  nan_policy: "NaN até warmup de ATR_20 (20 barras); null antes de min_warmup_bars"
+  causal_proof: "body_atr_{t-1} usa só dado até t-1; body_atr_t usa só dado até t — testado em tests/unit/test_features_groups.py::test_b18_causalidade"
+  parity_tested: true
+  version: v1
+  added: 2026-08-28
+  nota: >-
+    **[NOVO, `AG-372`/ADR-006]** "engolfo" contínuo normalizado por
+    ATR (comparável ENTRE barras, diferente de A07 que é intra-barra).
+    Sob dollar bar, comparar corpo entre barras consecutivas compara
+    "agressão por unidade de turnover" sem confundidor de volume
+    desigual (as duas barras têm ~o mesmo quantum de dólar negociado,
+    `AG-321`) — vantagem estrutural que não existiria sob barra de
+    relógio. Conceito genuinamente novo, sem análogo no vetor anterior.
 
 - id: C03_realized_vol_48
   tier: T2
@@ -1145,9 +1585,9 @@
   nota: "CORRIGIDO 2026-08-27 (AG-320), tratamento parcial -- normalizado como E10f (support.rolling_zscore, window=feature_e11f_oi_change_zscore_window=48), mesmo padrão de AG-295. `defeito_construcao` PERMANECE true e `layer` PERMANECE [L4] -- a normalização resolve a inconsistência de ESCALA do delta entre grades (o que o próprio achado tratava como 'a causa'), mas NÃO resolve o defeito CATEGÓRICO original (nome '1d' herdado do PRD a 30m; mantido em CONTAGEM DE BARRAS sob 15m -- não recalibrado pra 96, mesma convenção da NOTA DE TF no topo deste arquivo). lag_bars=48 continua cobrindo 7,54h em R1 / 15,78h em R2 / 32,93h em R3 -- nenhuma das três é '1 dia'. Ficha NÃO regenerada pra TESE_OK/SEM_MECANISMO -- seria overclaim (veredito ERRO_CATEGORICO permanece correto sobre o código de hoje, ver fichas_69_2026-08-25.yaml)."
 
 - id: E12f_price_oi_divergence
-  tier: T1
+  tier: T2
   group: E
-  layer: [L2]
+  layer: [L4]
   quarentena: false
   defeito_construcao: false
   formula: "sign(ret_12) * sign(Δln(oi_contracts) sobre 12 barras), ∈ {-1,0,1}"
@@ -1162,6 +1602,17 @@
   parity_tested: true
   version: v1
   added: 2026-08-24
+  nota: >-
+    **[RETIRADA DO T1, `AG-421`, 2026-09-01, override explícito do
+    Manager]** `share_mean` médio de `gain_by_side` = 0,0015 sob o
+    hiperparâmetro de produção recém-promovido (`AG-420`) -- quase morta
+    nos 5 candidatos. Diferente de B15/B16/B17 (ver notas lá), esta tem
+    justificativa ALÉM do gain: é `sign(A04_log_return_12) ×
+    sign(Δoi_12)` discretizado em {-1,0,1} -- versão COM PERDA de
+    informação já presente em `A04_log_return_12` (#1 do ranking global)
+    e `E10f_oi_change_z_48`, ambos contínuos e já no vetor. Continua
+    calculada por `compute_t1_features`, disponível via
+    `extra_feature_ids`.
 
 - id: K01_hour_sin
   tier: T2
@@ -1240,9 +1691,9 @@
   added: 2026-08-24
 
 - id: K03_is_weekend
-  tier: T1
+  tier: T2
   group: K
-  layer: [L2]
+  layer: [L4]
   quarentena: false
   defeito_construcao: false
   formula: "1.0 se sábado ou domingo UTC, senão 0.0"
@@ -1257,11 +1708,20 @@
   parity_tested: true
   version: v1
   added: 2026-08-24
+  nota: >-
+    **[RETIRADA DO T1, `AG-421`, 2026-09-01, override explícito do
+    Manager]** `share_mean` médio de `gain_by_side` = 0,0002 sob o
+    hiperparâmetro de produção recém-promovido (`AG-420`) -- a mais baixa
+    do vetor de 36, 5/5 candidatos. Justificativa além do gain: flag
+    binária 0/1, estruturalmente pobre em informação de split pra um
+    modelo de árvore vs. as contínuas que dominam o topo do ranking.
+    Continua calculada por `compute_t1_features`, disponível via
+    `extra_feature_ids`.
 
 - id: K04_session_asia
-  tier: T1
+  tier: T2
   group: K
-  layer: [L2]
+  layer: [L4]
   quarentena: false
   defeito_construcao: false
   formula: "1.0 se hora UTC em [0,8), senão 0.0"
@@ -1276,7 +1736,18 @@
   parity_tested: true
   version: v1
   added: 2026-08-24
-  nota: "Partição fixa 00-08/08-16/16-24 UTC é simplificação DELIBERADA da convenção real de mercado (sessões sobrepostas, deslocadas por horário de verão) — ver group_k.py::k04_session_asia e feature_k04_asia_start_hour em constants.yaml (provenance LITERATURE com ressalva)."
+  nota: >-
+    Partição fixa 00-08/08-16/16-24 UTC é simplificação DELIBERADA da
+    convenção real de mercado (sessões sobrepostas, deslocadas por
+    horário de verão) — ver group_k.py::k04_session_asia e
+    feature_k04_asia_start_hour em constants.yaml (provenance LITERATURE
+    com ressalva).
+    **[RETIRADA DO T1, `AG-421`, 2026-09-01, override explícito do
+    Manager]** `share_mean` médio de `gain_by_side` = 0,0013 sob o
+    hiperparâmetro de produção recém-promovido (`AG-420`). Mesmo
+    fundamento de `K03_is_weekend` acima (flag binária, pobre em
+    informação de split). Continua calculada por `compute_t1_features`,
+    disponível via `extra_feature_ids`.
 
 - id: K04_session_europe
   tier: T2
@@ -1372,7 +1843,11 @@
   parity_tested: true
   version: v1
   added: 2026-08-24
-  nota: "Stochastic %K padrao (George Lane), validado via pesquisa web nesta sessao."
+  nota: >-
+    Stochastic %K padrao (George Lane), validado via pesquisa web nesta
+    sessao. **[SUPERSEDIDA 2026-08-28, `AG-372`/ADR-006]** consolidada em
+    `B12_close_location_h3` junto com A10/B09/B11 — permanece `layer:
+    L4`, não reativada.
 
 - id: C08_vol_pctile_rolling_1y
   tier: T2

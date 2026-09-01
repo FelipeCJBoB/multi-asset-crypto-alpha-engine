@@ -104,9 +104,10 @@ def _synthetic_mf_data(n_days: int = 1095, seed: int = 0) -> pl.DataFrame:  # no
             "funding_bps": zeros,
         }
         # `alpha.unique_test_bars` (precheck do driver ANTES de chamar
-        # `alpha.run_fold`) exige as 36 colunas de T1_FEATURE_IDS
-        # presentes e não-nulas -- sem isso todo fold seria descartado
-        # como "0 barras de teste válidas", mascarando o resto do teste.
+        # `alpha.run_fold`) exige TODAS as colunas de T1_FEATURE_IDS
+        # (30 desde `AG-421`, 2026-09-01) presentes e não-nulas -- sem
+        # isso todo fold seria descartado como "0 barras de teste
+        # válidas", mascarando o resto do teste.
         for fid in T1_FEATURE_IDS:
             cols[fid] = pl.Series(rng.normal(size=n_days), dtype=pl.Float64)
         blocks.append(pl.DataFrame(cols))

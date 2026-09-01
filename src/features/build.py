@@ -130,9 +130,6 @@ T1_FEATURE_IDS: tuple[str, ...] = (
     "D08f_trade_count_z_48",
     "E01f_funding_last",
     "E05f_time_to_funding_h",
-    "E12f_price_oi_divergence",
-    "K03_is_weekend",
-    "K04_session_asia",
     "E14f_toptrader_ls_ratio",
     "E16f_global_ls_ratio",
     # Lote D (2026-08-28, `AG-372`, ADR-006) -- família momentum/reversão/
@@ -152,7 +149,6 @@ T1_FEATURE_IDS: tuple[str, ...] = (
     "B12_close_location_h3",
     "B13_extension_h3",
     "B14_rejection_after_extension",
-    "B15_efficiency_ratio_h3",
     # Lote D2 (2026-08-28, `AG-372`) -- validação da especificação de
     # Candle Features proposta pelo usuário; 7 sobreviventes depois da
     # auditoria algébrica (a maioria da especificação original reinventa
@@ -161,9 +157,25 @@ T1_FEATURE_IDS: tuple[str, ...] = (
     "A19_log_range",
     "A20_log_duration",
     "A21_log_dollar_velocity",
-    "B16_log_range_ratio_1",
-    "B17_directional_pressure_h3",
     "B18_engulfing_atr",
+    # AG-421 (2026-09-01, override explícito do Manager sobre o PRINCÍPIO
+    # DE GATE do próprio registry.yaml -- item 6, "gain/SHAP é confirmação
+    # pós-hoc, nunca descoberta primária"): 6 saem do T1 com base em
+    # `gain_by_side` medido nesta sessão sob o hiperparâmetro de produção
+    # recém-promovido (AG-420), sem passar pelos passos 1-5 do gate.
+    # `E12f_price_oi_divergence` (discretização com perda de
+    # sign(A04_log_return_12) x sign(Δoi) -- os 2 componentes contínuos já
+    # estão no vetor), `K03_is_weekend`/`K04_session_asia` (flags binárias
+    # 0/1, pobres em informação de split vs. as contínuas que dominam o
+    # topo do ranking) têm justificativa de construção além do gain baixo.
+    # `B15_efficiency_ratio_h3`/`B16_log_range_ratio_1`/
+    # `B17_directional_pressure_h3` (Lote D2 acima, teses próprias
+    # declaradas, nunca vetadas além da entrada) NÃO têm essa segunda
+    # linha de defesa -- corte apoiado só na leitura de gain de 1 run,
+    # decisão de negócio explícita, não critério de engenharia. Ficam
+    # `layer: L4`/`tier: T2` no registry (mesmo tratamento de retirada sem
+    # `defeito_construcao`, precedente `B11_bb_position_20`), disponíveis
+    # via `extra_feature_ids` -- não deletadas, reversível pelo ablation.
 )
 
 # T2 -- insumo de outra camada (Regime Engine, `layer: L1`) ou primitiva de
