@@ -27444,3 +27444,63 @@ entries:
       AG-399) impede atribuir a melhora ao `t0_end` isoladamente sem uma
       campanha de controle adicional. Decisao de promover hiperparametro
       ou rodar o controle fica explicitamente com o Manager.
+
+  - id: AG-420
+    date: "2026-09-01"
+    file: "config/constants.yaml::alpha_production_hyperparam_override; experiments/alpha_walk_forward_{BTCUSDT,SOLUSDT,XRPUSDT}_{R2,R3}.json (5 artefatos canonicos regenerados)"
+    related_file: "AG-399 (bug de seed); AG-419 (isolamento causal); AG-391 (0/20 original); scripts/promote_control_campaign_to_production.py (novo); scripts/run_walk_forward_campaign.py; scripts/evaluate_walk_forward_gates.py"
+    numeracao: "AG-420."
+    found_by: "Decisao de negocio explicita do Manager (2026-09-01): 'aplica no codigo real os fix que estao prontos, promovendo os itens achados no diagnostico pro run canonico' -- override apos AG-419 ter recomendado NAO promover sem decisao explicita."
+    gap: >
+      Os 5 hiperparametros de producao (`alpha_production_hyperparam_
+      override`) apontavam pros artefatos achados sob o bug de seed
+      compartilhado (`AG-399`, seed=42 GLOBAL entre as 10 studies
+      originais) desde 2026-08-31 -- nunca re-promovidos apos o fix.
+      Promovidos agora pra campanha de CONTROLE (`AG-419`: seed
+      corrigido, SEM corte de data, 1 seed x 150 trials) -- escolha
+      deliberada sobre a campanha `t0_end`, porque `AG-419` isolou que
+      a melhora medida vinha do seed corrigido, nao do corte.
+
+      **Walk-forward canonico REGENERADO sob os novos hiperparametros**
+      (`scripts/run_walk_forward_campaign.py --overwrite`, mesma seed/
+      tau_policy/split de calibracao de sempre -- so o hiperparametro
+      muda). `edge_bps` medio por celula, ANTES (seed bugado) ->
+      DEPOIS (seed corrigido):
+
+      `BTCUSDT/R2` C1: +7,90 -> +6,90bps. C0: +1,35 -> +8,61bps.
+      `SOLUSDT/R2` C1: -57,66 -> -26,35bps. C0: -57,66bps -> **0 folds
+      usaveis (100% degenerado)** -- pior que antes, achado real sobre
+      a fragilidade ja conhecida deste combo (n=1 fold historico no
+      canonico anterior), nao um bug do script de promocao.
+      `SOLUSDT/R3` C1: -17,00 -> +48,58bps. C0: -32,82 -> -43,16bps.
+      `XRPUSDT/R2` C1: -28,25 -> -15,78bps. C0: -17,55 -> -16,21bps.
+      `XRPUSDT/R3` C1: -34,54 -> +4,33bps. C0: +26,34 -> +55,33bps.
+
+      **Gates recalculados** (`scripts/evaluate_walk_forward_gates.py`,
+      com FDR ja aplicado, `AG-405`): **0 de 20 combo×variant×lado
+      passam**, sob p bruto E sob correcao BH -- MESMO veredito "0/20"
+      de antes (`AG-391`), agora medido sob o hiperparametro com o bug
+      de seed corrigido. Gate Data reprova TODAS as 20 celulas
+      sozinho: `n_folds_usados` cai em quase todas as celulas vs. o
+      canonico anterior (ex. `BTCUSDT/R2` C0: 7->3 folds usaveis;
+      `SOLUSDT/R3` C1: 4->2), nenhuma chega perto do piso de 10 --
+      achado real: buscas de 1 seed sob o seed corrigido tendem a
+      encontrar hiperparametros MAIS seletivos (menos trades por
+      fold), nao necessariamente melhores em generalizacao.
+    severity: "alta -- decisao de producao real aplicada (nao so medicao), mas o resultado reafirma '0/20' com o instrumento corrigido -- consequencia pratica: nenhum dos 5 candidatos tem base pra deploy real mesmo apos a correcao do bug que motivou a duvida"
+    layer: "models (producao) -- alpha_production_hyperparam_override e config/artefato REAL de producao, primeira mudanca de hiperparametro de producao desde o override original (AG-207, 2026-08-31)"
+    consequence: >
+      "0/20" confirmado NOVAMENTE, agora sob o hiperparametro com o
+      bug de seed corrigido -- nao era o seed que escondia edge real.
+      `SOLUSDT/R2` fica ainda mais claramente inviavel (0 folds sob
+      QUALQUER dos 3 hiperparametros ja testados: canonico antigo,
+      controle novo, t0cutoff). Achado colateral: buscas Optuna de 1
+      seed (mesmo com seed corrigido) produzem hiperparametros MAIS
+      seletivos que reduzem `n_folds_usados`, nao e garantido que uma
+      busca "limpa" produza um modelo mais generalizavel -- reforca
+      que o problema de fundo e ausencia de sinal real no Alpha v1
+      (36 features, LightGBM), nao um artefato de busca/seed
+      corrigivel por engenharia adicional.
+    resolved_by_commit: null
+    resolution: "aplicado -- decisao de negocio do Manager executada. '0/20' reafirmado, nao revertido."
+    status: "concluido -- producao promovida, artefatos canonicos regenerados, gates reavaliados. Nenhum dos 5 candidatos passa mesmo apos a correcao do AG-399."
