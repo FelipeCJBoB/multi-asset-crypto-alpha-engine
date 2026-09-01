@@ -354,11 +354,23 @@ de treino real + ~100s de IO, 0 falhas. Artefatos:
 
 ### 5.1 Assimetria de histórico entre ativos
 
+> **Correção (2026-08-31, achado real H1 da auditoria adversarial externa,
+> `AG-393` item 1 / roadmap "Caso 0/20" item 13):** a versão original desta
+> seção afirmava "1º trimestre testado (**todos os combos**) = 2023-10-01"
+> — falso para `BTCUSDT/R2`. Verificado direto contra o artefato real
+> (`experiments/alpha_walk_forward_BTCUSDT_R2.json`, fold_id=0):
+> `test_start=2022-01-01`, não 2023-10-01. `BTCUSDT/R2` é o único dos 5
+> candidatos cuja janela de teste alcança 2022 — os outros 4 (base SOL/XRP)
+> começam em 2023-10, como a versão original descrevia corretamente só
+> para eles. Tabela e texto abaixo corrigidos; valor errado riscado, não
+> apagado (rastreabilidade).
+
 | Métrica | Valor |
 |---|---:|
 | Histórico BTCUSDT (treino disponível desde) | 2020-01-07 |
 | Histórico SOL/XRP (treino disponível desde) | 2021-12-08 |
-| 1º trimestre testado (todos os combos) | 2023-10-01 |
+| 1º trimestre testado — `BTCUSDT/R2` | **2022-01-01** (verificado, não ~~2023-10-01~~) |
+| 1º trimestre testado — `SOLUSDT/R2`, `SOLUSDT/R3`, `XRPUSDT/R2`, `XRPUSDT/R3` | 2023-10-01 |
 | Último trimestre testado (todos os combos) | 2026-08-07 |
 
 O treino do fold 0 sempre começa no início do histórico do ATIVO (não é o
@@ -366,9 +378,10 @@ mesmo ponto para os 5 candidatos) — `initial_train_years=2` depois disso é
 quando o teste começa. **BTCUSDT tem ~2 anos a mais de histórico nesta
 pipeline que SOL/XRP** (2020 vs. dezembro/2021) — por isso `BTCUSDT/R2`
 gera 19 folds trimestrais contra só 12 dos outros 4 combos, cobrindo ~4,6
-anos de teste real contra ~2,85 anos. Todos os combos convergem no MESMO
-trimestre final de teste (2026-Q3, truncado em 07/08) porque o dado real da
-pipeline termina aí.
+anos de teste real (2022-01 a 2026-08) contra ~2,85 anos (2023-10 a
+2026-08) dos outros 4. Todos os combos convergem no MESMO trimestre final
+de teste (2026-Q3, truncado em 07/08) porque o dado real da pipeline
+termina aí — só o INÍCIO da janela diverge, não o fim.
 
 ### 5.2 O que cada coluna da tabela significa, na prática
 
