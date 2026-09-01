@@ -1077,8 +1077,8 @@ def inject_synthetic_leakage(
     e precisa ser exatamente o baseline, não uma aproximação dele."""
     if not 0.0 <= lam <= 1.0:
         raise MetaDatasetError(
-            f"inject_synthetic_leakage: lambda={lam} fora de [0, 1]. λ=1 substituiria "
-            "p_alpha PELO alvo, o que testa aritmética e não o pipeline."
+            f"inject_synthetic_leakage: lambda={lam} fora de [0, 1]. lambda=1 substituiria "
+            "p_alpha PELO alvo, o que testa aritmetica e nao o pipeline."
         )
     if column not in table.columns:
         raise MetaDatasetError(
@@ -1144,8 +1144,8 @@ def run_leakage_positive_control(
             metric_by_lambda=metricas,
             detected=False,
             reason=(
-                "métrica não-finita em algum λ — o harness não produziu um número "
-                "comparável, e um controle que não compara não controla nada."
+                "metrica nao-finita em algum lambda -- o harness nao produziu um numero "
+                "comparavel, e um controle que nao compara nao controla nada."
             ),
         )
     crescente = all(b > a for a, b in itertools.pairwise(metricas))
@@ -1155,9 +1155,9 @@ def run_leakage_positive_control(
             metric_by_lambda=metricas,
             detected=False,
             reason=(
-                "métrica NÃO é estritamente crescente em λ. O harness não enxerga "
-                "vazamento injetado — logo também não enxergaria vazamento real. "
-                "GATE: F6 não roda (§4.3)."
+                "metrica NAO e estritamente crescente em lambda. O harness nao enxerga "
+                "vazamento injetado -- logo tambem nao enxergaria vazamento real. "
+                "GATE: F6 nao roda (Sec4.3)."
             ),
         )
     logger.info(
@@ -1171,5 +1171,5 @@ def run_leakage_positive_control(
         lambda_grid=grid,
         metric_by_lambda=metricas,
         detected=True,
-        reason="métrica estritamente crescente em λ — o harness detecta vazamento injetado.",
+        reason="metrica estritamente crescente em lambda -- o harness detecta vazamento injetado.",
     )

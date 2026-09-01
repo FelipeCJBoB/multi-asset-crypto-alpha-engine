@@ -1,0 +1,111 @@
+{
+  "_gerado_por": "tools/diagnostics/measure_meta_positive_control.py",
+  "_proposito": "Controle positivo sintetico (Sec4.3), pre-condicao BLOQUEANTE de F6 (Sec9) nunca executada antes da medicao real de AG-409 -- fecha a lacuna agora. Combos onde o Meta nunca ajusta modelo (100% pass-through, AG-409) nao podem detectar por construcao -- previsto a priori, nao e achado novo.",
+  "_schema": "meta_positive_control/1.0.0",
+  "combos": [
+    {
+      "detected": true,
+      "lambda_grid": [
+        0.0,
+        0.05,
+        0.1,
+        0.2,
+        0.4
+      ],
+      "metric_by_lambda": [
+        0.1056103187280506,
+        0.13763011810322073,
+        0.14304050765591966,
+        0.1666478570827759,
+        0.17292375566270365
+      ],
+      "reason": "metrica estritamente crescente em lambda -- o harness detecta vazamento injetado.",
+      "resolution_id": "R2",
+      "symbol": "BTCUSDT"
+    },
+    {
+      "detected": false,
+      "lambda_grid": [
+        0.0,
+        0.05,
+        0.1,
+        0.2,
+        0.4
+      ],
+      "metric_by_lambda": [
+        0.05855074539663764,
+        0.05855074539663764,
+        0.05855074539663764,
+        0.05855074539663764,
+        0.05855074539663764
+      ],
+      "reason": "metrica NAO e estritamente crescente em lambda. O harness nao enxerga vazamento injetado -- logo tambem nao enxergaria vazamento real. GATE: F6 nao roda (Sec4.3).",
+      "resolution_id": "R2",
+      "symbol": "SOLUSDT"
+    },
+    {
+      "detected": false,
+      "lambda_grid": [
+        0.0,
+        0.05,
+        0.1,
+        0.2,
+        0.4
+      ],
+      "metric_by_lambda": [
+        0.1641819073768974,
+        0.1641819073768974,
+        0.1641819073768974,
+        0.1641819073768974,
+        0.1641819073768974
+      ],
+      "reason": "metrica NAO e estritamente crescente em lambda. O harness nao enxerga vazamento injetado -- logo tambem nao enxergaria vazamento real. GATE: F6 nao roda (Sec4.3).",
+      "resolution_id": "R3",
+      "symbol": "SOLUSDT"
+    },
+    {
+      "detected": false,
+      "lambda_grid": [
+        0.0,
+        0.05,
+        0.1,
+        0.2,
+        0.4
+      ],
+      "metric_by_lambda": [
+        0.043539263540916084,
+        0.05505213143716866,
+        0.09603157569661434,
+        0.10238040901650051,
+        0.10238040901650051
+      ],
+      "reason": "metrica NAO e estritamente crescente em lambda. O harness nao enxerga vazamento injetado -- logo tambem nao enxergaria vazamento real. GATE: F6 nao roda (Sec4.3).",
+      "resolution_id": "R2",
+      "symbol": "XRPUSDT"
+    },
+    {
+      "detected": false,
+      "lambda_grid": [
+        0.0,
+        0.05,
+        0.1,
+        0.2,
+        0.4
+      ],
+      "metric_by_lambda": [
+        0.061838185155917914,
+        0.061838185155917914,
+        0.061838185155917914,
+        0.061838185155917914,
+        0.061838185155917914
+      ],
+      "reason": "metrica NAO e estritamente crescente em lambda. O harness nao enxerga vazamento injetado -- logo tambem nao enxergaria vazamento real. GATE: F6 nao roda (Sec4.3).",
+      "resolution_id": "R3",
+      "symbol": "XRPUSDT"
+    }
+  ],
+  "n_combos": 5,
+  "n_detected": 1,
+  "n_total": 5,
+  "total_elapsed_s": 73.86137890815735
+}

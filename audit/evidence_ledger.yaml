@@ -4305,3 +4305,63 @@ entries:
     assim". Achado registrado para o Manager decidir depois, nao
     bloqueante pra F7/F8 prosseguirem. Ver
     audit/architecture_gaps_log.yaml::AG-409 (achado consolidado).
+
+- id_curto: meta-controle-positivo-retroativo-2026-09-01
+  data: '2026-09-01'
+  fase: 'Meta-model Sec4.3 -- controle positivo sintetico, pre-condicao BLOQUEANTE
+    de F6 (Sec9) que nunca tinha sido executada antes da medicao real de F6
+    (AG-409). Fechada retroativamente ao revisar o design doc antes de F6b.'
+  symbol: 'BTCUSDT/R2, SOLUSDT/R2, SOLUSDT/R3, XRPUSDT/R2, XRPUSDT/R3 -- os mesmos
+    5 combos de AG-409'
+  tf: 'dollar-bar R2/R3, Camada1'
+  lado: 'long e short pooled no universo (side_hat != 0)'
+  regime: 'quantile_classifier_v1 -- mesma configuracao exata que produziu AG-409'
+  feature_ou_filtro: 'src.models.meta_dataset.run_leakage_positive_control +
+    inject_synthetic_leakage -- p_alpha'' = (1-lambda).p_alpha + lambda.y_meta,
+    grade meta_leakage_control_lambda_grid=[0, 0.05, 0.1, 0.2, 0.4], Meta
+    reajustado do zero por lambda (meta.run_all_meta_folds)'
+  metrica_tipo: 'Gate declarado (Sec4.3): Sharpe agregado do braco A1 (compute_
+    branch_panel sobre side_final) precisa ser ESTRITAMENTE crescente em lambda.
+    Falha => harness nao seria capaz de detectar vazamento real.'
+  metrica_valor: >
+    **1 de 5 combos detecta** (`BTCUSDT/R2`: 0,1056 -> 0,1729,
+    estritamente crescente) -- e o UNICO combo com maioria de folds
+    ajustando modelo de verdade (10/15, AG-409). Confirma que a
+    reprovacao de F6 nesse combo especifico e medicao interpretavel, nao
+    artefato de harness cego.
+
+    `SOLUSDT/R3` e `XRPUSDT/R3` (0/15 folds ajustando, AG-409): metrica
+    EXATAMENTE flat em todo lambda -- esperado por construcao (pass-
+    through ignora p_alpha), nao achado novo.
+
+    `SOLUSDT/R2` (1/15 folds ajustando, AG-409): tambem exatamente flat
+    -- achado adicional preciso, nao previsto com essa precisao a
+    priori: o unico fold que ajusta contribui ZERO sinal detectavel ao
+    Sharpe agregado (populacao de teste OOS desse fold provavelmente sem
+    nenhum trade preenchido).
+
+    `XRPUSDT/R2` (2/15 folds ajustando, AG-409): deteccao PARCIAL --
+    cresce em 4 dos 5 passos (0,0435 -> 0,0551 -> 0,0960 -> 0,1024) mas
+    empata exato no ultimo (lambda=0,2 e 0,4), reprovando por 1 passo.
+
+    Achado colateral (bug real, corrigido no mesmo commit): "lambda"/
+    "sigma" gregos em mensagens de log de `run_leakage_positive_control`/
+    `inject_synthetic_leakage` quebravam `logger.info` em console Windows
+    cp1252 -- mesma classe de bug ja corrigida uma vez em `meta.py::
+    assert_sample_sufficient` (achado real rodando o proprio script deste
+    controle, nao hipotetico).
+  n: 5
+  status: amarelo
+  fonte_arquivo: 'experiments/meta_positive_control_2026-09-01.json'
+  fonte_secao: 'src/models/meta_dataset.py::run_leakage_positive_control; tools/diagnostics/measure_meta_positive_control.py;
+    audit/architecture_gaps_log.yaml::AG-412'
+  nota: >
+    AMARELO -- nao muda o veredito de AG-409 (nenhum combo passa F6 de
+    qualquer forma), mas fecha uma lacuna real de disciplina de medicao:
+    a trava bloqueante do Sec4.3 tinha sido pulada em silencio antes da
+    medicao real de F6. Resultado CONFIRMA a interpretabilidade da
+    reprovacao em `BTCUSDT/R2` (unico combo com sinal suficiente pro
+    controle funcionar) e mostra que a nao-deteccao nos outros 4 e
+    corolario direto da amostra insuficiente ja registrada, nao um
+    problema novo e independente do harness. Ver
+    audit/architecture_gaps_log.yaml::AG-412.

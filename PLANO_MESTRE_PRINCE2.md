@@ -6440,6 +6440,34 @@ score embaralhado, 0/5 símbolos). Três metodologias completamente
 diferentes, mesma conclusão qualitativa. Registrado, **não bloqueante**
 por decisão explícita do Manager — F7/F8 seguem.
 
+**Addendum 2026-09-01 (`AG-412`) — a pré-condição bloqueante do `§4.3`
+nunca tinha rodado.** Revisando o design doc antes de iniciar F6b:
+`§4.3` declara o controle positivo sintético (injeta
+`p_alpha' = (1−λ)·p_alpha + λ·y_meta` numa grade a priori, verifica
+Sharpe crescente em λ) **pré-condição bloqueante de F6** — "Falha ⟹ F6
+não roda". `meta_ablation.py` já documentava que não reverifica isso
+("é responsabilidade do chamador"); `measure_meta_f6_ablation.py`
+nunca chamou `run_leakage_positive_control`. A trava foi pulada **em
+silêncio** antes da medição real que produziu `AG-409`.
+
+Fechado retroativamente (`tools/diagnostics/measure_meta_positive_
+control.py`, novo): só **`BTCUSDT/R2` detecta** o vazamento injetado
+(0,1056→0,1729, estritamente crescente) — é também o único combo com
+maioria de folds ajustando modelo de verdade (10/15, `AG-409`),
+confirmando que a reprovação de F6 ali é medição interpretável, não
+artefato de harness cego. Os outros 4 combos não detectam — corolário
+direto da amostra insuficiente já documentada em `AG-409`
+(`SOLUSDT/R3`/`XRPUSDT/R3` 0/15 folds, `SOLUSDT/R2` 1/15,
+`XRPUSDT/R2` 2/15 com detecção parcial: cresce em 4 dos 5 passos da
+grade, empata no último). Não muda nenhum veredito de `AG-409` — fecha
+uma lacuna de disciplina de medição, não descobre um resultado novo.
+Achado colateral corrigido no mesmo commit: "λ"/"Σ" gregos em mensagens
+de log de `run_leakage_positive_control`/`inject_synthetic_leakage`
+quebravam `logger.info` em console Windows cp1252 (mesma classe de bug
+já fechada uma vez em `meta.py::assert_sample_sufficient`). Detalhe
+completo: `evidence_ledger.yaml::meta-controle-positivo-retroativo-2026-
+09-01`, `architecture_gaps_log.yaml::AG-412`.
+
 ---
 ## Fontes desta pesquisa
 

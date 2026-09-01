@@ -27024,3 +27024,63 @@ entries:
       custo real de `n_lifetime`. `scripts/validate_t0_cutoff_search.py`
       fica como capacidade reusavel pra qualquer validacao futura antes
       de comprometer o orcamento completo.
+
+  - id: AG-412
+    date: "2026-09-01"
+    file: "src/models/meta_dataset.py::run_leakage_positive_control,inject_synthetic_leakage; tools/diagnostics/measure_meta_positive_control.py (novo)"
+    related_file: "AG-409 (F6 ablacao real 0/5 simbolos); docs/meta_model_design_doc_2026-08-22.md Sec4.3/Sec9; experiments/meta_positive_control_2026-09-01.json"
+    found_by: "Revisao do design doc antes de iniciar F6b -- Sec4.3 declara o controle positivo sintetico 'pre-condicao BLOQUEANTE de F6' ('Falha -> F6 nao roda'), e o proprio meta_ablation.py (linhas 8-14) documenta que NAO reverifica isso, e responsabilidade do chamador. `measure_meta_f6_ablation.py` (o script que produziu AG-409) nunca chamava `run_leakage_positive_control` -- a trava bloqueante nunca foi checada antes da medicao real."
+    gap: >
+      A medicao real de F6 (AG-409, 2026-09-01) rodou SEM seu proprio
+      pre-requisito bloqueante declarado a priori (Sec4.3) ter sido
+      executado uma unica vez -- nao um erro de codigo (a funcao
+      `run_leakage_positive_control` ja existia, testada, desde antes de
+      F6 rodar), e sim uma trava pulada EM SILENCIO: o design doc e
+      explicito que pular essa trava e decisao do Manager, "e nao deveria
+      acontecer em silencio" -- aconteceu.
+
+      Fechado retroativamente por `tools/diagnostics/measure_meta_
+      positive_control.py` (novo): injeta vazamento calibravel em
+      `p_alpha` (`p_alpha' = (1-lambda).p_alpha + lambda.y_meta`, grade
+      `meta_leakage_control_lambda_grid=[0, 0.05, 0.1, 0.2, 0.4]`),
+      reajusta o Meta do zero por lambda, mede Sharpe agregado do braco
+      A1. Gate: metrica estritamente crescente em lambda.
+
+      **Resultado real, 5 combos de producao**: só `BTCUSDT/R2` detecta
+      (0,1056 -> 0,1729, estritamente crescente) -- o UNICO combo com
+      maioria de folds ajustando modelo de verdade (10/15, AG-409). Os
+      outros 4 NAO detectam: `SOLUSDT/R3` e `XRPUSDT/R3` ficam
+      EXATAMENTE flat (identico ate a 15a casa decimal em todo lambda,
+      consistente com 0/15 folds ajustando, AG-409). `SOLUSDT/R2` (1/15
+      folds ajustando, AG-409) tambem fica exatamente flat -- achado
+      adicional preciso: o unico fold que ajusta contribui ZERO sinal
+      detectavel ao Sharpe agregado, mais provavelmente porque a
+      populacao de teste OOS desse fold especifico nao tem trade
+      preenchido (`barrier_hit != NOFILL`) nenhum, ficando fora do
+      calculo de `compute_branch_panel` independente do valor de
+      `p_meta`. `XRPUSDT/R2` (2/15 folds ajustando) e o caso
+      intermediario: cresce em 4 dos 5 passos da grade (0,0435 ->
+      0,0551 -> 0,0960 -> 0,1024) mas empata exato no ultimo (lambda=0,2
+      e lambda=0,4), reprovando por 1 passo -- deteccao PARCIAL, nao
+      ausencia total de resposta.
+    severity: "medio -- nao muda o veredito de AG-409, mas era uma lacuna real de disciplina de medicao (trava bloqueante pulada em silencio) que precisava ser fechada, nao ignorada"
+    layer: "models -- harness de auto-teste do Meta, nao o Meta em si"
+    consequence: >
+      Resultado do controle CONFIRMA, nao contradiz, AG-409: o unico
+      combo onde a medicao de F6 e plenamente interpretavel (harness
+      comprovadamente sensivel a sinal real injetado) e `BTCUSDT/R2`,
+      que tambem reprova sob F6 -- a reprovacao ali NAO e artefato de
+      harness cego. Nos outros 4 combos, a nao-deteccao do controle e
+      COROLARIO direto do mesmo achado ja registrado (amostra
+      insuficiente pra ajustar modelo) -- nao evidencia independente
+      contra o harness, e tambem nao evidencia que resolveria a
+      reprovacao se a amostra fosse maior. Corrigidos no mesmo commit,
+      mesma classe de bug ja fechada em `meta.py::assert_sample_
+      sufficient` (Grego em mensagem de log quebra console Windows
+      cp1252): "sigma"/"lambda" gregos em `run_leakage_positive_control`/
+      `inject_synthetic_leakage` (`meta_dataset.py`) trocados por ASCII
+      -- o proprio script deste achado quebrou na primeira tentativa por
+      essa razao, achado real, nao hipotetico.
+    resolved_by_commit: null
+    resolution: null
+    status: "fechado -- trava bloqueante do Sec4.3 executada retroativamente contra os 5 combos reais; confirma interpretabilidade de AG-409 para BTCUSDT/R2 (o unico combo com sinal suficiente pra testar), nao muda nenhum veredito. Nao bloqueante pra F6b/F7/F8."

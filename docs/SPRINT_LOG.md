@@ -6412,3 +6412,26 @@ sobre `p_alpha`, não seleção por `regime` (evidência contra D-01).
 Gate E0 0/5, agora F6 0/5) — registrada (`evidence_ledger.yaml`, <!-- check-sprint-log: skip -->
 `AG-409`), não bloqueante por decisão explícita do Manager. Próximo <!-- check-sprint-log: skip -->
 passo: F6b (walk-forward), F7 (enforcement), F8 (constantes). <!-- check-sprint-log: skip -->
+
+## 2026-09-01 — Meta: controle positivo do §4.3 rodado retroativamente (AG-412) <!-- check-sprint-log: skip -->
+
+Revisando o design doc antes de começar F6b: `§4.3` declara o controle <!-- check-sprint-log: skip -->
+positivo sintético (injeta vazamento calibrável em `p_alpha`, verifica <!-- check-sprint-log: skip -->
+Sharpe crescente em `λ`) **pré-condição bloqueante de F6** — "Falha ⟹ <!-- check-sprint-log: skip -->
+F6 não roda". `run_leakage_positive_control` já existia em <!-- check-sprint-log: skip -->
+`meta_dataset.py` (testado), mas `measure_meta_f6_ablation.py` (o <!-- check-sprint-log: skip -->
+script que gerou `AG-409`) nunca chamou — a trava foi pulada em <!-- check-sprint-log: skip -->
+silêncio antes da medição real.
+
+`tools/diagnostics/measure_meta_positive_control.py` (novo) fecha a <!-- check-sprint-log: skip -->
+lacuna: só `BTCUSDT/R2` detecta o vazamento injetado (único combo com <!-- check-sprint-log: skip -->
+maioria de folds ajustando modelo, 10/15) — confirma que a reprovação <!-- check-sprint-log: skip -->
+de F6 ali é interpretável, não harness cego. Os outros 4 combos não <!-- check-sprint-log: skip -->
+detectam, corolário direto da amostra insuficiente já registrada em <!-- check-sprint-log: skip -->
+`AG-409` — não é achado novo nem muda nenhum veredito. 1 bug real <!-- check-sprint-log: skip -->
+achado rodando pela primeira vez: "λ" grego em mensagem de log quebrava <!-- check-sprint-log: skip -->
+console Windows cp1252 (mesma classe de bug já corrigida uma vez em <!-- check-sprint-log: skip -->
+`assert_sample_sufficient`), corrigido pra ASCII. Detalhe completo: <!-- check-sprint-log: skip -->
+`PLANO_MESTRE_PRINCE2.md` §15.39 addendum, `evidence_ledger.yaml`, <!-- check-sprint-log: skip -->
+`architecture_gaps_log.yaml::AG-412`. Próximo passo: F6b (walk-forward <!-- check-sprint-log: skip -->
+ancorado, §4.4). <!-- check-sprint-log: skip -->
