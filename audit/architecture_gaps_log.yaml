@@ -26976,3 +26976,51 @@ entries:
       acaso (1 celula "significativa" em 10 testes e exatamente o
       esperado sob H0 pura, mas a consistencia de SINAL nas 5 seeds
       -- nao so o p-valor isolado -- e o que chama atencao aqui).
+
+  - id: AG-411
+    date: "2026-09-01"
+    file: "src/models/hyperparams_optuna.py::build_search_frame,run_search_for_combo; scripts/validate_t0_cutoff_search.py (novo)"
+    related_file: "AG-398; docs/prompts/REFUTACAO_CONSOLIDADA_0de20_20260831.md achado E1"
+    numeracao: "AG-411."
+    found_by: "Auditoria adversarial externa (E1) -- mecanismo ja confirmado em AG-398; capacidade de corte implementada e validada em escala reduzida nesta sessao, autorizacao de execucao do Manager, item 12 do roadmap 'Caso 0/20'."
+    gap: >
+      `build_search_frame` tinha `t0_start=None, t0_end=None` HARDCODED
+      inline (nao parametro) -- a busca de hiperparametro via sempre o
+      dataset inteiro, incluindo o periodo que o walk-forward trata como
+      fora-da-amostra (E1/`AG-398`). Corrigido: `t0_start`/`t0_end` agora
+      sao parametros de `build_search_frame`/`run_search_for_combo`,
+      default `None` (comportamento identico de sempre). Guard de
+      seguranca: `t0_end` sem `storage_dir` explicito levanta `ValueError`
+      -- `t0_end` deliberadamente NAO entra no hash de identidade
+      content-addressed (mudar isso e decisao maior, fora do escopo desta
+      sessao), entao um study com corte colidiria/retomaria indevidamente
+      o study de producao sob `load_if_exists=True` sem essa trava.
+
+      **Validacao em escala REDUZIDA** (20 trials, nao os 150 de producao;
+      2 combos, nao os 10; 1 seed) pra testar a DIRECAO do achado antes de
+      comprometer uma campanha completa (~2h30 medido em ADR-007 Item 1
+      pra 1.800 trials): `BTCUSDT/R2` C1 -- edge canonico +7,90bps vira
+      -3,65bps sob hiperparametro achado com corte (PIORA); `XRPUSDT/R3`
+      C1 -- edge canonico -34,54bps vira +6,09bps sob corte (MELHORA,
+      mas pequena). **Resultado MISTO, nao decisivo** -- consistente com
+      a mesma sensibilidade a seed/trial-count ja medida em `AG-410`
+      (n=20 trials e n=1 seed sao amostras pequenas demais pra separar
+      efeito real de ruido de busca).
+    severity: "media -- capacidade corretiva implementada e testada; validacao inicial nao da evidencia clara o bastante pra justificar o custo de uma campanha completa sem mais medicao"
+    layer: "models (HPO) -- capacidade nova, nenhum default de producao alterado, nenhum hiperparametro de producao trocado"
+    consequence: >
+      NAO decide se a campanha completa vale o custo. O mecanismo (HPO
+      via dado que devia ser fora-da-amostra) e real e agora corrigivel,
+      mas a validacao rapida nao mostra melhora consistente o bastante
+      pra justificar comprometer ~150 trials x 10 studies (~2h30, gasto
+      real de `n_lifetime`) sem decisao explicita do Manager.
+    resolved_by_commit: null
+    status: >
+      PARCIALMENTE RESOLVIDO 2026-09-01 -- capacidade de corte por data
+      implementada, testada (2 testes novos do guard) e validada em
+      escala pequena. Decisao sobre rodar a campanha COMPLETA (150 trials
+      x 10 studies) fica explicitamente com o Manager -- nao decidida
+      unilateralmente, dado o resultado misto da validacao reduzida e o
+      custo real de `n_lifetime`. `scripts/validate_t0_cutoff_search.py`
+      fica como capacidade reusavel pra qualquer validacao futura antes
+      de comprometer o orcamento completo.
