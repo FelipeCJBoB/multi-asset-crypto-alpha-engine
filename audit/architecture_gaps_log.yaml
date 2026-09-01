@@ -26458,16 +26458,30 @@ entries:
       incluindo `BTCUSDT/R2` Camada1 (o UNICO combo com edge positivo
       nas duas camadas na Secao 5.4 original): media +7,90bps, mediana
       -0,20bps.
-    resolved_by_commit: null
+    resolved_by_commit: "36958b3"
     status: >
-      ABERTO -- mecanismo confirmado em codigo nesta sessao
-      (walk_forward_gates.py::alpha_gate_passes). Extensao as 10 celulas
-      calculada e publicada em docs/adendo_angulos_7_8_..._2026-08-31.md
-      e no artefato "Caso 0/20" (Exhibit V) -- preenche a pendencia P1
-      que o proprio documento externo deixou aberta (so 1 de 10
-      agregados tinha sido transcrito). Acao registrada no roadmap
-      ("Caso 0/20", Exhibit VI, item 5, prioridade P1): erro-padrao em
-      todos os agregados, teste real no gate Alpha.
+      RESOLVIDO 2026-08-31 (mesmo dia, autorizacao de execucao do
+      Manager) -- `alpha_gate_p_value`/`alpha_gate_passes` reescritos pro
+      mesmo nucleo de teste-t unicaudal ja usado no eixo Model (H0:
+      edge_bps_medio<=min_edge_bps). Estritamente mais conservador que o
+      criterio antigo (nunca aprova o que o ponto estimado sozinho ja
+      reprovava). `GateVerdict` ganhou `edge_bps_std`/`edge_bps_p_value`.
+
+      Rodado de verdade contra os 5 artefatos canonicos via `scripts/
+      evaluate_walk_forward_gates.py`: `alpha_gate_pass` vira `False` nas
+      20 celulas -- ANTES era `True` em `BTCUSDT/R2` (as duas camadas) e
+      `XRPUSDT/R3` Camada0 pelo criterio ingenuo (`edge_bps_mean>0`,
+      exatamente o achado N1: ponto estimado positivo, sem significancia
+      real). "0/20" fica MAIS forte sob os 3 gates reais, nao mais fraco
+      -- confirmado tambem contra os artefatos `total_common_oof`
+      (`AG-403`).
+
+      Bug real achado rodando contra dado real (nao previsto no design):
+      `aggregate.std.edge_bps` vem `null` do JSON quando `n<2` folds
+      (`SOLUSDT/R2`) -- `math.isfinite(None)` levanta `TypeError` sem
+      guard. Corrigido no mesmo commit (normaliza `None`->`NaN`, mesmo
+      padrao ja usado em `stability_matrix.py::_float_or_nan`). 9 testes
+      novos, 29 total do arquivo verdes.
 
   - id: AG-401
     date: "2026-08-31"
