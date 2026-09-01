@@ -508,6 +508,108 @@ def test_assign_time_groups_instante_unico_levanta_erro() -> None:
 
 
 # ============================================================================
+# AG-151/D-16 — edges_ms sobre união temporal (purge cross-símbolo)
+# ============================================================================
+
+
+def test_assign_time_groups_edges_ms_informado_ignora_min_max_local() -> None:
+    """Fronteiras vindas de fora (ex. pooled) governam o `group_id`, não o
+    min/max do `t0_ms` local — a propriedade central de AG-151: dois
+    símbolos com o MESMO `edges_ms` compartilham a mesma grade de
+    calendário mesmo que os `t0` locais de cada um cubram intervalos
+    diferentes."""
+    edges_ms = np.array([0, 100, 200, 300], dtype=np.int64)  # 3 grupos externos
+    # t0_ms local cobre só [50, 150] -- min/max locais NADA têm a ver com
+    # as fronteiras informadas
+    t0_ms = np.array([50, 60, 120, 150], dtype=np.int64)
+    group_id, returned_edges = cpcv.assign_time_groups(t0_ms, 3, edges_ms=edges_ms)
+    np.testing.assert_array_equal(returned_edges, edges_ms)
+    np.testing.assert_array_equal(group_id, np.array([0, 0, 1, 1]))
+
+
+def test_assign_time_groups_edges_ms_tamanho_errado_levanta_erro() -> None:
+    edges_ms_curto = np.array([0, 100, 200], dtype=np.int64)  # 3, esperado 4 (n_groups=3)
+    with pytest.raises(cpcv.CPCVError):
+        cpcv.assign_time_groups(np.array([50], dtype=np.int64), 3, edges_ms=edges_ms_curto)
+
+
+def test_assign_time_groups_edges_ms_nao_crescente_levanta_erro() -> None:
+    edges_ms_invalido = np.array([0, 200, 100, 300], dtype=np.int64)
+    with pytest.raises(cpcv.CPCVError):
+        cpcv.assign_time_groups(np.array([50], dtype=np.int64), 3, edges_ms=edges_ms_invalido)
+
+
+def test_assign_time_groups_edges_ms_none_bit_exato_ao_comportamento_antigo() -> None:
+    """Guarda de não-regressão da própria assinatura: `edges_ms=None`
+    (default) precisa produzir EXATAMENTE o mesmo resultado do ramo único
+    que existia antes de AG-151 — a garantia que o golden de
+    `tests/golden/test_validation_cpcv_pooling_non_regression.py` assume."""
+    t0_ms = np.arange(600, dtype=np.int64) * _BAR_MS
+    group_id, edges_ms = cpcv.assign_time_groups(t0_ms, 6)
+    t_min, t_max = int(t0_ms.min()), int(t0_ms.max())
+    edges_esperado = cpcv._linspace_edges_ms(t_min, t_max, 6)
+    np.testing.assert_array_equal(edges_ms, edges_esperado)
+    group_id_direto, _ = cpcv.assign_time_groups(t0_ms, 6, edges_ms=edges_esperado)
+    np.testing.assert_array_equal(group_id, group_id_direto)
+
+
+def test_compute_pooled_edges_ms_usa_uniao_min_max_entre_simbolos() -> None:
+    t0_a = np.array([0, 500, 1000], dtype=np.int64)
+    t0_b = np.array([2000, 3000], dtype=np.int64)  # estende o máximo da união
+    edges_ms = cpcv.compute_pooled_edges_ms({"A": t0_a, "B": t0_b}, 4)
+    assert int(edges_ms[0]) == 0  # união do mínimo (t0_a)
+    assert int(edges_ms[-1]) == 3001  # união do máximo (t0_b) + 1
+
+
+def test_compute_pooled_edges_ms_bit_exato_para_simbolo_de_maior_extensao() -> None:
+    """Propriedade central do fix (docstring de `compute_pooled_edges_ms`):
+    símbolo de maior extensão do pool (aqui, "BTC") não tem sua medição
+    invalidada -- as fronteiras pooled são IDÊNTICAS às que ele produziria
+    sozinho, porque a união não estende nem o mínimo nem o máximo dele."""
+    t0_btc = np.arange(1000, dtype=np.int64) * _BAR_MS  # cobre [0, 999*bar]
+    t0_sol = t0_btc[300:700]  # subconjunto estrito, dentro do range do BTC
+
+    _, edges_btc_sozinho = cpcv.assign_time_groups(t0_btc, 6)
+    edges_pooled = cpcv.compute_pooled_edges_ms({"BTCUSDT": t0_btc, "SOLUSDT": t0_sol}, 6)
+
+    np.testing.assert_array_equal(edges_pooled, edges_btc_sozinho)
+
+
+def test_compute_pooled_edges_ms_vazio_levanta_erro() -> None:
+    with pytest.raises(cpcv.CPCVError):
+        cpcv.compute_pooled_edges_ms({}, 6)
+
+
+def test_compute_pooled_edges_ms_instante_unico_levanta_erro() -> None:
+    with pytest.raises(cpcv.CPCVError):
+        cpcv.compute_pooled_edges_ms(
+            {"A": np.array([100], dtype=np.int64), "B": np.array([100], dtype=np.int64)}, 3
+        )
+
+
+def test_generate_splits_edges_ms_pooled_e_usado_em_vez_do_local() -> None:
+    """`generate_splits(..., edges_ms=pooled)` propaga a fronteira pooled
+    pro `CPCVResult` -- não recalcula sobre o `t0` local de `labels`
+    (que é o defeito original de AG-151, reproduzido aqui com um
+    `edges_ms` deliberadamente diferente do que o `t0` local produziria)."""
+    labels = _make_synthetic_labels(400, horizon_bars=1)
+    t0_ms_local = labels["t0"].dt.epoch(time_unit="ms").to_numpy().astype(np.int64)
+    cfg = cpcv.CPCVConfig(n_groups=4, n_test_groups=2, embargo_ms=0)
+
+    # edges_ms "pooled" artificial: dobra a largura da união (como se outro
+    # símbolo estendesse o máximo bem além do que t0_ms_local sozinho cobre)
+    t_min_local = int(t0_ms_local.min())
+    t_max_local = int(t0_ms_local.max())
+    edges_pooled = cpcv._linspace_edges_ms(t_min_local, 2 * t_max_local, cfg.n_groups)
+
+    result = cpcv.generate_splits(labels, cfg, edges_ms=edges_pooled)
+    np.testing.assert_array_equal(result.edges_ms, edges_pooled)
+
+    result_local = cpcv.generate_splits(labels, cfg)
+    assert not np.array_equal(result.edges_ms, result_local.edges_ms)
+
+
+# ============================================================================
 # 1-fatoração de K_n — n_backtest_paths
 # ============================================================================
 

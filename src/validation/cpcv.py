@@ -70,6 +70,7 @@ escondidas):
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from itertools import combinations
 from math import comb
@@ -260,22 +261,15 @@ class CPCVConfig:
 # ============================================================================
 
 
-def assign_time_groups(t0_ms: IntArray, n_groups: int) -> tuple[IntArray, IntArray]:
-    """Partição CRONOLÓGICA (não por contagem) de `t0_ms` em `n_groups`
-    blocos de largura de tempo igual — ver item 1 da docstring do módulo.
-
-    Retorna `(group_id, edges_ms)`: `group_id[i]` em `[0, n_groups)` para
-    cada linha; `edges_ms` tem `n_groups + 1` fronteiras em epoch-ms, onde
-    o grupo `g` cobre `[edges_ms[g], edges_ms[g+1])` (a última fronteira é
-    `max(t0_ms) + 1` para incluir o próprio máximo no último grupo)."""
-    if t0_ms.shape[0] == 0:
-        raise CPCVError("assign_time_groups: t0_ms vazio")
-
-    t_min = int(t0_ms.min())
-    t_max = int(t0_ms.max())
-    if t_min == t_max:
-        raise CPCVError("assign_time_groups: t0_ms tem um único instante — não particionável")
-
+def _linspace_edges_ms(t_min: int, t_max: int, n_groups: int) -> IntArray:
+    """Fronteiras de `n_groups + 1` blocos de largura de tempo igual sobre
+    `[t_min, t_max]`, fronteira direita exclusiva cobrindo o próprio
+    `t_max` (`+1`). Núcleo puro extraído de `assign_time_groups`
+    (`AG-151`) — reusado por `compute_pooled_edges_ms` para que o cálculo
+    de fronteiras sobre um único símbolo e sobre a união cross-símbolo
+    sejam literalmente a mesma fórmula, não duas cópias que podem
+    divergir silenciosamente uma da outra (mesmo motivo estrutural de
+    `_embargo_ms`, ver docstring dela)."""
     edges = np.linspace(t_min, t_max, n_groups + 1)
     edges_ms = np.round(edges).astype(np.int64)
     edges_ms[0] = t_min
@@ -286,10 +280,86 @@ def assign_time_groups(t0_ms: IntArray, n_groups: int) -> tuple[IntArray, IntArr
     # vazios silenciosamente caso alguém chame isto com um recorte minúsculo.
     if not np.all(np.diff(edges_ms) > 0):
         raise CPCVError(
-            f"assign_time_groups: fronteiras não estritamente crescentes para n_groups="
-            f"{n_groups} sobre {t0_ms.shape[0]} observações — intervalo de tempo "
-            "insuficiente para esta granularidade"
+            f"_linspace_edges_ms: fronteiras não estritamente crescentes para n_groups="
+            f"{n_groups} sobre [{t_min}, {t_max}] — intervalo de tempo insuficiente "
+            "para esta granularidade"
         )
+    return edges_ms
+
+
+def compute_pooled_edges_ms(t0_ms_by_symbol: Mapping[str, IntArray], n_groups: int) -> IntArray:
+    """`edges_ms` sobre a UNIÃO temporal de `t0` de vários símbolos —
+    correção de `AG-151`/D-16 (`docs/meta_model_design_doc_2026-08-22.md`
+    §4.5, §15.2 P1).
+
+    Sem isto, `assign_time_groups` chamado independentemente por símbolo
+    particiona `[min(t0), max(t0)]` LOCAL de cada um — símbolos com
+    histórico de comprimento diferente (BTC desde 2020-01 vs. listagens
+    posteriores de SOL/XRP/BNB) produzem fronteiras de grupo em datas
+    DIFERENTES, e `group 3` do BTC deixa de cobrir a mesma janela de
+    calendário que `group 3` do ETH — o purge cross-símbolo (que opera
+    por `t1` dentro do array passado a `generate_splits`) nunca vê a
+    correlação entre eles. Passar o `edges_ms` retornado aqui para
+    `generate_splits(..., edges_ms=...)` de cada símbolo do pool resolve
+    isso: todos os símbolos passam a compartilhar a MESMA grade de
+    calendário.
+
+    Bit-exato para o símbolo de maior extensão do pool (hoje, BTCUSDT) —
+    a união reduz a `min(t0)`/`max(t0)` desse símbolo, então não invalida
+    nenhuma medição single-symbol já feita sobre ele.
+
+    Custo em amostra declarado, não escondido: símbolos de histórico
+    curto podem receber grupos iniciais vazios ou quase vazios sob esta
+    grade compartilhada — `TBD`, medir quando o pooling for de fato
+    exercitado (não este commit, que só entrega a primitiva)."""
+    if not t0_ms_by_symbol:
+        raise CPCVError("compute_pooled_edges_ms: t0_ms_by_symbol vazio")
+
+    t_min = min(int(arr.min()) for arr in t0_ms_by_symbol.values() if arr.shape[0] > 0)
+    t_max = max(int(arr.max()) for arr in t0_ms_by_symbol.values() if arr.shape[0] > 0)
+    if t_min == t_max:
+        raise CPCVError(
+            "compute_pooled_edges_ms: união de t0 tem um único instante — não particionável"
+        )
+    return _linspace_edges_ms(t_min, t_max, n_groups)
+
+
+def assign_time_groups(
+    t0_ms: IntArray, n_groups: int, *, edges_ms: IntArray | None = None
+) -> tuple[IntArray, IntArray]:
+    """Partição CRONOLÓGICA (não por contagem) de `t0_ms` em `n_groups`
+    blocos de largura de tempo igual — ver item 1 da docstring do módulo.
+
+    Retorna `(group_id, edges_ms)`: `group_id[i]` em `[0, n_groups)` para
+    cada linha; `edges_ms` tem `n_groups + 1` fronteiras em epoch-ms, onde
+    o grupo `g` cobre `[edges_ms[g], edges_ms[g+1])` (a última fronteira é
+    `max(t0_ms) + 1` para incluir o próprio máximo no último grupo).
+
+    `edges_ms` (`AG-151`, D-16) — quando informado, essas fronteiras são
+    usadas DIRETO em vez de calculadas sobre `t0_ms.min()/max()` locais.
+    `None` (default) é bit-exato para todo caller existente: a única
+    forma de sair do comportamento de sempre é passar o parâmetro
+    explicitamente. Existe para receber `edges_ms` computado sobre a
+    UNIÃO de `t0` de vários símbolos (`compute_pooled_edges_ms`),
+    pré-requisito para qualquer medição pooled ter purge cross-símbolo
+    real — ver docstring de `compute_pooled_edges_ms`."""
+    if t0_ms.shape[0] == 0:
+        raise CPCVError("assign_time_groups: t0_ms vazio")
+
+    if edges_ms is None:
+        t_min = int(t0_ms.min())
+        t_max = int(t0_ms.max())
+        if t_min == t_max:
+            raise CPCVError("assign_time_groups: t0_ms tem um único instante — não particionável")
+        edges_ms = _linspace_edges_ms(t_min, t_max, n_groups)
+    else:
+        if edges_ms.shape[0] != n_groups + 1:
+            raise CPCVError(
+                f"assign_time_groups: edges_ms informado tem {edges_ms.shape[0]} fronteiras, "
+                f"esperado n_groups + 1 = {n_groups + 1}"
+            )
+        if not np.all(np.diff(edges_ms) > 0):
+            raise CPCVError("assign_time_groups: edges_ms informado não é estritamente crescente")
 
     group_id = np.searchsorted(edges_ms, t0_ms, side="right") - 1
     group_id = np.clip(group_id, 0, n_groups - 1)
@@ -542,7 +612,11 @@ class CPCVResult:
 
 
 def generate_splits(
-    labels: pl.DataFrame, config: CPCVConfig | None = None, *, symbol: str | None = None
+    labels: pl.DataFrame,
+    config: CPCVConfig | None = None,
+    *,
+    symbol: str | None = None,
+    edges_ms: IntArray | None = None,
 ) -> CPCVResult:
     """Núcleo do CPCV (§11.4). `labels` precisa ter `t0`/`t1` (datetime,
     UTC) — mesmo schema de `labels/{version}/labels.parquet`
@@ -568,6 +642,13 @@ def generate_splits(
     consistent` levanta `ValueError` explícito se `None` nesse caso, nunca
     pula a checagem silenciosamente.
 
+    `edges_ms` (AG-151, D-16) — repassado direto para `assign_time_groups`.
+    `None` (default) preserva o comportamento de sempre: fronteiras
+    calculadas sobre o `t0` LOCAL de `labels`. Passar o retorno de
+    `compute_pooled_edges_ms` aqui é o que torna uma medição cross-símbolo
+    pooled purgada de verdade — sem isso, `group_id == g` não identifica a
+    mesma janela de calendário entre símbolos de histórico diferente.
+
     Purge (item 2b): fronteira direita usa `g_end_effective` (cobre o `t1`
     real de teste esticando além de `g_end`) e, se `config.max_feature_
     lookback_ms > 0`, também cobre a janela de lookback de features de
@@ -586,7 +667,7 @@ def generate_splits(
     t1_ms = labels["t1"].dt.epoch(time_unit="ms").to_numpy().astype(np.int64)
     n = t0_ms.shape[0]
 
-    group_id, edges_ms = assign_time_groups(t0_ms, cfg.n_groups)
+    group_id, edges_ms = assign_time_groups(t0_ms, cfg.n_groups, edges_ms=edges_ms)
     embargo_ms = _embargo_ms(cfg)
     path_by_pair = _path_assignment(cfg.n_groups)
 
