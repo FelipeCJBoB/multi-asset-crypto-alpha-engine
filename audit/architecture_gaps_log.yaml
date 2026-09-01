@@ -26792,3 +26792,43 @@ entries:
       documentar formalmente que o walk-forward atual serve como
       auditoria pos-hoc de sinais FORTES (AUC>=0,65-0,70), nao como teste
       confirmatorio de sinais modestos-mas-reais.
+
+  - id: AG-407
+    date: "2026-08-31"
+    file: "scripts/measure_q10_q1_pooled.py (novo)"
+    related_file: "docs/adendo_angulos_7_8_pooled_meta_analise_gate_model_alpha_2026-08-31.md (backlog item 14, proposto e nao testado)"
+    numeracao: "AG-407."
+    found_by: "Medicao real, autorizacao de execucao do Manager -- item 14 do roadmap 'Caso 0/20' (Q10-Q1 pooled em portfolio, backlog proprio desde o adendo Angulos 7-8, nunca antes calculado)."
+    gap: >
+      Sem trades brutos por barra (so buckets de decil agregados por
+      fold no artefato), pooling exato entre folds nao e reconstruivel
+      -- media PONDERADA por `n_trades` dos decis 1+10 (mais peso pros
+      folds com mais trades nos extremos) + consistencia de SINAL entre
+      folds (fracao de folds com Q10-Q1 positivo -- um sinal real deveria
+      ser majoritariamente consistente, ruido puro fica perto de 50/50).
+
+      Canonico: Camada1 long -5,37bps (50,0% folds positivos -- moeda
+      honesta exata); Camada1 short +45,55bps (66,7% positivos -- unico
+      caso com maioria clara de folds concordando em direcao); Camada0
+      long +5,88bps (61,5%); Camada0 short -9,80bps (33,3%).
+      `total_common_oof`: nenhuma celula passa de 61,5% de consistencia
+      de sinal.
+    severity: "informativo -- nenhum achado forte o bastante pra mudar decisao, mas fecha um item de backlog proprio que ficaria em aberto indefinidamente"
+    layer: "analysis -- capacidade de diagnostico nova"
+    consequence: >
+      NAO encontra sinal consistente forte em nenhuma celula (a maior
+      consistencia de sinal, 66,7%, ainda esta longe do padrao ~90%+ que
+      indicaria rank-signal real robusto). Reforca, por um angulo NAO
+      LINEAR (diferente de AUC/edge medio, ambos lineares), a mesma
+      leitura geral da investigacao -- nao ha evidencia de sinal
+      concentrado nos extremos de confianca que a media incondicional
+      estivesse escondendo.
+    resolved_by_commit: null
+    status: >
+      ABERTO -- achado informativo, sem acao de codigo pendente. `scripts/
+      measure_q10_q1_pooled.py` fica como capacidade reusavel. Ressalva
+      declarada: pooling por media ponderada (nao reconstrucao exata dos
+      decis atraves de folds, que exigiria trades brutos nao persistidos
+      no artefato atual) -- suficiente pra checagem de consistencia de
+      sinal, nao pra um teste de significancia formal sobre o valor
+      pooled em si.
