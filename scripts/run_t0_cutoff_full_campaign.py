@@ -16,9 +16,20 @@ separada, não tomada por este script.
 sessão, `AG-393` item 1 / Seção 5.1 corrigida da ADR-008): `BTCUSDT/R2`
 alcança 2022 (único dos 5), os outros 4 começam em 2023-10-01.
 
+**`--control` (`AG-416`)**: a campanha original (150 trials × 10 studies,
+commits `1af8782`/`70c22ce`) mostrou 8/10 células melhorando contra
+produção, mas CONFUNDIDO com a correção do bug de seed compartilhado
+(`AG-399`) aplicada na mesma rodada — produção foi achada sob seed=42
+GLOBAL, esta campanha usa `_derived_sampler_seed` por combo desde o
+início. `--control` roda a MESMA campanha (mesmo seed corrigido) mas
+com `t0_end=None` (sem corte) — isola se a melhora vem do corte de data
+ou só do seed corrigido. Storage/resultados em arquivo SEPARADO, nunca
+mistura com a campanha `t0_end` original.
+
 Uso:
 
     uv run python -m scripts.run_t0_cutoff_full_campaign
+    uv run python -m scripts.run_t0_cutoff_full_campaign --control
 """
 
 from __future__ import annotations
@@ -38,7 +49,7 @@ from src.monitoring.logging import configure_logging
 
 logger = structlog.get_logger(__name__)
 
-_COMBOS: tuple[tuple[str, str, str], ...] = (
+_COMBOS: tuple[tuple[str, str, str | None], ...] = (
     ("BTCUSDT", "R2", "2022-01-01"),
     ("SOLUSDT", "R2", "2023-10-01"),
     ("SOLUSDT", "R3", "2023-10-01"),
@@ -48,6 +59,8 @@ _COMBOS: tuple[tuple[str, str, str], ...] = (
 _VARIANTS: tuple[str, ...] = (alpha.VARIANT_CAMADA1, alpha.VARIANT_CAMADA0)
 _STORAGE_DIR = Path("artifacts/scratch/optuna_studies_t0_cutoff_full")
 _RESULTS_PATH = Path("experiments/t0_cutoff_full_campaign_results.json")
+_CONTROL_STORAGE_DIR = Path("artifacts/scratch/optuna_studies_t0_cutoff_control")
+_CONTROL_RESULTS_PATH = Path("experiments/t0_cutoff_control_campaign_results.json")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -65,6 +78,12 @@ def main(argv: list[str] | None = None) -> int:
         metavar="SYMBOL/RESOLUTION",
         help="Ex. --combo BTCUSDT/R2 (repetível). Default: os 5 candidatos.",
     )
+    parser.add_argument(
+        "--control",
+        action="store_true",
+        help="AG-416 -- roda sem t0_end (t0_end=None), isolando o efeito do seed "
+        "corrigido (AG-399) do efeito do corte de data. Storage/resultados separados.",
+    )
     args = parser.parse_args(argv)
 
     configure_logging(json_output=False)
@@ -75,10 +94,15 @@ def main(argv: list[str] | None = None) -> int:
     if args.combo:
         wanted = set(args.combo)
         combos = tuple(c for c in _COMBOS if f"{c[0]}/{c[1]}" in wanted)
+    if args.control:
+        combos = tuple((symbol, resolution_id, None) for symbol, resolution_id, _ in combos)
+
+    storage_dir = _CONTROL_STORAGE_DIR if args.control else _STORAGE_DIR
+    results_path = _CONTROL_RESULTS_PATH if args.control else _RESULTS_PATH
 
     results: list[dict[str, object]] = []
-    if _RESULTS_PATH.exists():
-        results = json.loads(_RESULTS_PATH.read_text(encoding="utf-8"))
+    if results_path.exists():
+        results = json.loads(results_path.read_text(encoding="utf-8"))
         done = {(r["symbol"], r["resolution_id"], r["variant"]) for r in results}
     else:
         done = set()
@@ -111,7 +135,7 @@ def main(argv: list[str] | None = None) -> int:
                 resolution_id=resolution_id,
                 variant=variant,
                 n_trials=n_trials,
-                storage_dir=_STORAGE_DIR,
+                storage_dir=storage_dir,
                 t0_end=t0_end,
                 scratch=True,
             )
@@ -127,8 +151,8 @@ def main(argv: list[str] | None = None) -> int:
                     "study_name": result.study_name,
                 }
             )
-            _RESULTS_PATH.parent.mkdir(parents=True, exist_ok=True)
-            _RESULTS_PATH.write_text(
+            results_path.parent.mkdir(parents=True, exist_ok=True)
+            results_path.write_text(
                 json.dumps(results, indent=2, ensure_ascii=False), encoding="utf-8"
             )
             logger.info(
@@ -143,7 +167,7 @@ def main(argv: list[str] | None = None) -> int:
     logger.info(
         "scripts.run_t0_cutoff_full_campaign.tudo_concluido",
         n_studies=len(results),
-        results_path=str(_RESULTS_PATH),
+        results_path=str(results_path),
     )
     return 0
 
