@@ -3948,6 +3948,44 @@ labels_experiment_log_sprint_label:
   class: D
   sweep_required: false
 
+meta_e0_null_calibration_confidence_level:
+  value: 0.95
+  provenance: LITERATURE
+  source: >
+    Convenção padrão de intervalo de confiança a 95% (Wilson, via
+    scipy.stats.binomtest) -- usado só para operacionalizar "materialmente
+    acima [de 5%]" do §2.6 do design doc (docs/meta_model_design_doc_2026-
+    08-22.md), na validação OBRIGATÓRIA do nulo (P0, §15.1/§15.2), não o
+    critério do próprio Gate E0 (esse é meta_e0_null_percentile abaixo).
+    Ver src/analysis/meta_fp_inventory.py::validate_null_calibration.
+  class: C
+  sweep_required: false
+
+meta_e0_null_calibration_target:
+  value: 0.05
+  provenance: DERIVED
+  source: >
+    1 - meta_e0_null_percentile -- sob H0 (nulo bem calibrado), a taxa
+    nominal de PASS de um candidato sem sinal real é o complemento do
+    percentil usado como limiar (§2.6, texto literal: "a taxa de PASS
+    observada deve ficar próxima de 5%").
+  derived_from: [meta_e0_null_percentile]
+  class: C
+  sweep_required: false
+
+meta_e0_null_percentile:
+  value: 0.95
+  provenance: LITERATURE
+  source: >
+    docs/meta_model_design_doc_2026-08-22.md §2.6 (Gate E0, D-14), texto
+    TRAVADO: "PASS sse a AUC agregada do path exceder o p95 do nulo
+    permutado" -- convenção padrão de teste unilateral a 5% (percentil
+    95), não escolhida por conveniência deste projeto. Guardrail
+    quantil-medido (classe C), não hiperparâmetro livre -- é a própria
+    DEFINIÇÃO do critério do gate, não algo a otimizar.
+  class: C
+  sweep_required: false
+
 meta_include_nofill_in_training:
   value: false
   provenance: ASSUMED
