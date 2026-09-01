@@ -26832,3 +26832,49 @@ entries:
       no artefato atual) -- suficiente pra checagem de consistencia de
       sinal, nao pra um teste de significancia formal sobre o valor
       pooled em si.
+
+  - id: AG-408
+    date: "2026-08-31"
+    file: "src/labels/triple_barrier.py; scripts/evaluate_walk_forward_gates.py"
+    related_file: "docs/prompts/REFUTACAO_CONSOLIDADA_0de20_20260831.md achado G1/N5; AG-391"
+    numeracao: "AG-408."
+    found_by: "Auditoria adversarial externa (G1) -- confirmado nesta sessao: cost_exit_frac (triple_barrier.py:1655) cobra so taker_fee, 0 ocorrencias de 'spread' no modulo inteiro. adverse_selection_bps (item 11 do roadmap 'Caso 0/20')."
+    gap: >
+      `edge_bps` reportado em toda a investigacao (ADR-008, auditoria
+      adversarial, `Caso 0/20`) e BRUTO de 2 custos reais nao modelados:
+      (1) spread bid-ask -- saidas via SL/TIME sao ordens a mercado
+      (`taker`), que cruzam o spread alem de pagar `taker_fee`; o motor
+      de labels nunca modela isso (0 ocorrencias de "spread" em `triple_
+      barrier.py`). (2) `adverse_selection_bps` -- calculado e gravado
+      como coluna informativa (`triple_barrier.py:1090`), mas
+      DELIBERADAMENTE nao subtraido de `ret_net`.
+
+      **Achado adicional desta sessao, nao so confirmacao do achado
+      externo:** o item (2) NAO e uma lacuna nao tratada -- e uma decisao
+      de design ja registrada e justificada no proprio modulo
+      (`triple_barrier.py:46-53`): "Escolha conservadora: reportar o
+      placeholder... nao fabricar um desconto que a Label Engine nao pode
+      medir sozinha a partir de `mark_1m` -- o markout real so e medivel
+      ao vivo". Isso e a mesma disciplina B23 ("nunca estipular sem
+      medir") que o `CLAUDE.md` do projeto exige -- subtrair um numero
+      fabricado violaria a propria regra que motivaria a correcao.
+    severity: "media -- nao corrompe nenhum artefato, mas o unico combo historicamente mais proximo de sobreviver (BTCUSDT/R2) tem edge bruto pequeno o bastante (poucos bps) pra 2-4bps de spread/selecao adversa consumirem o que sobrar"
+    layer: "labels (motor central, triple_barrier.py) / analysis (disclosure no ponto de decisao)"
+    consequence: >
+      Nenhuma decisao de producao ja tomada foi contaminada por um numero
+      fabricado (o projeto ja evitava isso corretamente). O risco real e
+      de LEITURA: qualquer gate/relatorio que mostra `edge_bps` sem essa
+      ressalva ao lado pode ser lido como "liquido de tudo" quando nao e.
+    resolved_by_commit: null
+    status: >
+      PARCIALMENTE RESOLVIDO 2026-08-31 (mesmo dia, autorizacao de
+      execucao do Manager) -- decisao explicita: NAO alterar `triple_
+      barrier.py` (fabricar um desconto sem dado real de livro de ofertas
+      violaria a mesma B23 que motivou a decisao original documentada).
+      Aplicado em vez disso: aviso estruturado (`logger.warning`) toda vez
+      que `scripts/evaluate_walk_forward_gates.py` roda, mais docstring
+      do modulo explicando a lacuna e citando os 2 mecanismos exatos
+      (`cost_exit_frac`/`adverse_selection_bps`). Item genuinamente aberto
+      pra quem quiser MEDIR (nao fabricar) spread real: exigiria dado de
+      livro de ofertas historico, que este projeto pode ou nao ter --
+      nao verificado nesta sessao, fora do escopo do roadmap "Caso 0/20".
