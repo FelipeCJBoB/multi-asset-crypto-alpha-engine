@@ -70,6 +70,8 @@ def _gate_verdict(
         frac_folds_usados=8.0 / 12.0,  # noqa: magic-number
         data_gate_pass=data_pass,
         edge_bps_mean=5.0,  # noqa: magic-number
+        edge_bps_std=2.0,  # noqa: magic-number
+        edge_bps_p_value=0.03,  # noqa: magic-number
         alpha_gate_pass=alpha_pass,
         auc_mean_by_side={"long": 0.55, "short": float("nan")},  # noqa: magic-number
         auc_std_by_side={"long": 0.10, "short": float("nan")},  # noqa: magic-number
