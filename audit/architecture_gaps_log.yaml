@@ -27248,3 +27248,61 @@ entries:
     resolved_by_commit: null
     resolution: "medido -- nao e um bug a corrigir; teste ideal (barra-a-barra) permanece backlog, condicionado a autorizacao de custo de retreino."
     status: "concluido (versao proxy) -- item 16 do roadmap 'Caso 0/20' fechado nesta granularidade; versao barra-a-barra fica registrada como proximo passo condicional, nao decidida unilateralmente."
+
+  - id: AG-416
+    date: "2026-09-01"
+    file: "scripts/run_t0_cutoff_full_campaign.py; scripts/compare_t0_cutoff_full_campaign.py; experiments/t0_cutoff_full_campaign_results.json; experiments/alpha_walk_forward_*_t0cutoff.json"
+    related_file: "AG-411 (validacao reduzida); AG-399 (bug do seed compartilhado -- CONFOUNDING FACTOR desta comparacao); item 12 do roadmap 'Caso 0/20'"
+    numeracao: "AG-416."
+    found_by: "Campanha completa autorizada pelo Manager (2026-09-01, 'sobre Optuna item 12 Manager autoriza execucao'), comparacao walk-forward decisiva rodada na sequencia."
+    gap: >
+      Campanha COMPLETA (150 trials x 10 studies, escala de producao,
+      nao os 20 trials da validacao reduzida de AG-411) rodou sem erros.
+      Walk-forward real com os hiperparametros vencedores de cada study
+      (mesma seed/tau_policy/split de calibracao dos artefatos
+      canonicos, so hiperparametro muda) comparado contra producao:
+
+      **8 de 10 celulas MELHORAM** (mediana +13,4bps, media +28,7bps
+      puxada por 2 outliers grandes): `SOLUSDT/R2` C1 -57,66->+20,78bps
+      (+78,44); `XRPUSDT/R3` C0 +26,34->+139,17bps (+112,83); `XRPUSDT/
+      R3` C1 -34,54->+0,36bps (vira positivo); `XRPUSDT/R2` C0 -17,55->
+      +24,44bps (vira positivo). Camada1 (producao): 4/5 melhora, so
+      `BTCUSDT/R2` piora (+7,90->-4,59bps -- a UNICA celula com edge
+      canonico positivo relevante piora). Camada0: 4/5 melhora, so
+      `SOLUSDT/R2` piora (ja o pior candidato, so 1 fold usavel).
+
+      **CONFOUND REAL, nao um resultado limpo de t0_end isolado**: os
+      hiperparametros de PRODUCAO atuais foram achados sob o bug do
+      `AG-399` (seed=42 GLOBAL compartilhada por TODAS as 10 studies,
+      sem variar por combo/variant -- `learning_rate` identico ate a
+      16a casa entre `BTCUSDT/R2 C1` e `XRPUSDT/R3 C0`, `min_child_
+      samples=77` em 4/10 vencedores, `P~=2,9x10^-6` sob sorteio
+      independente). Esta campanha corrigiu ESSE bug (`_derived_sampler_
+      seed` por combo, commit `a60c8c2`) AO MESMO TEMPO que aplicou o
+      corte `t0_end` -- as duas mudancas foram introduzidas JUNTAS, sem
+      controle isolando qual das duas produz a melhora observada. Uma
+      busca nova SEM `t0_end` mas COM o seed corrigido isolaria a
+      contribuicao real do corte de data -- nao rodada, mesmo custo de
+      `n_lifetime` de uma campanha completa nova, nao autorizada nesta
+      rodada.
+    severity: "media -- resultado real e consistente (8/10, mediana positiva), mas causalmente confundido; nao decide sozinho se t0_end especificamente e a causa, nem autoriza promover hiperparametro novo pra producao"
+    layer: "models (HPO/walk-forward) -- INSUMO pra decisao, nenhum hiperparametro de producao trocado por este achado (mesma cautela ja declarada no docstring de compare_t0_cutoff_full_campaign.py)"
+    consequence: >
+      Item 12 do roadmap "Caso 0/20" fica RESOLVIDO quanto a capacidade
+      e execucao (campanha completa rodou, resultado medido e real), mas
+      a pergunta original (t0_end especificamente melhora o HPO?) segue
+      sem resposta causalmente limpa por causa do confound com AG-399.
+      Promover os novos hiperparametros pra producao SEM isolar o
+      confound repetiria o mesmo padrao que AG-399 expos (decisao de
+      producao sobre um resultado nao totalmente entendido) -- proximo
+      passo condicional: campanha de controle (seed corrigido, t0_end=
+      None) antes de qualquer promocao, decisao do Manager dado o custo.
+    resolved_by_commit: null
+    resolution: null
+    status: >
+      MEDIDO 2026-09-01, nao decisivo isoladamente -- capacidade e
+      execucao completas (commits `1af8782`/`70c22ce`), resultado real
+      registrado (8/10 melhora), mas achado colateral (confound com
+      AG-399) impede atribuir a melhora ao `t0_end` isoladamente sem uma
+      campanha de controle adicional. Decisao de promover hiperparametro
+      ou rodar o controle fica explicitamente com o Manager.
