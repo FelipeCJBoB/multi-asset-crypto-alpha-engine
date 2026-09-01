@@ -14,7 +14,22 @@ Uso — os 5 artefatos canônicos (a base do "0/20" da ADR-008):
 Os 5 artefatos sob a política de tau corrigida (AG-210/AG-395/AG-403):
 
     uv run python -m scripts.evaluate_walk_forward_gates --suffix total_common_oof
-"""
+
+**AVISO (item 11 do roadmap, AG-408): `edge_bps` aqui é BRUTO de spread e
+de seleção adversa.** `cost_exit_frac` (`triple_barrier.py:1655`) cobra só
+`taker_fee` pra saídas via SL/TIME — nunca o spread bid-ask que uma ordem
+a mercado também paga implicitamente ao cruzar o livro. `adverse_
+selection_bps` é calculado e REPORTADO (`triple_barrier.py:1090`), mas
+deliberadamente NÃO subtraído de `ret_net` — decisão já documentada
+(`triple_barrier.py:46-53`): "não fabricar um desconto que a Label Engine
+não pode medir sozinha a partir de `mark_1m` — o markout real só é
+medível ao vivo". Esta sessão NÃO alterou esse comportamento (mudar o
+motor de labels pra fabricar um desconto sem dado de livro de ofertas
+real violaria a mesma regra B23 que motivou a decisão original) — só
+torna a lacuna explícita aqui, no ponto onde `edge_bps` decide gate.
+Para o único combo historicamente perto de sobreviver (`BTCUSDT/R2`),
+2-4bps de spread/seleção adversa consumiriam boa parte ou todo o edge
+bruto medido."""
 
 from __future__ import annotations
 
@@ -59,6 +74,17 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     configure_logging(json_output=False)
+
+    # AG-408 (item 11 do roadmap) -- edge_bps é BRUTO de spread e seleção
+    # adversa, sempre. Não é um bug corrigível aqui (ver docstring do
+    # módulo) -- é uma lacuna de medição real que o gate Alpha ignora
+    # silenciosamente sem este aviso.
+    logger.warning(
+        "scripts.evaluate_walk_forward_gates.edge_bps_bruto_de_spread_e_selecao_adversa",
+        detail="cost_exit_frac cobra so taker_fee (nunca spread bid-ask); "
+        "adverse_selection_bps e reportado mas deliberadamente nao subtraido "
+        "de ret_net (triple_barrier.py:46-53) -- ver AG-408",
+    )
 
     data_min = int(load_constant("alpha_gate_data_min_folds_usados"))
     model_sig = float(load_constant("alpha_gate_model_significance_level"))
