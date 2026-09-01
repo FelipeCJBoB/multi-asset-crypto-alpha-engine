@@ -680,7 +680,15 @@ class MetaFoldResult:
     predictions` sempre tem uma linha por linha de teste do fold, com
     `p_meta`/`side_final`/`fold_status` anexados — nunca filtra linha
     nenhuma, para que o chamador (F6) veja o universo inteiro, vetado ou
-    não."""
+    não.
+
+    `train_predictions` (F6, §9) — `train_known` com `p_meta` do PRÓPRIO
+    modelo ajustado, anexado. `None` sob pass-through/rank-deficiente
+    (não há modelo pra escorar o próprio treino). Existe pra que `meta_
+    ablation.py::_search_and_fit` reuse os SCORES REAIS já computados por
+    A1 (embaralhados em A2) em vez de reajustar o modelo do zero — a
+    correção crítica do §9 é sobre reusar `_search_and_fit`, não sobre
+    reusar `LogitL2Meta.fit`."""
 
     meta_split_id: int
     path_id: int
@@ -692,6 +700,7 @@ class MetaFoldResult:
     design_rank: DesignRankDiagnostic | None
     coefficient_shares: dict[str, float] | None
     test_predictions: pl.DataFrame
+    train_predictions: pl.DataFrame | None = None
 
 
 def run_meta_fold(
@@ -845,6 +854,7 @@ def run_meta_fold(
     if test_vetoed.height > 0:
         parts.append(_vetoed_out(mds.META_STATUS_OK))
     test_predictions = pl.concat(parts, how="vertical")
+    train_predictions = train_known.with_columns(p_meta=pl.Series(score_train))
 
     if bundle_dest is not None:
         write_meta_fold_bundle(
@@ -868,6 +878,7 @@ def run_meta_fold(
         design_rank=diag,
         coefficient_shares=learner.coefficient_shares(),
         test_predictions=test_predictions,
+        train_predictions=train_predictions,
     )
 
 
