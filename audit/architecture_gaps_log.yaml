@@ -26878,3 +26878,101 @@ entries:
       pra quem quiser MEDIR (nao fabricar) spread real: exigiria dado de
       livro de ofertas historico, que este projeto pode ou nao ter --
       nao verificado nesta sessao, fora do escopo do roadmap "Caso 0/20".
+
+  - id: AG-409
+    date: "2026-09-01"
+    file: "src/models/meta_ablation.py::run_ablation_for_combo"
+    related_file: "audit/evidence_ledger.yaml::meta-f6-ablacao-0-de-5-simbolos-2026-09-01; AG-391 (Alpha 0/20); AG-404 (Gate E0 0/5); docs/meta_model_design_doc_2026-08-22.md Sec9"
+    found_by: "Medicao real de F6 (2026-09-01) -- 5 combos de producao reais, n_seeds=200 por path."
+    gap: >
+      ACHADO CONSOLIDADO (nao bug de codigo -- resultado de medicao). O
+      criterio PRIMARIO do gate F6 (Sec9: permanencia sobre os 5
+      SIMBOLOS) reprova os 5 combos -- nenhum tem sequer 1 path aprovado
+      (Sec9 exige >=4/5). Dois achados adicionais, medidos, nao
+      previstos a priori:
+
+      1. `SOLUSDT/R3` e `XRPUSDT/R3` tem ZERO de 15 folds ajustando
+      modelo -- 100% pass-through por amostra insuficiente/posto
+      deficiente. A grade R3 (dollar bar mais grosso, menos barras) tem
+      sinal escasso demais pro piso de EPV de `meta_min_events_per_
+      variable=10` x 9 colunas = 90 eventos efetivos (Sec7.3). O Meta
+      NUNCA e treinado de verdade nesses 2 combos.
+
+      2. Jaccard(A1,A3) = 1,000 EXATO em quase todos os paths de 4 dos 5
+      combos (excecao parcial: BTCUSDT/R2, 0,817-1,000) -- o conjunto
+      aceito pelo Meta e IDENTICO ao do baseline ingenuo (top-k por
+      `p_alpha`, pareado em pass-rate). Sinal direto de que o filtro
+      aprendido e, na pratica, uma reparametrizacao de `tau` sobre
+      `p_alpha`, nao selecao baseada em `regime` -- o resultado nulo que
+      o Sec3.4 do proprio design doc ja identificava como o mais
+      provavel dado o desenho (D-01 preve regime como a vantagem
+      informacional; a convergencia empirica com A3 e evidencia CONTRA
+      essa hipotese central).
+    severity: "alto"
+    layer: "models -- ablacao e medicao pos-hoc do gate, decisao de roadmap consome o resultado mas nao e tomada por este achado"
+    consequence: >
+      TERCEIRA medicao negativa independente na mesma janela de
+      auditoria, convergindo com `AG-391` (Alpha via walk-forward real,
+      0/20) e `AG-404` (Gate E0 via permutacao circular-shift, 0/5).
+      TRES metodologias completamente diferentes -- walk-forward
+      ancorado, permutacao de regime, ablacao com nulo de score
+      embaralhado -- mesma conclusao qualitativa: nenhuma camada do
+      motor demonstra edge robusto fora da amostra nos 5 candidatos
+      reais medidos. O achado 1 (R3 nunca treina) e especifico e
+      acionavel: se o Meta algum dia for reconsiderado, a grade R3 pode
+      precisar de um piso de EPV mais baixo ou pooling cross-simbolo
+      (`AG-151`, ja fechado como primitiva) antes de ser viavel.
+    resolved_by_commit: null
+    resolution: null
+    status: "aberto -- decisao do Manager (2026-08-31/09-01, mesma sessao que fechou AG-404): a consequencia pre-declarada do Sec9 ('Meta sai do roadmap') NAO foi aplicada -- 'nao e impeditivo agora, finalize a construcao do Meta-model mesmo assim'. Registrado para o Manager decidir depois (junto com AG-404); nao bloqueante pra F7/F8 prosseguirem."
+
+  - id: AG-410
+    date: "2026-09-01"
+    file: "experiments/alpha_walk_forward_{symbol}_{resolution_id}_seed{43,44,45,46}.json (20 arquivos novos); scripts/measure_seed_sensitivity.py (novo)"
+    related_file: "AG-391; AG-403; docs/prompts/REFUTACAO_CONSOLIDADA_0de20_20260831.md achado R11"
+    numeracao: "AG-410."
+    found_by: "Medicao real, autorizacao de execucao do Manager -- item 4 do roadmap 'Caso 0/20' (rodar a Fase 4 com >=5 seeds, R11 da auditoria adversarial externa: 'seed unica -> barra de erro nao medida')."
+    gap: >
+      Rodados os 5 candidatos x 2 camadas sob 5 seeds (42=canonico, 43,
+      44, 45, 46 novos) via `scripts/run_walk_forward_campaign.py`. Achado
+      central: **o ponto estimado de `edge_bps_mean` varia enormemente
+      por seed, ao ponto de trocar de SINAL** em varias celulas --
+      `SOLUSDT/R3` Camada1: -17,00 (seed 42) vs +19,75/+13,71/+2,30/
+      +10,67 (as outras 4 -- so a seed canonica e negativa); `SOLUSDT/R3`
+      Camada0: -32,82 (seed 42) vs +9,67/+31,14/+22,08/+36,34 (as outras
+      4, TODAS positivas); `XRPUSDT/R3` Camada1: -34,54 (seed 42) vs
+      +46,28/+10,10/+3,82/-15,15.
+
+      **Teste-t formal entre-seed** (mesmo nucleo `alpha_gate_p_value` ja
+      usado no gate Alpha oficial, agora sobre a dispersao ENTRE seeds em
+      vez de entre folds): 9 de 10 celulas NAO significativas (p entre
+      0,09 e 0,90). 1 celula significativa isolada: `XRPUSDT/R3` Camada0,
+      mediana=+14,63bps, TODAS as 5 seeds positivas (2,81 a 36,34), p=
+      0,0182 -- nao sobrevive a correcao Bonferroni pra 10 testes
+      simultaneos (0,05/10=0,005).
+    severity: "alta -- confirma por medicao direta uma preocupacao ja registrada (R11) mas nunca antes testada com dado real; muda a leitura de varias celulas de forma material"
+    layer: "models (walk_forward, seed unica de producao) -- capacidade de medicao nova, nenhum default de producao alterado"
+    consequence: >
+      NAO decide que os candidatos tem alpha real -- a maioria da
+      dispersao entre-seed nao e estatisticamente distinguivel de zero
+      (9/10 celulas). MAS confirma que o veredito "0/20" da ADR-008,
+      calculado sobre 1 SEED SO, carrega incerteza muito maior do que
+      qualquer numero de ponto estimado unico sugeriria -- em pelo menos
+      3 celulas (`SOLUSDT/R3` ambas camadas, `XRPUSDT/R3` Camada1) a seed
+      canonica (42) e a UNICA das 5 com sinal negativo, o resto positivo.
+      Isso nao muda os gates oficiais (Data/Model continuam reprovando
+      por outros motivos, `AG-391`/`AG-394`), mas significa que qualquer
+      leitura de "este candidato especifico e ruim" apoiada so na seed
+      canonica e uma leitura sobre RUIDO DE SEED, nao sobre o candidato.
+    resolved_by_commit: null
+    status: >
+      ABERTO -- achado de medicao real, nao de bug. `scripts/measure_
+      seed_sensitivity.py` fica como capacidade reusavel. Proximo passo
+      real, nao decidido unilateralmente: (a) decidir se `n_seeds>=5` (ou
+      mais) deveria virar parte do protocolo padrao de qualquer campanha
+      de walk-forward futura, nao so um diagnostico pos-hoc; (b) investigar
+      por que `XRPUSDT/R3` Camada0 e a unica celula com sinal consistente
+      entre as 5 seeds -- merece atencao author antes de descartar como
+      acaso (1 celula "significativa" em 10 testes e exatamente o
+      esperado sob H0 pura, mas a consistencia de SINAL nas 5 seeds
+      -- nao so o p-valor isolado -- e o que chama atencao aqui).
