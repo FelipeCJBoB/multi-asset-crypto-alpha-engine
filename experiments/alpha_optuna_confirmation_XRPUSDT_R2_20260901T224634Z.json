@@ -1,0 +1,56 @@
+{
+  "symbol": "XRPUSDT",
+  "resolution_id": "R2",
+  "source_campaign": "t0_cutoff_control_campaign (AG-419) -- seed corrigido (AG-399), SEM corte de data, 1 seed, 150 trials -- NAO e confirmacao multi-seed como o processo ADR-007 anterior",
+  "run_stamp": "20260901T224634Z",
+  "camada1": {
+    "winner": {
+      "hyper": {
+        "max_depth": 3,
+        "n_estimators": 114,
+        "learning_rate": 0.08652801983276412,
+        "subsample": 0.5488657057571713,
+        "subsample_freq": 7,
+        "feature_fraction": 0.47016434374323046,
+        "lambda_l2": 0.6092846746712638,
+        "min_child_samples": 37,
+        "num_leaves": 33,
+        "min_sum_hessian_in_leaf": 0.07471340044004986,
+        "max_bin": 138,
+        "ess_regularization_n_obs_independentes_alvo": 51.379061107430864,
+        "ess_regularization_fator_conservador": 0.8750725773457805,
+        "regularization_basis": "ess_derived",
+        "early_stopping_mode": "three_way",
+        "ic_magnitude_floor_k": 2.0
+      },
+      "best_value": 3.6813794923998797
+    },
+    "n_trials": 150,
+    "study_name": "alpha_hyperparams_XRPUSDT_R2_camada1_cpu_d761dad8"
+  },
+  "camada0": {
+    "winner": {
+      "hyper": {
+        "max_depth": 3,
+        "n_estimators": 756,
+        "learning_rate": 0.057144307951586135,
+        "subsample": 0.7354245892132795,
+        "subsample_freq": 6,
+        "feature_fraction": 0.9525336611809341,
+        "lambda_l2": 22.805237520047985,
+        "min_child_samples": 26,
+        "num_leaves": 15,
+        "min_sum_hessian_in_leaf": 0.10421437103615089,
+        "max_bin": 383,
+        "ess_regularization_n_obs_independentes_alvo": 56.70864937567583,
+        "ess_regularization_fator_conservador": 0.5443749391805662,
+        "regularization_basis": "ess_derived",
+        "early_stopping_mode": "three_way",
+        "ic_magnitude_floor_k": 2.0
+      },
+      "best_value": 0.9400256045067064
+    },
+    "n_trials": 150,
+    "study_name": "alpha_hyperparams_XRPUSDT_R2_camada0_cpu_23b88c65"
+  }
+}

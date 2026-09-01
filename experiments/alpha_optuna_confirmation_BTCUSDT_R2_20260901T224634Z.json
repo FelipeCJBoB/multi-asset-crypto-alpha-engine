@@ -1,0 +1,56 @@
+{
+  "symbol": "BTCUSDT",
+  "resolution_id": "R2",
+  "source_campaign": "t0_cutoff_control_campaign (AG-419) -- seed corrigido (AG-399), SEM corte de data, 1 seed, 150 trials -- NAO e confirmacao multi-seed como o processo ADR-007 anterior",
+  "run_stamp": "20260901T224634Z",
+  "camada1": {
+    "winner": {
+      "hyper": {
+        "max_depth": 3,
+        "n_estimators": 763,
+        "learning_rate": 0.008197271991716337,
+        "subsample": 0.6377398198818436,
+        "subsample_freq": 10,
+        "feature_fraction": 0.5163789101860925,
+        "lambda_l2": 30.539773495844152,
+        "min_child_samples": 69,
+        "num_leaves": 27,
+        "min_sum_hessian_in_leaf": 0.953457169768769,
+        "max_bin": 419,
+        "ess_regularization_n_obs_independentes_alvo": 22.33490370266044,
+        "ess_regularization_fator_conservador": 0.8599643170296998,
+        "regularization_basis": "ess_derived",
+        "early_stopping_mode": "three_way",
+        "ic_magnitude_floor_k": 2.0
+      },
+      "best_value": 0.9479032201232835
+    },
+    "n_trials": 150,
+    "study_name": "alpha_hyperparams_BTCUSDT_R2_camada1_cpu_637cae4b"
+  },
+  "camada0": {
+    "winner": {
+      "hyper": {
+        "max_depth": 3,
+        "n_estimators": 424,
+        "learning_rate": 0.008643090209415054,
+        "subsample": 0.542432593892615,
+        "subsample_freq": 5,
+        "feature_fraction": 0.605798051711115,
+        "lambda_l2": 28.086780737036726,
+        "min_child_samples": 36,
+        "num_leaves": 4,
+        "min_sum_hessian_in_leaf": 0.2156183869880593,
+        "max_bin": 473,
+        "ess_regularization_n_obs_independentes_alvo": 20.446063480291453,
+        "ess_regularization_fator_conservador": 0.8971541796748835,
+        "regularization_basis": "ess_derived",
+        "early_stopping_mode": "three_way",
+        "ic_magnitude_floor_k": 2.0
+      },
+      "best_value": 0.7433504426469921
+    },
+    "n_trials": 150,
+    "study_name": "alpha_hyperparams_BTCUSDT_R2_camada0_cpu_910f9234"
+  }
+}

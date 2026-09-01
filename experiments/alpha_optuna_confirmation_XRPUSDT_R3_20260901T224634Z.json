@@ -1,0 +1,56 @@
+{
+  "symbol": "XRPUSDT",
+  "resolution_id": "R3",
+  "source_campaign": "t0_cutoff_control_campaign (AG-419) -- seed corrigido (AG-399), SEM corte de data, 1 seed, 150 trials -- NAO e confirmacao multi-seed como o processo ADR-007 anterior",
+  "run_stamp": "20260901T224634Z",
+  "camada1": {
+    "winner": {
+      "hyper": {
+        "max_depth": 3,
+        "n_estimators": 258,
+        "learning_rate": 0.0639598789427187,
+        "subsample": 0.9715563549154467,
+        "subsample_freq": 9,
+        "feature_fraction": 0.4895628342915574,
+        "lambda_l2": 6.221008766521057,
+        "min_child_samples": 11,
+        "num_leaves": 43,
+        "min_sum_hessian_in_leaf": 0.07825226949004903,
+        "max_bin": 345,
+        "ess_regularization_n_obs_independentes_alvo": 43.41393695155796,
+        "ess_regularization_fator_conservador": 0.8609949422798018,
+        "regularization_basis": "ess_derived",
+        "early_stopping_mode": "three_way",
+        "ic_magnitude_floor_k": 2.0
+      },
+      "best_value": 0.81787036740487
+    },
+    "n_trials": 150,
+    "study_name": "alpha_hyperparams_XRPUSDT_R3_camada1_cpu_5aa5a805"
+  },
+  "camada0": {
+    "winner": {
+      "hyper": {
+        "max_depth": 3,
+        "n_estimators": 784,
+        "learning_rate": 0.01119508241951935,
+        "subsample": 0.5894528908478844,
+        "subsample_freq": 8,
+        "feature_fraction": 0.3707605428885802,
+        "lambda_l2": 0.4412923569861902,
+        "min_child_samples": 65,
+        "num_leaves": 7,
+        "min_sum_hessian_in_leaf": 0.00853143603588909,
+        "max_bin": 398,
+        "ess_regularization_n_obs_independentes_alvo": 37.787853630383715,
+        "ess_regularization_fator_conservador": 0.7695706842031749,
+        "regularization_basis": "ess_derived",
+        "early_stopping_mode": "three_way",
+        "ic_magnitude_floor_k": 2.0
+      },
+      "best_value": 0.7550660908450583
+    },
+    "n_trials": 150,
+    "study_name": "alpha_hyperparams_XRPUSDT_R3_camada0_cpu_35d72b41"
+  }
+}

@@ -1,0 +1,56 @@
+{
+  "symbol": "SOLUSDT",
+  "resolution_id": "R3",
+  "source_campaign": "t0_cutoff_control_campaign (AG-419) -- seed corrigido (AG-399), SEM corte de data, 1 seed, 150 trials -- NAO e confirmacao multi-seed como o processo ADR-007 anterior",
+  "run_stamp": "20260901T224634Z",
+  "camada1": {
+    "winner": {
+      "hyper": {
+        "max_depth": 3,
+        "n_estimators": 626,
+        "learning_rate": 0.01360229401513183,
+        "subsample": 0.9873013362339965,
+        "subsample_freq": 4,
+        "feature_fraction": 0.6905442139524293,
+        "lambda_l2": 41.931976098685944,
+        "min_child_samples": 81,
+        "num_leaves": 4,
+        "min_sum_hessian_in_leaf": 1.09294561831242,
+        "max_bin": 352,
+        "ess_regularization_n_obs_independentes_alvo": 47.169456043961816,
+        "ess_regularization_fator_conservador": 0.5302064085361917,
+        "regularization_basis": "ess_derived",
+        "early_stopping_mode": "three_way",
+        "ic_magnitude_floor_k": 2.0
+      },
+      "best_value": 7.352125671598495
+    },
+    "n_trials": 150,
+    "study_name": "alpha_hyperparams_SOLUSDT_R3_camada1_cpu_786858f8"
+  },
+  "camada0": {
+    "winner": {
+      "hyper": {
+        "max_depth": 3,
+        "n_estimators": 570,
+        "learning_rate": 0.009178836740757592,
+        "subsample": 0.7541476702545833,
+        "subsample_freq": 6,
+        "feature_fraction": 0.8313512173670109,
+        "lambda_l2": 13.255389471773636,
+        "min_child_samples": 99,
+        "num_leaves": 5,
+        "min_sum_hessian_in_leaf": 0.894939594131759,
+        "max_bin": 495,
+        "ess_regularization_n_obs_independentes_alvo": 20.900268122051028,
+        "ess_regularization_fator_conservador": 0.4308958876229513,
+        "regularization_basis": "ess_derived",
+        "early_stopping_mode": "three_way",
+        "ic_magnitude_floor_k": 2.0
+      },
+      "best_value": 4.7220510891220036
+    },
+    "n_trials": 150,
+    "study_name": "alpha_hyperparams_SOLUSDT_R3_camada0_cpu_13a095be"
+  }
+}

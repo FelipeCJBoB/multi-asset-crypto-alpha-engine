@@ -2705,14 +2705,42 @@ alpha_prune_max_gate_fpr:
 
 alpha_production_hyperparam_override:
   value:
-    SOLUSDT_R3: "20260831T024607Z"
-    XRPUSDT_R2: "20260830T143204Z"
-    XRPUSDT_R3: "20260830T143204Z"
-    BTCUSDT_R2: "20260830T143204Z"
-    SOLUSDT_R2: "20260830T143204Z"
+    SOLUSDT_R3: "20260901T224634Z"
+    XRPUSDT_R2: "20260901T224634Z"
+    XRPUSDT_R3: "20260901T224634Z"
+    BTCUSDT_R2: "20260901T224634Z"
+    SOLUSDT_R2: "20260901T224634Z"
   provenance: ASSUMED
   source: >
-    Decisão explícita do Manager (2026-08-31) — override do gate duplo
+    **[ATUALIZADO 2026-09-01]** Decisão explícita do Manager, override
+    de negócio ("aplica no código real os fix que estão prontos,
+    promovendo os itens achados no diagnóstico pro run canônico") —
+    promove a campanha de CONTROLE (`AG-419`, seed corrigido `AG-399`,
+    SEM corte de data, 1 seed × 150 trials, `scripts/promote_control_
+    campaign_to_production.py`) sobre os 5 hiperparâmetros anteriores
+    (achados sob o bug de seed compartilhado). Escolha deliberada da
+    campanha de CONTROLE, não da campanha `t0_end`: `AG-419` isolou que
+    a melhora de 8/10 células medida na campanha `t0_end` vinha
+    majoritariamente do seed corrigido, não do corte de data em si —
+    promover a campanha de controle aplica SÓ a correção confirmada do
+    bug, sem misturar uma segunda mudança de metodologia (corte de
+    data) ainda sem evidência de efeito próprio. **Schema honesto**: os
+    5 JSONs novos (`run_stamp=20260901T224634Z`) NÃO replicam os campos
+    de confirmação multi-seed do processo anterior (seria fabricar
+    confiança que não existe) — vêm de busca de 1 seed, não confirmação
+    de 10 seeds como o processo `ADR-007` original abaixo. `SOLUSDT/R2`
+    Camada0 sob o hiperparâmetro novo produz 0 folds utilizáveis no
+    walk-forward (100% degenerado) — promovido MESMO ASSIM, sem
+    substituir por um hiperparâmetro de outra campanha, porque esconder
+    esse resultado contradiria o objetivo explícito desta promoção
+    ("estar realista com o motor"): é um achado real sobre a fragilidade
+    já conhecida desse combo (`n=1` fold histórico), não um bug a
+    mascarar. Números novos do walk-forward canônico e dos gates:
+    `audit/architecture_gaps_log.yaml::AG-420`.
+
+    **Histórico — decisão original (2026-08-31, valores anteriores
+    preservados abaixo pra rastreabilidade, não mais em `value`
+    acima):** override do gate duplo
     calibrado (ADR-007 Itens 2/3: ZERO/6 combos passam o gate sob
     confirmação profunda; FPR do próprio gate medido em 0-8% pelo Item
     3, confiável — a ausência de aprovação automática NÃO é falha de

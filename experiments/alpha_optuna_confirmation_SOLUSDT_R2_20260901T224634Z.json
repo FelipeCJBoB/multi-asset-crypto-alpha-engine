@@ -1,0 +1,56 @@
+{
+  "symbol": "SOLUSDT",
+  "resolution_id": "R2",
+  "source_campaign": "t0_cutoff_control_campaign (AG-419) -- seed corrigido (AG-399), SEM corte de data, 1 seed, 150 trials -- NAO e confirmacao multi-seed como o processo ADR-007 anterior",
+  "run_stamp": "20260901T224634Z",
+  "camada1": {
+    "winner": {
+      "hyper": {
+        "max_depth": 3,
+        "n_estimators": 717,
+        "learning_rate": 0.03298632042811131,
+        "subsample": 0.8067458496344996,
+        "subsample_freq": 10,
+        "feature_fraction": 0.597328685110851,
+        "lambda_l2": 30.921345131452046,
+        "min_child_samples": 47,
+        "num_leaves": 4,
+        "min_sum_hessian_in_leaf": 1.341451482622593,
+        "max_bin": 121,
+        "ess_regularization_n_obs_independentes_alvo": 59.171292386045266,
+        "ess_regularization_fator_conservador": 0.2716947452058864,
+        "regularization_basis": "ess_derived",
+        "early_stopping_mode": "three_way",
+        "ic_magnitude_floor_k": 2.0
+      },
+      "best_value": 2006.7038123384002
+    },
+    "n_trials": 150,
+    "study_name": "alpha_hyperparams_SOLUSDT_R2_camada1_cpu_26ce661c"
+  },
+  "camada0": {
+    "winner": {
+      "hyper": {
+        "max_depth": 3,
+        "n_estimators": 200,
+        "learning_rate": 0.08429946044946769,
+        "subsample": 0.5870939164172246,
+        "subsample_freq": 9,
+        "feature_fraction": 0.6014894823827913,
+        "lambda_l2": 28.965655253156413,
+        "min_child_samples": 91,
+        "num_leaves": 4,
+        "min_sum_hessian_in_leaf": 1.438096210676735,
+        "max_bin": 80,
+        "ess_regularization_n_obs_independentes_alvo": 50.318317479272395,
+        "ess_regularization_fator_conservador": 0.5909732119126199,
+        "regularization_basis": "ess_derived",
+        "early_stopping_mode": "three_way",
+        "ic_magnitude_floor_k": 2.0
+      },
+      "best_value": 3.2297422155134874
+    },
+    "n_trials": 150,
+    "study_name": "alpha_hyperparams_SOLUSDT_R2_camada0_cpu_cf891b06"
+  }
+}
