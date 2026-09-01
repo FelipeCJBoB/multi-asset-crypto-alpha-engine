@@ -42,6 +42,7 @@ from __future__ import annotations
 
 import dataclasses
 import functools
+import hashlib
 import io
 import math
 import os
@@ -601,6 +602,20 @@ def write_search_artifact(
     )
 
 
+def _derived_sampler_seed(base_seed: int, symbol: str, resolution_id: str, variant: str) -> int:
+    """AG-399 -- seed do `TPESampler` por (symbol, resolution_id, variant),
+    derivado do seed global de forma determinística (mesma seed de entrada
+    => mesmo seed derivado, sempre, reprodutível entre execuções). Não
+    reusa `alpha._derived_seed` (int-only, `*parts: int`) -- aqui as
+    partes são strings (symbol/resolution_id/variant), duplicar ~5 linhas
+    é mais barato que acoplar a um símbolo privado de outro módulo, mesmo
+    princípio já documentado em `score_quality.py::_spearman_ic`. `sha256`
+    (não `hash()` nativo do Python, que é salgado por processo — PYTHON
+    HASH SEED aleatório por padrão, não reprodutível entre execuções)."""
+    digest = hashlib.sha256(f"{base_seed}|{symbol}|{resolution_id}|{variant}".encode()).digest()
+    return int.from_bytes(digest[:4], byteorder="big") % 2_147_483_647  # noqa: magic-number -- teto de int32 assinado, mesmo range de optuna.samplers.TPESampler(seed=...)
+
+
 def run_search_for_combo(
     *,
     symbol: str,
@@ -640,7 +655,29 @@ def run_search_for_combo(
         n_trials if n_trials is not None else int(load_constant("alpha_optuna_n_trials"))
     )
     seed = int(load_constant("alpha_random_seed"))
-    sampler_seed_resolved = sampler_seed if sampler_seed is not None else seed
+    # AG-399/AG-405 (auditoria adversarial externa, achado N2, confirmado
+    # nesta sessao) -- ANTES, `sampler_seed=None` resolvia pro MESMO
+    # `alpha_random_seed` global em TODO study, qualquer combo/variant.
+    # `build_search_space()` e puro sobre `constants.yaml` (nao depende de
+    # symbol/resolution_id/variant) e o `TPESampler` do Optuna usa
+    # `n_startup_trials=10` (default, nunca customizado aqui) de sorteio
+    # quase-aleatorio ANTES do modelo TPE proprio entrar -- seed
+    # compartilhada + espaco de busca identico faz os primeiros ~10 trials
+    # de TODO study serem LITERALMENTE identicos entre combos, nao
+    # exploracoes independentes (explica `learning_rate` identico a 16
+    # casas entre `BTCUSDT/R2 C1` e `XRPUSDT/R3 C0`, `min_child_samples=77`
+    # em 4/10 vencedores). Corrigido: sem `sampler_seed` explicito, deriva
+    # um seed por (symbol, resolution_id, variant) do seed global -- cada
+    # study passa a ter sua PROPRIA sequencia de sorteio. `sampler_seed`
+    # explicito (testes, comparacao controlada) continua tendo prioridade,
+    # comportamento intacto. Muda `config_hash` (novo estudo, nunca
+    # sobrescreve/retoma um study antigo sob o seed global antigo -- ver
+    # `compute_search_config_hash` abaixo).
+    sampler_seed_resolved = (
+        sampler_seed
+        if sampler_seed is not None
+        else _derived_sampler_seed(seed, symbol, resolution_id, variant)
+    )
     sampler_name = str(load_constant("alpha_optuna_sampler"))
     sampler_cls = _SAMPLER_BY_NAME.get(sampler_name)
     if sampler_cls is None:

@@ -744,3 +744,35 @@ def test_export_trial_trajectory_cria_diretorio_se_ausente(tmp_path: Any) -> Non
     )
 
     assert out_path.exists()
+
+
+# ============================================================================
+# _derived_sampler_seed -- AG-399/AG-405 (auditoria adversarial externa,
+# achado N2: sampler_seed compartilhado entre studies produzia trials de
+# startup identicos entre combos)
+# ============================================================================
+
+
+def test_derived_sampler_seed_e_deterministico() -> None:
+    a = mod._derived_sampler_seed(42, "BTCUSDT", "R2", "camada1")
+    b = mod._derived_sampler_seed(42, "BTCUSDT", "R2", "camada1")
+    assert a == b
+
+
+def test_derived_sampler_seed_varia_por_symbol_resolution_variant() -> None:
+    base = mod._derived_sampler_seed(42, "BTCUSDT", "R2", "camada1")
+    outros = {
+        mod._derived_sampler_seed(42, "XRPUSDT", "R2", "camada1"),
+        mod._derived_sampler_seed(42, "BTCUSDT", "R3", "camada1"),
+        mod._derived_sampler_seed(42, "BTCUSDT", "R2", "camada0"),
+    }
+    # nenhuma das 3 variacoes (symbol/resolution/variant) reproduz o
+    # mesmo seed base -- a coincidencia que N2 mediu (learning_rate
+    # identico entre BTCUSDT/R2 C1 e XRPUSDT/R3 C0) fica estruturalmente
+    # impossivel: cada (symbol, resolution_id, variant) tem seed proprio.
+    assert base not in outros
+
+
+def test_derived_sampler_seed_dentro_do_range_valido_do_tpesampler() -> None:
+    seed = mod._derived_sampler_seed(42, "SOLUSDT", "R3", "camada0")
+    assert 0 <= seed < 2_147_483_647
