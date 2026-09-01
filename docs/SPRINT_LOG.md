@@ -6435,3 +6435,44 @@ console Windows cp1252 (mesma classe de bug já corrigida uma vez em <!-- check-
 `PLANO_MESTRE_PRINCE2.md` §15.39 addendum, `evidence_ledger.yaml`, <!-- check-sprint-log: skip -->
 `architecture_gaps_log.yaml::AG-412`. Próximo passo: F6b (walk-forward <!-- check-sprint-log: skip -->
 ancorado, §4.4). <!-- check-sprint-log: skip -->
+
+## 2026-09-01 — Meta F6b: ablação sobre walk-forward ancorado — 0 de 5, mais decisivo (AG-413) <!-- check-sprint-log: skip -->
+
+`§4.4` é "gate bloqueante": se a ablação passa sob CPCV mas não sob <!-- check-sprint-log: skip -->
+walk-forward ancorado, o resultado CPCV é artefato. Antes de <!-- check-sprint-log: skip -->
+implementar, achado real (verificado, não hipotético): a regra de <!-- check-sprint-log: skip -->
+doador `path_matched` do CPCV depende de múltiplos splits <!-- check-sprint-log: skip -->
+compartilhando o mesmo `path_id` — sob WF cada fold É seu próprio <!-- check-sprint-log: skip -->
+path, `path_matched` sem adaptação zeraria o treino do Meta em TODO <!-- check-sprint-log: skip -->
+fold. Consultado o Manager via `AskUserQuestion` antes de escrever <!-- check-sprint-log: skip -->
+código (não decidido em silêncio): split causal ÚNICO por combo, não <!-- check-sprint-log: skip -->
+k-folds aninhados.
+
+Implementado: `walk_forward.run_walk_forward_for_combo` ganhou <!-- check-sprint-log: skip -->
+`keep_predictions=False` (default, mudança puramente aditiva — <!-- check-sprint-log: skip -->
+nenhum chamador do ADR-007/ADR-008 muda de comportamento). <!-- check-sprint-log: skip -->
+`meta_dataset.build_meta_signal_table_wf_single_split` (novo) parte a <!-- check-sprint-log: skip -->
+timeline OOS causal do Alpha numa única fronteira, purge por `t1`, <!-- check-sprint-log: skip -->
+sem donor. `meta_walk_forward.py` (novo) orquestra ponta a ponta, <!-- check-sprint-log: skip -->
+reusa `meta_ablation.run_ablation_for_combo` (F6) sem alteração <!-- check-sprint-log: skip -->
+(`min_paths_required=1` — 1 path por construção, não afrouxamento do <!-- check-sprint-log: skip -->
+limiar `≥4/5`).
+
+**Resultado real** (5 combos de produção, `n_seeds=200`): **0 de 5** — <!-- check-sprint-log: skip -->
+mais severo que `AG-409`: os 5 caem em `INSUFFICIENT_SAMPLE`, o Meta <!-- check-sprint-log: skip -->
+nunca ajusta modelo sob causalidade real, nem `BTCUSDT/R2` (único <!-- check-sprint-log: skip -->
+combo que ajustava em 10/15 folds sob CPCV). `BTCUSDT/R2` usa só 8 de <!-- check-sprint-log: skip -->
+19 folds do Alpha, sobrando 94 linhas de treino do Meta (n_events_eff <!-- check-sprint-log: skip -->
+32,44 contra piso 90,00); `SOLUSDT/R2` usa só 1 de 12 folds, sobrando <!-- check-sprint-log: skip -->
+4 linhas de teste.
+
+**Quarta medição negativa independente convergente** (Alpha 0/20, <!-- check-sprint-log: skip -->
+Gate E0 0/5, F6/CPCV 0/5, agora F6b 0/5) — a mais decisiva: não mede <!-- check-sprint-log: skip -->
+"sem edge apesar de amostra suficiente", mede "sem amostra suficiente <!-- check-sprint-log: skip -->
+pra sequer tentar" sob a estrutura causal real. Achado acionável: se o <!-- check-sprint-log: skip -->
+Meta for reconsiderado, aumentar o histórico causal (ou pooling <!-- check-sprint-log: skip -->
+cross-símbolo, `AG-151`) é pré-requisito antes de testar edge de <!-- check-sprint-log: skip -->
+novo. Registrado (`evidence_ledger.yaml`, `AG-413`), não bloqueante <!-- check-sprint-log: skip -->
+por decisão explícita do Manager. Detalhe completo: <!-- check-sprint-log: skip -->
+`PLANO_MESTRE_PRINCE2.md` §15.40. Próximo passo: F7 (enforcement: <!-- check-sprint-log: skip -->
+teste #10/#11, import-linter, banned_patterns), F8 (constantes TBD). <!-- check-sprint-log: skip -->

@@ -4365,3 +4365,76 @@ entries:
     corolario direto da amostra insuficiente ja registrada, nao um
     problema novo e independente do harness. Ver
     audit/architecture_gaps_log.yaml::AG-412.
+
+- id_curto: meta-f6b-walk-forward-0-de-5-2026-09-01
+  data: '2026-09-01'
+  fase: 'Meta-model F6b (Sec4.4) -- ablacao (F6, Sec9) replicada sobre a timeline
+    causal (walk-forward ancorado) do Alpha, split UNICO por combo (decisao do
+    Manager 2026-09-01, ver AskUserQuestion respondida "Split unico (recomendado)")'
+  symbol: 'BTCUSDT/R2, SOLUSDT/R2, SOLUSDT/R3, XRPUSDT/R2, XRPUSDT/R3 -- os mesmos
+    5 combos de AG-409/AG-412'
+  tf: 'dollar-bar R2/R3, Camada1'
+  lado: 'long e short pooled no universo (side_hat != 0)'
+  regime: 'quantile_classifier_v1 -- mesma configuracao de AG-409/AG-412'
+  feature_ou_filtro: 'src.models.walk_forward.run_walk_forward_for_combo(keep_
+    predictions=True) [novo] -> src.models.meta_dataset.build_meta_signal_table_
+    wf_single_split [novo] -> src.models.meta.run_meta_fold -> src.models.meta_
+    ablation.run_ablation_for_combo(min_paths_required=1)'
+  metrica_tipo: 'Mesmo gate de F6 (Sec9): sharpe(A1) > p95(nulo A2) E sharpe(A1)
+    > sharpe(A3), sobre 1 unico split causal por combo (nao k paths -- Sec4.6 ja
+    tornava o criterio primario sobre simbolos, nao paths)'
+  metrica_valor: >
+    **0 de 5 combos passam** -- e mais severo que AG-409: os 5 caem em
+    `meta_fold_status=INSUFFICIENT_SAMPLE`, o Meta NUNCA chega a AJUSTAR
+    um modelo sob a estrutura causal real, nem mesmo `BTCUSDT/R2` (o
+    UNICO combo que ajustava modelo em 10/15 folds sob CPCV/AG-409).
+
+    Achado estrutural: a timeline OOS causal do Alpha (walk-forward
+    ancorado) e muito mais curta que o universo de treino do Meta sob
+    CPCV, que usa a regra de doador `path_matched` para "emprestar"
+    linhas de OUTROS splits do mesmo path -- um mecanismo que so existe
+    porque CPCV ve blocos futuros (seu proprio Sec4.4 chama isso de
+    "nao e producao"). Sob causalidade real, esse emprestimo artificial
+    desaparece: `BTCUSDT/R2` (o mais forte) usa so 8 de 19 folds do
+    Alpha (o resto degenerado por trades insuficientes) e o split unico
+    do Meta fica com apenas 94 linhas de treino (n_events_eff=32,44
+    contra piso=90,00 do Sec7.3). Os outros 4 combos sao ainda mais
+    esparsos: `SOLUSDT/R2` usa so 1 de 12 folds do Alpha, resultando em
+    4 linhas de TESTE do Meta (n_test_meta=4) -- amostra grande demais
+    pra nao mencionar, pequena demais pra decidir qualquer coisa.
+
+    `sharpe_a0 == sharpe_a1 == sharpe_a3` em TODOS os 5 combos (esperado
+    por construcao sob INSUFFICIENT_SAMPLE -- pass-through faz A1=A0, e
+    A3 pareia o mesmo pass_rate=1,0 de A1, entao vira A0 tambem).
+    `p95_null_a2=NaN`/`n_null_seeds=0` em todos -- sem modelo ajustado
+    nao ha score real pra embaralhar (mesma politica ja documentada em
+    `run_a2_null_replicas`).
+
+    **Quarta medicao negativa independente, convergente**: `adr008-
+    walkforward-real-0-de-20-2026-08-31` (Alpha), `meta-p3-gate-e0-0-
+    de-5-2026-08-31` (Gate E0), `meta-f6-ablacao-0-de-5-simbolos-2026-
+    09-01` (F6/CPCV). F6b e a MAIS decisiva das quatro: nao mede "sem
+    edge detectavel", mede "sem amostra suficiente pra sequer tentar"
+    sob a estrutura de erro real de producao -- o gate bloqueante do
+    Sec4.4 do proprio design doc ("se A1 > p95(A2) sob CPCV mas nao sob
+    WF, o resultado CPCV e artefato") nao chega a ser avaliado no
+    sentido literal (CPCV nunca passou pra comparar), mas a pergunta
+    mais ampla que o Sec4.4 levanta -- "o resultado de CPCV sobrevive
+    sob causalidade real?" -- tem resposta negativa ainda mais forte.
+  n: 5
+  status: vermelho
+  fonte_arquivo: 'experiments/meta_f6b_walk_forward_2026-09-01.json'
+  fonte_secao: 'src/models/meta_walk_forward.py [novo]; src/models/meta_dataset.py::build_meta_signal_table_wf_single_split
+    [novo]; tools/diagnostics/measure_meta_f6b_walk_forward.py; PLANO_MESTRE_PRINCE2.md
+    Sec15.40'
+  nota: >
+    VERMELHO -- quarta medicao negativa independente na mesma janela.
+    Decisao do Manager (2026-09-01) permanece: consequencia pre-declarada
+    do design doc NAO aplicada, F7/F8 seguem. Achado ACIONAVEL registrado
+    junto (`AG-413`): a timeline causal do Alpha e curta demais pro Meta
+    v1 ter QUALQUER chance sob amostra real, independente de D-01 estar
+    certa ou errada sobre regime -- se o Meta for reconsiderado no
+    futuro, aumentar o historico causal disponivel (ou poolar cross-
+    simbolo, `AG-151` ja fechado como primitiva) e pre-requisito antes de
+    qualquer novo teste de edge, nao so um detalhe de configuracao. Ver
+    audit/architecture_gaps_log.yaml::AG-413.

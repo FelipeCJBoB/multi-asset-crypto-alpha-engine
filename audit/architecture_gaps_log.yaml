@@ -27084,3 +27084,73 @@ entries:
     resolved_by_commit: null
     resolution: null
     status: "fechado -- trava bloqueante do Sec4.3 executada retroativamente contra os 5 combos reais; confirma interpretabilidade de AG-409 para BTCUSDT/R2 (o unico combo com sinal suficiente pra testar), nao muda nenhum veredito. Nao bloqueante pra F6b/F7/F8."
+
+  - id: AG-413
+    date: "2026-09-01"
+    file: "src/models/walk_forward.py::run_walk_forward_for_combo (keep_predictions,
+      novo); src/models/meta_dataset.py::build_meta_signal_table_wf_single_split,
+      assert_no_meta_leakage_wf_single_split (novos); src/models/meta_walk_
+      forward.py (novo); tools/diagnostics/measure_meta_f6b_walk_forward.py (novo)"
+    related_file: "AG-409 (F6/CPCV 0/5 simbolos); docs/meta_model_design_doc_2026-08-22.md
+      Sec4.4/Sec9; experiments/meta_f6b_walk_forward_2026-09-01.json"
+    found_by: "F6b (Sec4.4, 'gate bloqueante') do roadmap do Meta -- replica a ablacao
+      de F6 sobre a timeline causal (walk-forward ancorado) do Alpha. Decisao de
+      design consultada ao Manager antes de implementar (AskUserQuestion,
+      2026-09-01): a regra de doador path_matched do CPCV nao existe sob WF (cada
+      fold de WF e seu proprio path_id, achado verificado ANTES de escrever
+      codigo) -- Manager escolheu split UNICO por combo em vez de k-folds
+      aninhados."
+    gap: >
+      A regra `donor_folds_for_path_matched` (D-08, `meta_dataset.py`)
+      depende de multiplos splits compartilhando o MESMO `path_id` --
+      propriedade exclusiva do CPCV (`_path_assignment`, 1-fatoracao
+      round-robin sobre 6 grupos). Sob walk-forward ancorado, CADA fold
+      e seu proprio `path_id` (`walk_forward.py`, "path_id=wf_split.
+      fold_id... deliberado") -- aplicar `path_matched` sem adaptacao
+      faria `doadores[s] = {}` (nenhum outro split compartilha o path de
+      `s`) em TODO fold, zerando o treino do Meta por construcao antes
+      mesmo de medir qualquer coisa. O design doc (Sec4.4) manda
+      "replicar a ablacao sobre walk-forward ancorado, com o mesmo
+      criterio" mas nunca especifica operacionalmente COMO o Meta monta
+      seu proprio treino/teste sob essa estrutura -- decisao nova,
+      consultada ao Manager (nao inventada em silencio).
+
+      **Decisao travada**: split causal UNICO por combo (nao k-folds
+      aninhados) -- `build_meta_signal_table_wf_single_split` (novo,
+      `meta_dataset.py`) parte a timeline OOS ja causal do Alpha numa
+      UNICA fronteira (`generate_anchored_walk_forward_splits` reusada,
+      so a primeira fronteira importa), purge por `t1` (mesmo B09, sem
+      donor). `run_ablation_for_combo` (F6, ja existente) reusado sem
+      alteracao, `min_paths_required=1` -- existe exatamente 1 path por
+      construcao, nao afrouxamento do limiar `>=4/5` do CPCV.
+      `walk_forward.run_walk_forward_for_combo` ganhou `keep_predictions:
+      bool=False` (default preserva 100% do comportamento de todo
+      chamador do ADR-007/ADR-008 -- mudanca puramente aditiva).
+
+      **Resultado real, 5 combos de producao**: 0 de 5 passam. TODOS os
+      5 caem em `INSUFFICIENT_SAMPLE` -- o Meta NUNCA ajusta modelo sob
+      causalidade real, nem mesmo `BTCUSDT/R2` (unico combo que ajustava
+      em 10/15 folds sob CPCV/AG-409). A timeline OOS causal e curta
+      demais: `BTCUSDT/R2` usa so 8 de 19 folds do Alpha (resto
+      degenerado por trades insuficientes), sobrando 94 linhas de
+      treino do Meta (n_events_eff=32,44 contra piso=90,00). `SOLUSDT/
+      R2` usa so 1 de 12 folds, sobrando 4 linhas de TESTE.
+    severity: "alto -- quarta medicao negativa independente convergente, e a mais decisiva das quatro"
+    layer: "models -- infraestrutura nova (walk_forward.py aditivo, meta_dataset.py/meta_walk_forward.py novos), decisao de roadmap consome o resultado mas nao e tomada por este achado"
+    consequence: >
+      Quarta medicao negativa independente, convergindo com `AG-391`
+      (Alpha walk-forward real, 0/20), `AG-404` (Gate E0 permutacao,
+      0/5), `AG-409` (F6/CPCV ablacao, 0/5 simbolos). F6b e
+      estruturalmente MAIS forte que as tres anteriores: nao mede
+      "sem edge detectavel apesar de amostra suficiente" -- mede "sem
+      amostra suficiente pra sequer tentar" sob a estrutura causal real
+      de producao. Achado ACIONAVEL: independente de D-01 (regime como
+      vantagem informacional) estar certa ou errada, o Meta v1 nao tem
+      dado causal suficiente pros 5 candidatos reais HOJE -- se
+      reconsiderado no futuro, aumentar o historico causal disponivel
+      (mais anos de dado, ou pooling cross-simbolo via `AG-151`, ja
+      fechado como primitiva) e PRE-REQUISITO antes de qualquer novo
+      teste de edge, nao um detalhe de configuracao a ajustar depois.
+    resolved_by_commit: null
+    resolution: null
+    status: "aberto -- decisao do Manager (2026-09-01, mesma sessao de AG-404/AG-409/AG-412): consequencia pre-declarada do design doc NAO aplicada, 'finalize a construcao do Meta-model mesmo assim'. Registrado para decisao futura do Manager; nao bloqueante pra F7/F8 prosseguirem."

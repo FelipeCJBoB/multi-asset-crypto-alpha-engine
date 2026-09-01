@@ -1,0 +1,132 @@
+{
+  "_gerado_por": "tools/diagnostics/measure_meta_f6b_walk_forward.py",
+  "_n_seeds": 200,
+  "_proposito": "F6b do Meta-model (docs/meta_model_design_doc_2026-08-22.md Sec4.4) -- ablacao replicada sobre a timeline OOS causal do Alpha (walk-forward ancorado), split UNICO por combo (decisao do Manager 2026-09-01). Gate declarado: se A1 > p95(A2) sob CPCV mas nao sob WF, o resultado CPCV e artefato -- F6 (AG-409) ja reprovou sob CPCV, este script confirma/refuta a mesma reprovacao sob a estrutura causal real.",
+  "_schema": "meta_f6b_walk_forward/1.0.0",
+  "_seed_base": 20260901,
+  "combos": [
+    {
+      "exposure_reduction_suspected": false,
+      "gate_passed": false,
+      "meta_fold_status": "INSUFFICIENT_SAMPLE",
+      "n_test_meta": 325,
+      "n_train_meta": 94,
+      "n_wf_folds_alpha_total": 19,
+      "n_wf_folds_alpha_usados": 8,
+      "path_result": {
+        "accuracy_unweighted_a1": 0.5329153605015674,
+        "base_rate_unweighted": 0.5329153605015674,
+        "jaccard_a1_a3": 1.0,
+        "n_null_seeds": 0,
+        "p95_null_a2": NaN,
+        "pass_rate_a0": 1.0,
+        "pass_rate_a1": 1.0,
+        "passed": false,
+        "sharpe_a0": -0.02706568855666353,
+        "sharpe_a1": -0.02706568855666353,
+        "sharpe_a3": -0.02706568855666353
+      },
+      "resolution_id": "R2",
+      "symbol": "BTCUSDT"
+    },
+    {
+      "exposure_reduction_suspected": false,
+      "gate_passed": false,
+      "meta_fold_status": "INSUFFICIENT_SAMPLE",
+      "n_test_meta": 4,
+      "n_train_meta": 39,
+      "n_wf_folds_alpha_total": 12,
+      "n_wf_folds_alpha_usados": 1,
+      "path_result": {
+        "accuracy_unweighted_a1": 0.75,
+        "base_rate_unweighted": 0.75,
+        "jaccard_a1_a3": 1.0,
+        "n_null_seeds": 0,
+        "p95_null_a2": NaN,
+        "pass_rate_a0": 1.0,
+        "pass_rate_a1": 1.0,
+        "passed": false,
+        "sharpe_a0": 0.8799391958911386,
+        "sharpe_a1": 0.8799391958911386,
+        "sharpe_a3": 0.8799391958911386
+      },
+      "resolution_id": "R2",
+      "symbol": "SOLUSDT"
+    },
+    {
+      "exposure_reduction_suspected": false,
+      "gate_passed": false,
+      "meta_fold_status": "INSUFFICIENT_SAMPLE",
+      "n_test_meta": 16,
+      "n_train_meta": 134,
+      "n_wf_folds_alpha_total": 12,
+      "n_wf_folds_alpha_usados": 4,
+      "path_result": {
+        "accuracy_unweighted_a1": 0.3125,
+        "base_rate_unweighted": 0.3125,
+        "jaccard_a1_a3": 1.0,
+        "n_null_seeds": 0,
+        "p95_null_a2": NaN,
+        "pass_rate_a0": 1.0,
+        "pass_rate_a1": 1.0,
+        "passed": false,
+        "sharpe_a0": -0.1621787065925346,
+        "sharpe_a1": -0.1621787065925346,
+        "sharpe_a3": -0.1621787065925346
+      },
+      "resolution_id": "R3",
+      "symbol": "SOLUSDT"
+    },
+    {
+      "exposure_reduction_suspected": false,
+      "gate_passed": false,
+      "meta_fold_status": "INSUFFICIENT_SAMPLE",
+      "n_test_meta": 40,
+      "n_train_meta": 191,
+      "n_wf_folds_alpha_total": 12,
+      "n_wf_folds_alpha_usados": 6,
+      "path_result": {
+        "accuracy_unweighted_a1": 0.4,
+        "base_rate_unweighted": 0.4,
+        "jaccard_a1_a3": 1.0,
+        "n_null_seeds": 0,
+        "p95_null_a2": NaN,
+        "pass_rate_a0": 1.0,
+        "pass_rate_a1": 1.0,
+        "passed": false,
+        "sharpe_a0": -0.27243008140036507,
+        "sharpe_a1": -0.27243008140036507,
+        "sharpe_a3": -0.27243008140036507
+      },
+      "resolution_id": "R2",
+      "symbol": "XRPUSDT"
+    },
+    {
+      "exposure_reduction_suspected": false,
+      "gate_passed": false,
+      "meta_fold_status": "INSUFFICIENT_SAMPLE",
+      "n_test_meta": 14,
+      "n_train_meta": 166,
+      "n_wf_folds_alpha_total": 12,
+      "n_wf_folds_alpha_usados": 4,
+      "path_result": {
+        "accuracy_unweighted_a1": 0.21428571428571427,
+        "base_rate_unweighted": 0.21428571428571427,
+        "jaccard_a1_a3": 1.0,
+        "n_null_seeds": 0,
+        "p95_null_a2": NaN,
+        "pass_rate_a0": 1.0,
+        "pass_rate_a1": 1.0,
+        "passed": false,
+        "sharpe_a0": -0.8763321209568776,
+        "sharpe_a1": -0.8763321209568776,
+        "sharpe_a3": -0.8763321209568776
+      },
+      "resolution_id": "R3",
+      "symbol": "XRPUSDT"
+    }
+  ],
+  "n_combos": 5,
+  "n_gate_passed": 0,
+  "total_elapsed_s": 131.3854947090149
+}

@@ -831,6 +831,178 @@ def build_meta_signal_table(
 
 
 # ---------------------------------------------------------------------------
+# F6b (§4.4) — split ÚNICO causal, sobre a timeline JÁ OOS do Alpha (walk-
+# forward ancorado). Decisão do Manager (2026-09-01): split único, não
+# k-folds aninhados — `donor_folds_for_path_matched` não se aplica (cada
+# fold de WF é seu próprio `path_id`, `src/models/walk_forward.py:41`;
+# aplicar `path_matched` sem adaptação zera o treino do Meta em TODO fold
+# por construção — achado real, verificado antes deste módulo existir, não
+# hipotético). Sem donor: a fronteira TREINO/TESTE é só `t0`/`t1` contra UM
+# `test_start_ms`, resolvido pelo CHAMADOR (`meta_walk_forward.py`) via
+# `generate_anchored_walk_forward_splits` sobre a timeline já causal —
+# este módulo não importa nada de `src.validation.volatility_walkforward`
+# de propósito, mesma disciplina de "recebe o objeto, não reconstrói" que
+# `run_meta_sprint` já segue para `cpcv_result`.
+# ---------------------------------------------------------------------------
+
+
+def assert_no_meta_leakage_wf_single_split(table: pl.DataFrame, *, test_start_ms: int) -> None:
+    """Versão F6b de `assert_no_meta_leakage` — sem donor/path, a
+    fronteira é só `t0`/`t1` contra `test_start_ms`. Falsificável do
+    mesmo jeito (`raise`, nunca `assert`/`filter`):
+
+        (a) TREINO: `t1 < test_start_ms` (purge — o label não pode
+            terminar dentro ou depois do bloco de teste)
+        (b) TESTE:  `t0 >= test_start_ms`
+        (c) proveniência: `n_unique(model_id) == 1` (mesmo item (d) do
+            §10.1 original, sem a parte de `calibrator_id` por fold —
+            aqui há um único split, não `n_unique(fold_id)` splits)."""
+    if table.height == 0:
+        return
+    t1_ms = table["t1"].dt.epoch(time_unit="ms").to_numpy().astype(np.int64)
+    t0_ms = table["t0"].dt.epoch(time_unit="ms").to_numpy().astype(np.int64)
+    is_train = (table["role"] == ROLE_TRAIN).to_numpy()
+    is_test = (table["role"] == ROLE_TEST).to_numpy()
+
+    fora_treino = is_train & (t1_ms >= test_start_ms)
+    if bool(fora_treino.any()):
+        raise MetaLeakageError(
+            f"F6b/(a): {int(fora_treino.sum())} linha(s) de TREINO têm `t1` >= "
+            f"test_start_ms={test_start_ms} — o label transborda pro bloco de teste, "
+            "purge (B09) não foi aplicado."
+        )
+    fora_teste = is_test & (t0_ms < test_start_ms)
+    if bool(fora_teste.any()):
+        raise MetaLeakageError(
+            f"F6b/(b): {int(fora_teste.sum())} linha(s) de TESTE têm `t0` < "
+            f"test_start_ms={test_start_ms} — vazaram do bloco de treino."
+        )
+    n_model_id = int(table["model_id"].n_unique())
+    if n_model_id != 1:
+        raise MetaLeakageError(
+            f"F6b/(c): {n_model_id} `model_id` distintos na mesma tabela — misturar "
+            "dois runs do Alpha misturaria escalas de probabilidade SEM ERRO."
+        )
+
+
+def build_meta_signal_table_wf_single_split(
+    *,
+    dense: pl.DataFrame,
+    wf_predictions: pl.DataFrame,
+    test_start_ms: int,
+    symbol: str,
+    resolution_id: str,
+    variant: str,
+    regime_source: str = ds.REGIME_SOURCE_HMM_K4,
+    origem: str = "<memória>",
+) -> pl.DataFrame:
+    """F6b (§4.4) — `meta_training_set` sob 1 ÚNICO split causal, montado
+    sobre a timeline JÁ OOS do Alpha (`wf_predictions` — concatenação das
+    predições reais de `walk_forward.run_walk_forward_for_combo(...,
+    keep_predictions=True)` por fold, causal por construção: sem essa
+    causalidade não haveria razão nenhuma pra rodar F6b em vez de reusar
+    F6/CPCV).
+
+    Reusa as MESMAS peças de `build_meta_signal_table` (`join_signals_to_
+    labels`, `_derive_side_projected_columns`, `_derive_target`, `_regime_
+    one_hot`, `_uniqueness_subpop`, `_meta_sample_weight`) — só a montagem
+    de `role`/`meta_split_id`/`path_id` muda: aqui é 1 fronteira temporal
+    (`test_start_ms`), sem donor. `meta_split_id=0`/`path_id=0` fixos —
+    existe exatamente 1 split, não uma família deles."""
+    assert_alpha_predictions_has_tau(wf_predictions, origem=origem)
+    include_nofill = bool(load_constant("meta_include_nofill_in_training"))
+
+    dense_indexed = dense.with_row_index(name="_pos").with_columns(
+        pl.col("_pos").cast(pl.Int64)
+    )
+    regime_levels = regime_levels_for_source(regime_source)
+    carry = _CARRY_FROM_DENSE
+    if regime_source == ds.REGIME_SOURCE_HMM_K4:
+        if ds.REGIME_FOLD_COL not in dense.columns:
+            raise MetaDatasetError(
+                f"build_meta_signal_table_wf_single_split: regime_source="
+                "hmm_gaussian_k4_v1 mas o frame denso não tem "
+                f"{ds.REGIME_FOLD_COL!r}."
+            )
+        carry = (*carry, ds.REGIME_FOLD_COL)
+
+    sinais = wf_predictions.filter(pl.col("side_hat") != 0).select(
+        list(_SIGNAL_COLUMNS_FROM_PREDICTIONS)
+    )
+    ligado = join_signals_to_labels(sinais, dense_indexed, carry=carry)
+    _assert_regime_join_is_total(ligado)
+    if ligado.height == 0:
+        raise MetaDatasetError(
+            f"build_meta_signal_table_wf_single_split: nenhum sinal do Alpha sobrou "
+            f"após o join para {symbol}/{resolution_id}/{variant} — `wf_predictions` "
+            "veio vazio ou sem `side_hat != 0`."
+        )
+
+    t0_ms = ligado["t0"].dt.epoch(time_unit="ms").to_numpy().astype(np.int64)
+    t1_ms = ligado["t1"].dt.epoch(time_unit="ms").to_numpy().astype(np.int64)
+    is_test = t0_ms >= test_start_ms
+    # Purge (B09, mesmo idioma de `walk_forward.walk_forward_split_to_
+    # cpcv_split`): descarta do treino toda linha cujo `t1` ainda esteja
+    # ABERTO quando o bloco de teste começa.
+    is_train = (~is_test) & (t1_ms < test_start_ms)
+
+    if not bool(is_train.any()):
+        raise MetaDatasetError(
+            f"build_meta_signal_table_wf_single_split: purge esvaziou o TREINO do "
+            f"Meta inteiro para {symbol}/{resolution_id}/{variant} "
+            f"(test_start_ms={test_start_ms}) — fold degenerado."
+        )
+    if not bool(is_test.any()):
+        raise MetaDatasetError(
+            f"build_meta_signal_table_wf_single_split: 0 linhas de TESTE para "
+            f"{symbol}/{resolution_id}/{variant} (test_start_ms={test_start_ms})."
+        )
+
+    treino = ligado.filter(pl.Series(is_train)).with_columns(
+        meta_split_id=pl.lit(0, dtype=pl.Int16),
+        path_id=pl.lit(0, dtype=pl.Int64),
+        role=pl.lit(ROLE_TRAIN),
+    )
+    teste = ligado.filter(pl.Series(is_test)).with_columns(
+        meta_split_id=pl.lit(0, dtype=pl.Int16),
+        path_id=pl.lit(0, dtype=pl.Int64),
+        role=pl.lit(ROLE_TEST),
+    )
+    tabela = pl.concat([treino, teste], how="vertical")
+    tabela = tabela.with_columns(
+        symbol=pl.lit(symbol),
+        resolution_id=pl.lit(resolution_id),
+        variant=pl.lit(variant),
+        donor_rule=pl.lit("wf_single_split"),
+        uniqueness_universe=pl.col("uniqueness"),
+        concurrency_universe=pl.col("concurrency"),
+    )
+    tabela = _derive_side_projected_columns(tabela)
+    tabela = _derive_target(tabela, include_nofill=include_nofill)
+    tabela = _regime_one_hot(tabela, regime_levels)
+    tabela = _uniqueness_subpop(tabela)
+    tabela = _meta_sample_weight(tabela)
+
+    assert_no_meta_leakage_wf_single_split(tabela, test_start_ms=test_start_ms)
+
+    logger.info(
+        "models.meta_dataset.build_meta_signal_table_wf_single_split",
+        symbol=symbol,
+        resolution_id=resolution_id,
+        variant=variant,
+        regime_source=regime_source,
+        test_start_ms=test_start_ms,
+        n_linhas=tabela.height,
+        n_treino=int((tabela["role"] == ROLE_TRAIN).sum()),
+        n_teste=int((tabela["role"] == ROLE_TEST).sum()),
+        n_nofill=int((tabela["barrier_hit"] == _NOFILL).sum()),
+        n_unseen_regime=int((tabela["meta_status"] == META_STATUS_UNSEEN_REGIME).sum()),
+        include_nofill_in_training=include_nofill,
+    )
+    return tabela
+
+
+# ---------------------------------------------------------------------------
 # F2 — divergência de unicidade (§5). Entrega o `n_eff_subpop` MEDIDO, que
 # decide o gate de GBM (§7.3) e o N de §14.2.
 # ---------------------------------------------------------------------------

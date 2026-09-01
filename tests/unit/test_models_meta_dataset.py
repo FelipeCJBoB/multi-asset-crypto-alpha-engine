@@ -727,7 +727,7 @@ def test_harness_REPROVA_com_avaliador_cego() -> None:
         _mk_tabela_vazamento(), lambda _t: 0.42
     )
     assert resultado.detected is False
-    assert "F6 não roda" in resultado.reason
+    assert "F6 nao roda" in resultado.reason
     assert len(set(resultado.metric_by_lambda)) == 1, "métrica constante: harness cego"
 
 
@@ -748,7 +748,7 @@ def test_harness_reprova_metrica_nao_finita() -> None:
         _mk_tabela_vazamento(), lambda _t: next(valores)
     )
     assert resultado.detected is False
-    assert "não-finita" in resultado.reason
+    assert "nao-finita" in resultado.reason
 
 
 def test_grade_precisa_comecar_em_zero() -> None:

@@ -311,6 +311,17 @@ class WalkForwardFoldMetrics:
     # à predição por linha, gain nativo conta uso em split; concordam
     # ou divergem é o que a stability matrix audita).
     shap_mean_abs_by_side: dict[str, dict[str, float]]
+    # Meta F6b (docs/meta_model_design_doc_2026-08-22.md Sec4.4) -- as
+    # predicoes OOS reais do Alpha deste fold (`alpha.FoldResult.
+    # predictions`), so quando `run_walk_forward_for_combo(...,
+    # keep_predictions=True)`. `None` por padrao (`keep_predictions=
+    # False`, todo chamador existente do ADR-008/ADR-007 nao muda de
+    # comportamento) -- o Meta e o UNICO consumidor que precisa das
+    # predicoes por fold pra montar sua propria tabela de sinal sobre
+    # janelas causais; os consumidores do Alpha (score_quality/SHAP/
+    # gain acima) ja leem `fold_result.predictions` direto dentro do
+    # loop, sem precisar dele sobrevivendo na estrutura devolvida.
+    predictions: pl.DataFrame | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -341,6 +352,7 @@ def run_walk_forward_for_combo(
     calib_weight_basis: str = alpha.CALIB_WEIGHT_UNIQUENESS,
     initial_train_years: int | None = None,
     model_id_prefix: str = "walk_forward",
+    keep_predictions: bool = False,
 ) -> WalkForwardResult:
     """Walk-forward real (RETREINO, um `alpha.run_fold` por fold ancorado)
     sobre `mf_data` já carregado pelo chamador — `build_modeling_frame`
@@ -351,6 +363,11 @@ def run_walk_forward_for_combo(
     `initial_train_years=None` (default) resolve pra `constants.yaml::
     m1_walkforward_initial_train_years` (protocolo M1, PRD_V4_1.md §3.2 —
     mesmo valor que `src.regime.build_hmm`/`src.analysis.m4_*` já usam).
+
+    `keep_predictions=False` (default, comportamento IDÊNTICO ao de
+    antes desta opção existir) — `True` popula `WalkForwardFoldMetrics.
+    predictions` com as predições OOS reais do fold (Meta F6b, §4.4);
+    todo chamador do ADR-007/ADR-008 fica exatamente como estava.
 
     Levanta `ValueError` se `generate_anchored_walk_forward_splits`
     devolver 0 folds (série curta demais) — falha alta, nunca um
@@ -570,6 +587,7 @@ def run_walk_forward_for_combo(
                 decile_profile_by_side=decile_by_side,
                 gain_by_column_by_side=gain_by_side,
                 shap_mean_abs_by_side=shap_by_side,
+                predictions=(fold_result.predictions if keep_predictions else None),
             )
         )
         if degenerado:
