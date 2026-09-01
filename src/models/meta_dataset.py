@@ -82,6 +82,19 @@ ROLE_TEST = "test"
 META_STATUS_OK = "OK"
 META_STATUS_UNSEEN_REGIME = "UNSEEN_REGIME"
 META_STATUS_INSUFFICIENT_SAMPLE = "INSUFFICIENT_SAMPLE"
+#: Achado real (2026-08-31, BTCUSDT/R2, fold real — não hipotético):
+#: `meta.check_design_rank` (§3.4) pode levantar `RankDeficientDesignError`
+#: num fold pequeno cuja janela de treino nunca observou algum nível de
+#: regime — a dummy correspondente fica com variância zero E colinear com
+#: as outras (rank=8 de 9 colunas medido). O design doc nunca declarou
+#: operacionalmente o que fazer nesse caso; a decisão aqui segue a MESMA
+#: política de `INSUFFICIENT_SAMPLE` (§7.3: "vetar tudo por um problema do
+#: acessório mataria a estratégia") — pass-through, nunca veto, nunca
+#: degradar pra um design matrix mais simples em silêncio. Status distinto
+#: de `INSUFFICIENT_SAMPLE` (causa raiz diferente: colinearidade, não
+#: tamanho de amostra) para que o painel por fold (§9) não confunda as
+#: duas ao diagnosticar POR QUE um fold não ajustou modelo.
+META_STATUS_RANK_DEFICIENT = "RANK_DEFICIENT"
 
 #: Prefixo do one-hot. Existe para desfazer a ambiguidade de nome entre
 #: NÍVEL DE REGIME e `resolution_id` (a grade de barra) — sob o

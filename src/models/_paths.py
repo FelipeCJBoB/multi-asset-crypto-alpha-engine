@@ -113,6 +113,22 @@ EXPERIMENTS_DIR: Path = REPO_ROOT / "experiments"
 MODELS_DIR: Path = REPO_ROOT / "models"
 
 
+def meta_bundle_dir(symbol: str, *, resolution_id: str, variant: str) -> Path:
+    """`models/meta/{symbol}/{resolution_id}/{variant}/` — onde
+    `write_meta_fold_bundle` (F5, D-17) grava um `fold_{meta_split_id}.json`
+    por fold. Dollar-bar-only por desenho (`resolution_id` obrigatório, sem
+    ramo `tf`): o Meta nunca teve caminho legado de grade de tempo — não há
+    "comportamento de sempre" a preservar aqui, ao contrário de
+    `predictions_symbol_tf_dir`/`models_diagnostics_symbol_tf_dir`, que
+    reproduzem um layout já existente antes de V4.1."""
+    if resolution_id not in CALIBRATION_TF_BY_RESOLUTION:
+        raise ValueError(
+            f"resolution_id={resolution_id!r} não reconhecido -- "
+            f"esperado um de {sorted(CALIBRATION_TF_BY_RESOLUTION)}"
+        )
+    return MODELS_DIR / "meta" / symbol / resolution_id / variant
+
+
 def models_diagnostics_symbol_tf_dir(
     symbol: str, model_id: str, *, tf: str = _DEFAULT_TF, resolution_id: str | None = None
 ) -> Path:

@@ -45,7 +45,9 @@ from numpy.typing import NDArray
 from sklearn.linear_model import LogisticRegression
 
 from src.io.artifact import atomic_write_bytes
+from src.validation import cpcv
 
+from . import dataset as ds
 from . import meta_dataset as mds
 from ._constants import load_constant
 
@@ -181,7 +183,7 @@ def assert_sample_sufficient(n_events_eff: float, n_features_effective: int) -> 
     piso = epv * n_features_effective
     if n_events_eff < piso:
         raise InsufficientMetaSampleError(
-            f"§7.3: n_events_eff={n_events_eff:.2f} (Σ uniqueness_subpop da classe "
+            f"§7.3: n_events_eff={n_events_eff:.2f} (soma de uniqueness_subpop da classe "
             f"minoritária) abaixo do piso {piso:.2f} = EPV {epv:g} vezes "
             f"{n_features_effective} colunas efetivas. O fold NÃO ajusta modelo; "
             "política declarada é pass-through (accept=True, p_meta=null) com WARNING, "
@@ -654,3 +656,340 @@ def score_from_bundle(payload: dict[str, Any], X: FloatArray) -> FloatArray:
     intercept = float(payload["intercept"])
     z = X @ coef + intercept
     return np.asarray(1.0 / (1.0 + np.exp(-z)), dtype=np.float64)
+
+
+# ---------------------------------------------------------------------------
+# Orquestração — a peça que faltava entre F5 e F6: roda o Meta ponta a ponta
+# sobre UM (symbol, resolution_id, variant). `meta_dataset.build_meta_signal_
+# table` monta o dataset; estas funções treinam/avaliam fold a fold e
+# assembleiam as predições OOS, exatamente como `pipeline.run_layer1_sprint`
+# faz para o Alpha — mas F6 (ablação) é quem consome isto, não existe
+# artefato `predictions.parquet` de Meta gravado por padrão (D-17: o bundle
+# por fold, `write_meta_fold_bundle`, já é o artefato; a tabela assembleiada
+# devolvida aqui é insumo em memória do chamador, mesmo padrão de
+# `assemble_predictions_table` do Alpha antes de `write_predictions_*`).
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class MetaFoldResult:
+    """Resultado de `run_meta_fold` — um `meta_split_id`. `fold_status`
+    distingue OK (modelo ajustado) de `INSUFFICIENT_SAMPLE` (pass-through
+    do §7.3, fold inteiro) — diferente de `meta_status` POR LINHA (que
+    também cobre `UNSEEN_REGIME`, vetada mesmo em fold `OK`). `test_
+    predictions` sempre tem uma linha por linha de teste do fold, com
+    `p_meta`/`side_final`/`fold_status` anexados — nunca filtra linha
+    nenhuma, para que o chamador (F6) veja o universo inteiro, vetado ou
+    não."""
+
+    meta_split_id: int
+    path_id: int
+    fold_status: str
+    n_events_effective: float
+    n_features_effective: int
+    n_train: int
+    tau_meta: TauMetaResolution | None
+    design_rank: DesignRankDiagnostic | None
+    coefficient_shares: dict[str, float] | None
+    test_predictions: pl.DataFrame
+
+
+def run_meta_fold(
+    table: pl.DataFrame,
+    *,
+    meta_split_id: int,
+    regime_levels: tuple[str, ...],
+    random_state: int,
+    alpha_model_id: str,
+    variant: str,
+    resolution_id: str,
+    bundle_dest: Path | None = None,
+) -> MetaFoldResult:
+    """Treina e avalia UM fold do Meta — F4 (`LogitL2Meta`) + F5 (`resolve_
+    tau_meta`, `apply_meta_filter`, `write_meta_fold_bundle`) amarrados.
+
+    `table` é a saída de `meta_dataset.build_meta_signal_table` (já tem
+    `meta_split_id`/`role`/`meta_status`/`y_meta`/`meta_sample_weight`/
+    one-hot de regime).
+
+    **Duas políticas de veto distintas, nenhuma delegada ao modelo:**
+    1. Linha de TESTE com `meta_status != OK` (regime nunca visto/sem
+       decode) — vetada INCONDICIONALMENTE (`side_final=0`, `p_meta=null`,
+       nunca escorada), mesmo que o fold em si tenha ajustado modelo. O
+       one-hot drop-first de uma linha assim tem todas as dummies em 0 —
+       a MESMA codificação do nível de referência — pontuá-la produziria
+       um número plausível e ERRADO, não um erro (§6.4/D-05).
+    2. Fold inteiro incapaz de ajustar modelo — pass-through
+       (`side_final = side_hat`, `p_meta=null`) pras linhas de teste OK;
+       as vetadas por regime continuam vetadas mesmo sob pass-through (as
+       duas políticas são independentes, não uma substitui a outra). Duas
+       causas raiz distintas, DUAS políticas idênticas mas rotuladas
+       separado (§9 usa o rótulo pra diagnosticar POR QUE, não só QUE):
+       `INSUFFICIENT_SAMPLE` (`n_events_effective` abaixo do piso de EPV,
+       §7.3) e `RANK_DEFICIENT` (achado real 2026-08-31, BTCUSDT/R2 — um
+       fold pequeno pode nunca observar algum nível de regime, deixando
+       a dummy correspondente colinear com as outras; o design doc nunca
+       declarou operacionalmente este caso, a decisão aqui segue a MESMA
+       lógica do §7.3 por analogia — "vetar tudo por um problema do
+       acessório mataria a estratégia" vale igual pra colinearidade)."""
+    fold = table.filter(pl.col("meta_split_id") == meta_split_id)
+    if fold.height == 0:
+        raise MetaLearnerError(f"run_meta_fold: meta_split_id={meta_split_id} sem linhas na tabela")
+    path_id = int(fold["path_id"][0])
+
+    test_all = fold.filter(pl.col("role") == mds.ROLE_TEST)
+    test_ok = test_all.filter(pl.col("meta_status") == mds.META_STATUS_OK)
+    test_vetoed = test_all.filter(pl.col("meta_status") != mds.META_STATUS_OK)
+    train_known = fold.filter(
+        (pl.col("role") == mds.ROLE_TRAIN)
+        & (pl.col("meta_status") == mds.META_STATUS_OK)
+        & pl.col("y_meta").is_not_null()
+    )
+
+    n_features_effective = len(design_columns_for(regime_levels))
+    n_eff = n_events_effective(train_known)
+
+    def _vetoed_out(fold_status: str) -> pl.DataFrame:
+        return test_vetoed.with_columns(
+            p_meta=pl.lit(None, dtype=pl.Float64),
+            side_final=pl.lit(0, dtype=pl.Int8),
+            fold_status=pl.lit(fold_status),
+        )
+
+    def _pass_through(fold_status: str) -> MetaFoldResult:
+        passthrough_ok = test_ok.with_columns(
+            p_meta=pl.lit(None, dtype=pl.Float64),
+            side_final=pl.col("side_hat"),
+            fold_status=pl.lit(fold_status),
+        )
+        parts = [passthrough_ok]
+        if test_vetoed.height > 0:
+            parts.append(_vetoed_out(fold_status))
+        return MetaFoldResult(
+            meta_split_id=meta_split_id,
+            path_id=path_id,
+            fold_status=fold_status,
+            n_events_effective=n_eff,
+            n_features_effective=n_features_effective,
+            n_train=train_known.height,
+            tau_meta=None,
+            design_rank=None,
+            coefficient_shares=None,
+            test_predictions=pl.concat(parts, how="vertical"),
+        )
+
+    try:
+        assert_sample_sufficient(n_eff, n_features_effective)
+    except InsufficientMetaSampleError as exc:
+        logger.warning(
+            "models.meta.run_meta_fold_pass_through",
+            meta_split_id=meta_split_id,
+            path_id=path_id,
+            fold_status=mds.META_STATUS_INSUFFICIENT_SAMPLE,
+            n_events_effective=n_eff,
+            n_features_effective=n_features_effective,
+            reason=str(exc),
+        )
+        return _pass_through(mds.META_STATUS_INSUFFICIENT_SAMPLE)
+
+    try:
+        X_train, X_test, names, diag = build_design_matrix(
+            train_known, test_ok, regime_levels=regime_levels
+        )
+    except RankDeficientDesignError as exc:
+        logger.warning(
+            "models.meta.run_meta_fold_pass_through",
+            meta_split_id=meta_split_id,
+            path_id=path_id,
+            fold_status=mds.META_STATUS_RANK_DEFICIENT,
+            n_events_effective=n_eff,
+            n_features_effective=n_features_effective,
+            reason=str(exc),
+        )
+        return _pass_through(mds.META_STATUS_RANK_DEFICIENT)
+
+    y_train = train_known["y_meta"].to_numpy().astype(np.int64)
+    w_train = train_known["meta_sample_weight"].to_numpy().astype(np.float64)
+
+    learner = LogitL2Meta(random_state=random_state)
+    learner.fit(X_train, y_train, w_train)
+    learner.bind_column_names(names)
+
+    score_train = learner.predict_score(X_train)
+    ret_net_train = train_known["ret_net"].to_numpy().astype(np.float64)
+    tau_res = resolve_tau_meta(score_train, ret_net_train)
+
+    # Achado real (2026-08-31, BTCUSDT/R2 fold real): um fold pode ter
+    # TODA a população de teste vetada por regime desconhecido
+    # (test_ok.height == 0) mesmo com treino suficiente — `sklearn`
+    # recusa pontuar um array de 0 linhas (`ValueError`, não um resultado
+    # vazio educado). O modelo AINDA é ajustado e o bundle AINDA é
+    # gravado (útil pra folds futuros que doem deste); só não há nada
+    # para escorar neste fold especificamente.
+    if X_test.shape[0] > 0:
+        score_test = learner.predict_score(X_test)
+        side_hat_test = test_ok["side_hat"].to_numpy().astype(np.int64)
+        side_final_ok = apply_meta_filter(side_hat_test, score_test, tau_meta=tau_res.tau_meta)
+        test_ok_out = test_ok.with_columns(
+            p_meta=pl.Series(score_test),
+            side_final=pl.Series(side_final_ok),
+            fold_status=pl.lit(mds.META_STATUS_OK),
+        )
+    else:
+        test_ok_out = test_ok.with_columns(
+            p_meta=pl.Series([], dtype=pl.Float64),
+            side_final=pl.Series([], dtype=pl.Int8),
+            fold_status=pl.Series([], dtype=pl.Utf8),
+        )
+    parts = [test_ok_out]
+    if test_vetoed.height > 0:
+        parts.append(_vetoed_out(mds.META_STATUS_OK))
+    test_predictions = pl.concat(parts, how="vertical")
+
+    if bundle_dest is not None:
+        write_meta_fold_bundle(
+            learner,
+            bundle_dest,
+            tau_meta=tau_res.tau_meta,
+            alpha_model_id=alpha_model_id,
+            meta_split_id=meta_split_id,
+            variant=variant,
+            resolution_id=resolution_id,
+        )
+
+    return MetaFoldResult(
+        meta_split_id=meta_split_id,
+        path_id=path_id,
+        fold_status=mds.META_STATUS_OK,
+        n_events_effective=n_eff,
+        n_features_effective=n_features_effective,
+        n_train=train_known.height,
+        tau_meta=tau_res,
+        design_rank=diag,
+        coefficient_shares=learner.coefficient_shares(),
+        test_predictions=test_predictions,
+    )
+
+
+def run_all_meta_folds(
+    table: pl.DataFrame,
+    *,
+    regime_levels: tuple[str, ...],
+    random_state: int,
+    alpha_model_id: str,
+    variant: str,
+    resolution_id: str,
+    bundle_dir: Path | None = None,
+) -> tuple[MetaFoldResult, ...]:
+    """`run_meta_fold` sobre todo `meta_split_id` presente em `table`, na
+    ordem crescente. `bundle_dir`, se dado, grava `fold_{meta_split_id}.json`
+    por fold (`_paths.meta_bundle_dir`); `None` roda sem persistir nada —
+    usado por F6 (ablação), que não precisa dos bundles em disco, só das
+    predições em memória."""
+    fold_ids = sorted(table["meta_split_id"].unique().to_list())
+    resultados = []
+    for fold_id in fold_ids:
+        dest = (bundle_dir / f"fold_{fold_id}.json") if bundle_dir is not None else None
+        resultados.append(
+            run_meta_fold(
+                table,
+                meta_split_id=int(fold_id),
+                regime_levels=regime_levels,
+                random_state=random_state,
+                alpha_model_id=alpha_model_id,
+                variant=variant,
+                resolution_id=resolution_id,
+                bundle_dest=dest,
+            )
+        )
+    return tuple(resultados)
+
+
+def run_meta_sprint(
+    *,
+    symbol: str,
+    resolution_id: str,
+    variant: str,
+    predictions: pl.DataFrame,
+    dense: pl.DataFrame,
+    cpcv_result: cpcv.CPCVResult,
+    alpha_model_id: str,
+    regime_source: str = ds.REGIME_SOURCE_HMM_K4,
+    donor_rule: str = mds.DONOR_RULE_PATH_MATCHED,
+    random_state: int | None = None,
+    bundle_dir: Path | None = None,
+) -> dict[str, Any]:
+    """Orquestrador de ponta a ponta pra UM `(symbol, resolution_id,
+    variant)` — o equivalente de `pipeline.run_layer1_sprint` pro Meta.
+
+    **Recebe os objetos, não os reconstrói** (mesma disciplina de §4.7):
+    `predictions` (do Alpha, já filtrado/gerado por quem quer que seja o
+    dono dessa decisão — produção real ou scratch), `dense`
+    (`dataset.build_modeling_frame(...).data`) e `cpcv_result`
+    (`validation.cpcv.generate_splits(dense, ...)`) são construídos pelo
+    CHAMADOR. Este módulo não sabe (nem deveria saber) como resolver o
+    `config_hash`/hiperparâmetro de produção do Alpha — isso é
+    responsabilidade de quem orquestra a campanha (`hyperparams_by_combo`),
+    não do Meta.
+
+    Devolve um dict com os `fold_results` (painel por fold, insumo de F6)
+    e `test_predictions` assembleiada (união de todos os folds, universo
+    INTEIRO — inclui pass-through e veto, nunca filtrado)."""
+    random_state = (
+        random_state if random_state is not None else int(load_constant("alpha_random_seed"))
+    )
+    regime_levels = mds.regime_levels_for_source(regime_source)
+
+    table = mds.build_meta_signal_table(
+        dense=dense,
+        predictions=predictions,
+        cpcv_result=cpcv_result,
+        symbol=symbol,
+        resolution_id=resolution_id,
+        variant=variant,
+        donor_rule=donor_rule,
+        regime_source=regime_source,
+        origem=f"run_meta_sprint({symbol}/{resolution_id}/{variant})",
+    )
+
+    fold_results = run_all_meta_folds(
+        table,
+        regime_levels=regime_levels,
+        random_state=random_state,
+        alpha_model_id=alpha_model_id,
+        variant=variant,
+        resolution_id=resolution_id,
+        bundle_dir=bundle_dir,
+    )
+
+    test_predictions = pl.concat([r.test_predictions for r in fold_results], how="vertical")
+    n_folds_ok = sum(1 for r in fold_results if r.fold_status == mds.META_STATUS_OK)
+    n_folds_insufficient = sum(
+        1 for r in fold_results if r.fold_status == mds.META_STATUS_INSUFFICIENT_SAMPLE
+    )
+
+    logger.info(
+        "models.meta.run_meta_sprint",
+        symbol=symbol,
+        resolution_id=resolution_id,
+        variant=variant,
+        regime_source=regime_source,
+        n_folds=len(fold_results),
+        n_folds_ok=n_folds_ok,
+        n_folds_insufficient_sample=n_folds_insufficient,
+        n_test_rows=test_predictions.height,
+        n_accept=int((test_predictions["side_final"] != 0).sum()),
+    )
+
+    return {
+        "symbol": symbol,
+        "resolution_id": resolution_id,
+        "variant": variant,
+        "regime_source": regime_source,
+        "n_folds": len(fold_results),
+        "n_folds_ok": n_folds_ok,
+        "n_folds_insufficient_sample": n_folds_insufficient,
+        "fold_results": fold_results,
+        "test_predictions": test_predictions,
+        "meta_training_set": table,
+    }
