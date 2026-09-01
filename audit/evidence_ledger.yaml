@@ -4064,3 +4064,68 @@ entries:
 
     Decisao sobre os 5 candidatos em producao (mante-los, reverter a promocao,
     ou outra acao) NAO foi tomada nesta ADR -- fica com o Manager.
+
+- id_curto: meta-p0-validacao-do-nulo-9-de-10-2026-08-31
+  data: '2026-08-31'
+  fase: 'Meta-model P0 (docs/meta_model_design_doc_2026-08-22.md Sec2.6, Sec15.1/15.2)
+    -- validacao OBRIGATORIA e bloqueante do esquema de permutacao do Gate E0,
+    medida contra dado real (decisao do Manager: pular E0-piloto 15m/R1, medir
+    direto R2/R3, grades vigentes de treino do Alpha)'
+  symbol: 'BTCUSDT, ETHUSDT, SOLUSDT, BNBUSDT, XRPUSDT -- 10 combos (5 simbolos
+    x {R2,R3}), proxy "sem sinal" em anel (BTC-proxy=ETH, ETH-proxy=SOL,
+    SOL-proxy=BNB, BNB-proxy=XRP, XRP-proxy=BTC), alinhado por POSICAO (texto
+    literal Sec2.6)'
+  tf: 'dollar-bar R2/R3'
+  lado: 'long e short pooled (universo e o dataset inteiro por symbol/resolution,
+    nao replica os 5 paths do CPCV -- ver docstring do script)'
+  regime: 'quantile_classifier_v1 (R0-R5) -- nao ha artefato HMM persistido ainda'
+  feature_ou_filtro: 'src.analysis.meta_fp_inventory.validate_null_calibration
+    (circular-shift-by-time, n_trials=100, n_seeds_per_trial=100 por combo)'
+  metrica_tipo: 'Taxa de PASS empirica do procedimento completo (observado > p95
+    do nulo permutado) sobre proxy sabidamente sem sinal -- alvo nominal 5%,
+    IC binomial de 95% (Wilson, scipy.stats.binomtest)'
+  metrica_valor: >
+    9 de 10 combos BEM CALIBRADOS -- pass_rate entre 2% e 8%
+    (BTCUSDT/R2=7%, ETHUSDT/R2=2%, SOLUSDT/R2=5%, BNBUSDT/R2=7%,
+    XRPUSDT/R2=2%, BTCUSDT/R3=6%, ETHUSDT/R3=4%, SOLUSDT/R3=8%,
+    BNBUSDT/R3=6%), todos com IC de 95% cobrindo o alvo de 5%.
+
+    1 de 10 NAO calibrado: XRPUSDT/R3 (proxy=BTCUSDT) -- pass_rate=14%
+    (14/100), IC=[7,9%; 22,4%], NAO cobre 5%. Verificado que NAO e ruido
+    amostral: z=4,13 sob H0 (p0=5%, n=100), P(X>=14)=0,00046 -- mesmo com
+    correcao Bonferroni por 10 testes (familywise 5% -> alpha por teste
+    0,005), a probabilidade exata fica 10x abaixo do limiar.
+
+    Investigacao parcial (nao esgotada -- Regra Zero, nao inventar
+    conclusao): a distribuicao MARGINAL de estados do proxy BTCUSDT/R3
+    truncado (primeiras 84.868 linhas, 2020-01-07 a 2025-02-21) e muito
+    similar a distribuicao marginal de XRPUSDT/R3 completo (estado 1
+    dominante em ambos, ~34k vs ~34k; proporcoes dos 6 estados batem
+    dentro de ~10%) -- descarta desalinhamento GROSSEIRO de regime.
+    Hipotese nao confirmada: persistencia/autocorrelacao do regime de
+    BTC pode diferir da de XRP o bastante para produzir uma configuracao
+    de alinhamento posicional ocasionalmente mais "ressonante" com o
+    calendario de XRP do que o nulo (que roda sobre a MESMA fatia do
+    proxy) consegue capturar -- BTC e XRP sao o par de maior assimetria
+    de historico entre os 5 simbolos (BTC ~6,6 anos vs XRP ~4,7 anos).
+  n: 10
+  status: amarelo
+  fonte_arquivo: 'experiments/meta_e0_null_calibration_2026-08-31.json'
+  fonte_secao: 'src/analysis/meta_fp_inventory.py; tools/diagnostics/measure_meta_e0_null_calibration.py;
+    PLANO_MESTRE_PRINCE2.md Sec15.36'
+  nota: >
+    Classificado AMARELO (nao verde) -- resultado majoritariamente
+    positivo (9/10 valida a primitiva do esquema de permutacao contra
+    dado real), mas com 1 excecao estatisticamente real e nao explicada
+    por completo. NAO invalida P0 como um todo: a maquina estatistica
+    (circular-shift, AUC ponderada, criterio p95) funciona corretamente
+    na maioria esmagadora dos casos reais testados. MAS significa que
+    "alinhado por posicao" entre simbolos de historico muito assimetrico
+    (o caso extremo aqui, BTC-vs-XRP) pode nao ser uniformemente
+    confiavel -- achado a favor de investigar antes de usar esta
+    validacao como prova definitiva de calibracao para QUALQUER par de
+    simbolos em E0-vinculante, especialmente XRP (o simbolo de historico
+    mais curto dos 5).
+
+    Ver audit/architecture_gaps_log.yaml::AG-402 (aberto) para o achado
+    de arquitetura correspondente.

@@ -26160,3 +26160,44 @@ entries:
       tratar o gate Data de `BTCUSDT/R2` como medicao final; item 3 e
       um bug de calibracao que pode reincidir em combos futuros com
       populacao de treino minuscula por lado).
+
+  - id: AG-402
+    date: "2026-08-31"
+    file: "src/analysis/meta_fp_inventory.py::validate_null_calibration; tools/diagnostics/measure_meta_e0_null_calibration.py"
+    related_file: "audit/evidence_ledger.yaml::meta-p0-validacao-do-nulo-9-de-10-2026-08-31; docs/meta_model_design_doc_2026-08-22.md Sec2.6 (regra do proxy 'alinhado por posicao'); AG-151 (mesma familia -- simbolos de historico assimetrico quebrando premissa implicita de alinhamento)"
+    found_by: "Medicao real de P0 contra os 10 combos (5 simbolos x R2/R3), commit df5e9cf/288fbc1 -- experiments/meta_e0_null_calibration_2026-08-31.json"
+    gap: >
+      A validacao obrigatoria do nulo (Sec2.6, P0) rodou 9/10 combos
+      BEM CALIBRADOS (pass_rate 2-8%, IC cobrindo o alvo de 5%). 1/10
+      -- XRPUSDT/R3 com proxy BTCUSDT/R3 -- NAO calibrou: pass_rate=14%
+      (14/100), fora do IC nominal, e confirmado NAO ser ruido amostral
+      (z=4,13 sob H0, p=0,00046, sobrevive correcao Bonferroni por 10
+      testes). Investigacao parcial descartou desalinhamento GROSSEIRO
+      de distribuicao marginal de estado (BTC truncado e XRP completo
+      tem proporcoes de regime muito similares) -- a causa exata nao
+      foi isolada. Hipotese de trabalho, NAO confirmada: persistencia/
+      autocorrelacao do regime de BTC difere da de XRP o bastante pra
+      criar uma configuracao de alinhamento posicional ocasionalmente
+      "ressonante" que o nulo (que so re-embaralha a MESMA fatia do
+      proxy) nao captura -- BTC e XRP sao o par de maior assimetria de
+      historico entre os 5 simbolos (BTC ~6,6 anos vs XRP ~4,7 anos, o
+      unico par nesta configuracao de anel com essa magnitude de gap).
+    severity: "medio"
+    layer: "analysis -- validacao de instrumento de medicao, nao artefato de producao; mas o proprio esquema de proxy 'alinhado por posicao' e o que Sec2.6 prescreve para a validacao real de E0-piloto/E0-vinculante"
+    consequence: >
+      NAO invalida P0 como um todo -- a maquina estatistica (circular-
+      shift-by-time, AUC ponderada por P̂(y=1|estado), criterio p95)
+      funciona corretamente na maioria esmagadora dos casos reais
+      testados (9/10). MAS significa que "regime de outro simbolo,
+      alinhado por posicao" (a regra literal do Sec2.6 pra escolher o
+      proxy sem sinal) pode NAO ser uniformemente confiavel quando os 2
+      simbolos tem historico muito assimetrico -- especificamente
+      relevante porque XRPUSDT e o simbolo de historico mais curto dos
+      5, entao qualquer proxy real pra ele vai ter essa assimetria em
+      algum grau. Se este mesmo efeito aparecer na validacao real de
+      E0-vinculante (nao so nesta calibracao), o risco e um viés
+      sistematico especificamente contra/a-favor de XRP no gate real,
+      nao aleatorio entre simbolos.
+    resolved_by_commit: null
+    resolution: null
+    status: "aberto -- nao bloqueante pra fechar P0 (9/10 e evidencia forte de que o esquema funciona), mas bloqueante pra tratar a calibracao como UNIFORMEMENTE valida entre TODOS os pares de simbolo antes de rodar E0-vinculante de verdade. Proximo passo recomendado, nao decidido unilateralmente: (a) medir se o mesmo padrao aparece com um proxy alternativo pra XRPUSDT/R3 (ex. SOLUSDT em vez de BTCUSDT, historico mais proximo) -- se sumir, confirma a hipotese de assimetria de historico; (b) se persistir, aprofundar em persistencia/autocorrelacao do regime real medida (nao suposta)."

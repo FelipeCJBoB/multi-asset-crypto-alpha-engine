@@ -6285,3 +6285,53 @@ reconciliação for feita, não presumida.
 A inventariação completa de FP/TP sobre `predictions.parquet` real
 (universo `side_hat != 0 ∧ is_oof`, diagnósticos do `§2.6`) é P3/
 E0-piloto, ainda não construída.
+
+## 2026-08-31 (continuação) — Meta P0: medição real (5 símbolos × R2/R3) — 9/10 calibrado, 1 achado real (AG-402) <!-- check-sprint-log: skip -->
+
+Ver `PLANO_MESTRE_PRINCE2.md` §15.36 para o detalhe completo. Resumo:
+
+Manager: "pula pro R2 e R3 dado real de 5 símbolos, 15m e R1 não estou
+treinando no Alpha" — confirmou os 10 combos (`labels` R2/R3 dos 5
+símbolos verificam `config_hash` limpo, `parkinson_w20`, sem o B15 que
+bloqueava 15m). `tools/diagnostics/measure_meta_e0_null_calibration.py`
+rodou `validate_null_calibration` real (`n_trials=100`,
+`n_seeds_per_trial=100`, ~37min no total, commit `288fbc1`).
+
+**No caminho**: 2 falhas reais na primeira e segunda tentativa, ambas
+corrigidas antes do resultado final valer — (1) `uv run python
+<script>.py` não tinha `src` no `sys.path` (Python usa o diretório do
+arquivo, não o cwd, como `sys.path[0]`), corrigido com o mesmo padrão
+já usado em outros scripts de `tools/diagnostics/`; (2) `SOLUSDT/R2`
+tem 2 linhas com `regime` nulo no meio da série (não warmup,
+`build_modeling_frame` já media e logava `n_missing_regime=2`) — o
+mapeamento regime→int do script não filtrava, produzindo o sentinela
+de overflow `int64` e derrubando `weighted_state_positive_rate` com
+`IndexError` sem contexto. Corrigido na causa (filtro no script) E na
+defesa (`meta_fp_inventory.py` agora valida `state_ids` em
+`[0, n_states)` e levanta `MetaFpInventoryError` com contexto). <!-- check-sprint-log: skip -->
+
+**Resultado**: **9 de 10 combos BEM CALIBRADOS** — taxa de PASS entre
+2% e 8%, todos com IC de 95% cobrindo o alvo nominal de 5%. **1 de 10
+NÃO calibrado**: `XRPUSDT/R3` (proxy `BTCUSDT`) — taxa de PASS 14%,
+IC `[7,9%; 22,4%]`. Verificado que NÃO é ruído amostral (`z=4,13` sob
+H0, `p=0,00046`, sobrevive correção Bonferroni por 10 testes).
+Investigação parcial descarta desalinhamento grosseiro de distribuição
+marginal de estado (proporções batem entre o proxy BTC truncado e o
+XRP completo); hipótese de trabalho não confirmada: persistência/
+autocorrelação do regime de BTC pode diferir da de XRP o bastante pra
+criar alinhamento posicional ocasionalmente "ressonante" — BTC e XRP
+são o par de maior assimetria de histórico entre os 5 símbolos <!-- check-sprint-log: skip -->
+(~6,6 anos vs ~4,7 anos). Registrado em `evidence_ledger.yaml` <!-- check-sprint-log: skip -->
+(`meta-p0-validacao-do-nulo-9-de-10-2026-08-31`, status amarelo) e <!-- check-sprint-log: skip -->
+`architecture_gaps_log.yaml::AG-402` (aberto, severidade média). <!-- check-sprint-log: skip -->
+
+**Veredito de P0**: a primitiva do esquema de permutação FUNCIONA na <!-- check-sprint-log: skip -->
+esmagadora maioria dos casos reais testados — não é presunção, é
+medição. O achado de `XRPUSDT`/histórico-assimétrico fica registrado
+como gap aberto, não bloqueante pra fechar P0, mas relevante antes de <!-- check-sprint-log: skip -->
+tratar a calibração como uniformemente válida em qualquer par de
+símbolos no E0-vinculante real. <!-- check-sprint-log: skip -->
+
+**Próximo passo**: P2 (diagnóstico de saturação isotônica) e P3 <!-- check-sprint-log: skip -->
+(E0-piloto) — ou investigar `AG-402` primeiro (proxy alternativo pra <!-- check-sprint-log: skip -->
+XRPUSDT/R3, ex. SOLUSDT em vez de BTCUSDT) se o Manager priorizar <!-- check-sprint-log: skip -->
