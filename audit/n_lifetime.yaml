@@ -59,7 +59,7 @@
 
 schema_version: 1
 status: "descontinuado_2026_08_17 -- nao bloqueia mais trabalho, ver AG-077 pro que substitui DSR/Gate 6"
-counter: 5520
+counter: 5530
 
 log:
   - id: 1
@@ -1245,4 +1245,52 @@ log:
       Artefatos completos: `experiments/alpha_walk_forward_{symbol}_
       {resolution_id}.json` (5 arquivos, camada1+camada0 cada, schema
       completo por fold + agregado).
+    delta: 5
+
+  - id: 43
+    date: "2026-09-01"
+    type: meta_f6_ablacao_real_5_combos
+    description: >
+      F6 do Meta-model (`meta_ablation.run_ablation_for_combo`,
+      `docs/meta_model_design_doc_2026-08-22.md` Sec9) -- `LogitL2Meta`
+      ajustado sobre 15 meta-folds CPCV (`donor_rule=path_matched`) por
+      combo, contra os mesmos 5 combos promovidos do id 41/42:
+      `BTCUSDT/R2`, `SOLUSDT/R2`, `SOLUSDT/R3`, `XRPUSDT/R2`,
+      `XRPUSDT/R3`, Camada1. Hiperparametro FIXO (`meta_logit_c=1.0`,
+      constante, sem busca -- decisao do Manager, ver `meta_ablation.py`
+      docstring), sem busca de hiperparametro nova -- delta contado por
+      COMBO (mesma convencao do id 42), nao por fold, porque cada combo
+      e 1 ciclo de ajuste+avaliacao sobre o MESMO desenho fixo, nao 5
+      combinacoes de parametro distintas testadas.
+
+      **Resultado**: 0 de 5 simbolos passam o criterio primario do Sec9
+      -- registrado em `audit/architecture_gaps_log.yaml::AG-409`,
+      `audit/evidence_ledger.yaml::meta-f6-ablacao-0-de-5-simbolos-
+      2026-09-01`. Nao conta o controle positivo sintetico (Sec4.3,
+      `AG-412`) nem a extensao F6b (id 44 abaixo) -- entradas separadas.
+    delta: 5
+
+  - id: 44
+    date: "2026-09-01"
+    type: meta_f6b_ablacao_walk_forward_5_combos
+    description: >
+      F6b do Meta-model (`meta_walk_forward.run_meta_walk_forward_
+      ablation_for_combo`, `docs/meta_model_design_doc_2026-08-22.md`
+      Sec4.4, gate bloqueante) -- `LogitL2Meta` ajustado sobre 1 split
+      causal UNICO por combo (decisao do Manager, consultada via
+      AskUserQuestion antes de implementar: split unico, nao k-folds
+      aninhados), sobre a timeline OOS JA causal do Alpha (`walk_
+      forward.run_walk_forward_for_combo(..., keep_predictions=True)`
+      -- o retreino do ALPHA em si NAO e um trial novo aqui, e o MESMO
+      calculo determinístico ja contado no id 42, camada1, mesma
+      hiperparametro/seed; só a montagem do treino/teste do META em
+      cima dessas predicoes e nova). Mesmos 5 combos dos ids 41/42/43.
+
+      **Resultado**: 0 de 5 combos passam -- todos os 5 caem em
+      `INSUFFICIENT_SAMPLE` (o Meta nunca ajusta modelo sob causalidade
+      real, nem `BTCUSDT/R2`) -- registrado em `audit/architecture_
+      gaps_log.yaml::AG-413`, `audit/evidence_ledger.yaml::meta-f6b-
+      walk-forward-0-de-5-2026-09-01`. Quarta medicao negativa
+      independente convergente da mesma janela (ids 41/42 Alpha, Gate
+      E0 `AG-404`, F6 id 43).
     delta: 5

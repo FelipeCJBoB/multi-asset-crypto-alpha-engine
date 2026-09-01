@@ -6513,3 +6513,32 @@ pro teste #10 e precisaram ser atualizados pra `PASS`. F7 fecha <!-- check-sprin
 D-13/§10 do design doc por completo. Detalhe completo: <!-- check-sprint-log: skip -->
 `PLANO_MESTRE_PRINCE2.md` §15.41. Próximo passo: F8 (preencher <!-- check-sprint-log: skip -->
 `constants.yaml` com valores MEDIDOS onde hoje é TBD, `N_lifetime++`). <!-- check-sprint-log: skip -->
+
+## 2026-09-01 — Meta F8: roadmap F0-F8 completo — fecha por confirmação, não preenchimento <!-- check-sprint-log: skip -->
+
+`N_lifetime++` (`n_lifetime.yaml` ids 43/44, `counter` 5520→5530): F6 <!-- check-sprint-log: skip -->
+(`AG-409`, delta=5, 1 ciclo por combo — `meta_logit_c` fixo, sem <!-- check-sprint-log: skip -->
+busca) e F6b (`AG-413`, delta=5, idem sob split causal). O controle <!-- check-sprint-log: skip -->
+positivo (`AG-412`) não conta — diagnóstico de sensibilidade do <!-- check-sprint-log: skip -->
+harness, não busca de edge.
+
+Revisei uma a uma as 6 constantes "não criadas (B23)" do §11 do <!-- check-sprint-log: skip -->
+design doc contra o código REAL, não a lista de cor: `meta_min_neff_ <!-- check-sprint-log: skip -->
+for_gbm` segue TBD (GBM bloqueado por `raise`, D-02 — moot, e ainda <!-- check-sprint-log: skip -->
+mais moot dado que nem a logística tem amostra suficiente, `AG-409`/ <!-- check-sprint-log: skip -->
+`AG-413`); `meta_p_threshold` já resolvido por mecanismo (`resolve_ <!-- check-sprint-log: skip -->
+tau_meta`); `meta_min_lift`/`meta_min_auc_gain` já resolvido pelo <!-- check-sprint-log: skip -->
+percentil do nulo (`meta_e0_null_percentile`); os 2 limiares de <!-- check-sprint-log: skip -->
+`weight_hhi` (DoD e uniqueness divergence) já implementados SEM <!-- check-sprint-log: skip -->
+limiar, por decisão declarada no código (`meta.py`/`meta_dataset.py` <!-- check-sprint-log: skip -->
+docstrings, B23); "ganho esperado do Meta" segue TBD porque a <!-- check-sprint-log: skip -->
+medição real (4 metodologias independentes) converge em zero/ <!-- check-sprint-log: skip -->
+negativo/amostra-insuficiente — declarar um número agora seria a <!-- check-sprint-log: skip -->
+violação de B23 mais direta possível.
+
+Nenhuma constante nova precisou ser criada. **Roadmap do design doc <!-- check-sprint-log: skip -->
+completo: F0-F8, todas as fases fechadas.** Quatro medições <!-- check-sprint-log: skip -->
+negativas independentes convergentes permanecem registradas <!-- check-sprint-log: skip -->
+(`AG-391`/`AG-404`/`AG-409`/`AG-413`) — decisão de produção sobre o <!-- check-sprint-log: skip -->
+Meta-model segue com o Manager. Detalhe completo: <!-- check-sprint-log: skip -->
+`PLANO_MESTRE_PRINCE2.md` §15.42.
