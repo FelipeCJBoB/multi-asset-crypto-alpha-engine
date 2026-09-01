@@ -26732,3 +26732,63 @@ entries:
       nenhum pipeline de producao -- fecha a lacuna de CAPACIDADE, nao
       cria um gate automatico obrigatorio (decisao de tornar isso parte
       do fluxo de promocao fica com o Manager).
+
+  - id: AG-406
+    date: "2026-08-31"
+    file: "scripts/measure_gate_power.py (novo)"
+    related_file: "AG-391; AG-394; AG-400; docs/prompts/REFUTACAO_CONSOLIDADA_0de20_20260831.md (Parte I, R1/R2 -- MDE analitico via Hanley-McNeil)"
+    numeracao: "AG-406."
+    found_by: "Medicao real, Monte Carlo (2000 sorteios/celula), autorizacao de execucao do Manager na sessao -- item 10 do roadmap 'Caso 0/20' (injetar alvo sintetico de AUC/edge conhecido pelos gates, mesmo padrao ja usado em src.analysis.eixo1_power_diagnostic pro eixo 1 de features, nunca aplicado aos gates do walk-forward)."
+    gap: >
+      R1/R2 da auditoria adversarial externa ja estimavam o poder do gate
+      Model analiticamente (formula de Hanley-McNeil + t nao-central).
+      Esta entrada MEDE por simulacao direta contra o CODIGO REAL (`model_
+      gate_p_value`/`alpha_gate_p_value` de producao, pos-correcao `AG-400`),
+      usando a dispersao entre-fold JA MEDIDA em cada uma das 20 celulas
+      reais (nao uma dispersao teorica assumida) como parametro de ruido
+      da simulacao -- responde "se o efeito verdadeiro fosse X, sob o
+      MESMO ruido que ja medimos, o gate atual detectaria?"
+
+      **Gate Model** (poder medio sobre as 13/20 celulas com dispersao
+      valida, 2000 sorteios cada): AUC=0,50 (controle H0) -> 4,9% (bate o
+      alpha nominal de 5%, teste bem calibrado sob H0); AUC=0,52 -> 17,1%;
+      **AUC=0,55 -> 31,2%** (a faixa que a industria trata como sinal
+      direcional real em cripto, per a propria auditoria externa); AUC=
+      0,60 -> 52,9%; AUC=0,70 -> 75,4%.
+
+      **Gate Alpha** (poder medio sobre 8/10 celulas): edge=0bps (controle)
+      -> 4,8%; edge=5bps -> 11,8%; **edge=10bps -> 23,8%**; edge=20bps ->
+      41,5%; edge=30bps -> 52,8%.
+
+      **Leitura direta:** mesmo APOS as correcoes desta sessao (AG-400,
+      teste-t real no gate Alpha; tau_policy testado), se um candidato
+      real com AUC populacional 0,55 ou edge liquido de 10bps existisse
+      HOJE em qualquer uma das 5 combinacoes reais, o instrumento atual
+      teria ~70-76% de chance de NAO detecta-lo (falso-negativo), dado o
+      teto estrutural de folds ja registrado em `AG-391` (maximo real 8-14,
+      piso exigido 10). Nao e mais uma estimativa analitica -- e medido
+      contra o codigo de producao real, pos-correcao.
+    severity: "alta -- quantifica em numero real a mesma preocupacao estrutural que AG-391/R1/R2 ja registravam, agora contra o codigo pos-correcao, nao mais so a estimativa analitica pre-correcao"
+    layer: "analysis (gates) -- capacidade de diagnostico nova, nao muda nenhum gate existente"
+    consequence: >
+      NAO decide se os 5 candidatos tem alpha real -- mede que o
+      INSTRUMENTO, mesmo corrigido, nao teria poder suficiente pra
+      confirmar um candidato modesto-mas-real mesmo que ele existisse.
+      Reforca a leitura central de toda a investigacao "Caso 0/20": "0/20"
+      nao decide a pergunta "existe alpha?" enquanto o teto de 8-14 folds
+      (`AG-391`) nao for resolvido -- aumentar `n_folds_usados` (mais
+      historico de teste, ou passo menor que trimestral, ambos fora do
+      escopo desta sessao) e a UNICA alavanca que move este poder de forma
+      relevante, ajustar so o nivel de significancia nao ajuda (ja medido
+      em `AG-391`/sweep do Manager).
+    resolved_by_commit: null
+    status: >
+      ABERTO -- achado de medicao, nao de bug. `scripts/measure_gate_
+      power.py` fica como capacidade reusavel (reusar o mesmo padrao de
+      `eixo1_power_diagnostic.py`) -- proximo passo real, nao decidido
+      unilateralmente: (a) decidir se vale estender `initial_train_years`/
+      reduzir o passo do walk-forward pra aumentar `n_folds_usados` real
+      (unica alavanca que move poder de forma relevante); (b) se nao,
+      documentar formalmente que o walk-forward atual serve como
+      auditoria pos-hoc de sinais FORTES (AUC>=0,65-0,70), nao como teste
+      confirmatorio de sinais modestos-mas-reais.
