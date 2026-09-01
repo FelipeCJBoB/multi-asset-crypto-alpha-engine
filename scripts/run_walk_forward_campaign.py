@@ -170,15 +170,23 @@ def main(argv: list[str] | None = None) -> int:
 
     configure_logging(json_output=False)
 
-    seed = args.seed if args.seed is not None else int(load_constant("alpha_random_seed"))
+    seed_default = int(load_constant("alpha_random_seed"))
+    seed = args.seed if args.seed is not None else seed_default
     combos = tuple(args.combo) if args.combo else _CANDIDATOS
 
-    # Sufixo no nome do arquivo quando a política NÃO é a legada -- nunca
-    # colide com o artefato canônico (tau_policy=legacy_per_side é o que
-    # gerou os 5 JSONs que sustentam a ADR-008/auditoria adversarial).
-    # AG-396: overwrite acidental do artefato canônico destruiria a base
-    # de comparação de toda a auditoria "0/20".
-    suffix = "" if args.tau_policy == alpha.TAU_POLICY_LEGACY_PER_SIDE else f"_{args.tau_policy}"
+    # Sufixo no nome do arquivo quando a política E/OU a seed NÃO são as
+    # canônicas -- nunca colide com o artefato canônico (tau_policy=
+    # legacy_per_side + seed=alpha_random_seed é o que gerou os 5 JSONs
+    # que sustentam a ADR-008/auditoria adversarial). AG-396: overwrite
+    # acidental do artefato canônico destruiria a base de comparação de
+    # toda a auditoria "0/20". Item 4 do roadmap "Caso 0/20" (>=5 seeds)
+    # precisa de um sufixo POR SEED pra as 5 rodadas não colidirem entre
+    # si nem com o canônico.
+    suffix_policy = (
+        "" if args.tau_policy == alpha.TAU_POLICY_LEGACY_PER_SIDE else f"_{args.tau_policy}"
+    )
+    suffix_seed = "" if seed == seed_default else f"_seed{seed}"
+    suffix = suffix_policy + suffix_seed
 
     falhas: list[str] = []
     for symbol, resolution_id in combos:
