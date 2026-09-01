@@ -49,7 +49,14 @@ estrutural treino/teste que o resto do pipeline garante) e roda `_search_
 and_fit` (resolve `tau_meta` + aplica o filtro) sobre o embaralhado. Isso
 é mais barato E mais fiel ao texto: "filtro aleatório com a MESMA busca"
 é literalmente a mesma função de busca de `tau_meta`, alimentada com
-scores que não carregam relação real com o resultado."""
+scores que não carregam relação real com o resultado.
+
+**Garantia de `is_oof` (B07/D-13, §10.4).** Este módulo opera sobre
+`test_predictions`/`meta_training_set`, que já vieram de `meta.run_meta_
+fold` sobre uma tabela onde `assert_no_meta_leakage` (§10.1(a)) já
+confirmou `_pos ∈ splits[fold_id].test_idx` — a mesma garantia
+documentada em `meta.py`, não reverificada aqui de propósito (§4.7,
+"recebe o objeto, não reconstrói")."""
 
 from __future__ import annotations
 

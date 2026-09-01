@@ -64,7 +64,7 @@ PATTERNS: tuple[Pattern, ...] = (
     Pattern("B05", "vazamento_temporal", "HMM/regime ajustado na série toda e predito barra a barra", "§5.2", False),
     Pattern("B06", "vazamento_temporal", "tabela de IC de 7 anos usada para configurar modelo — triagem in-fold", "§5.3", False),
     # Vazamento estrutural
-    Pattern("B07", "vazamento_estrutural", "Meta treinado em predição do Alpha sem is_oof", "§5.12", False),
+    Pattern("B07", "vazamento_estrutural", "Meta treinado em predição do Alpha sem is_oof", "§5.12", True),
     Pattern("B08", "vazamento_estrutural", "calibrador ajustado sobre o próprio OOF", "§5.9 passo 9", False),
     Pattern("B09", "vazamento_estrutural", "split de CV sem purge por t1", "§11.4", False),
     Pattern("B10", "vazamento_estrutural", "treino sem sample_weight de unicidade", "§3.5", False),
@@ -264,6 +264,56 @@ def _check_text(path: Path, source: str) -> list[Violation]:
     return violations
 
 
+#: B07 (D-13, §10.4 do design doc do Meta) — correção da v1: a regra
+#: original ("todo arquivo em `src/models/` que menciona `predictions.
+#: parquet`/`p_alpha`/`p_long`/`p_short` precisa mencionar `is_oof`")
+#: quebraria o build de cara: `pipeline.py` (orquestrador) e `_paths.py`
+#: (helper de caminho) mencionam os gatilhos sem nunca precisar tocar em
+#: `is_oof` — falsos positivos legítimos, não achados reais. Regra
+#: corrigida: só arquivos que mencionem o gatilho E `fit`/`train` (como
+#: TOKEN — `\b`, não substring: não pega `train_idx`/`fit_side_model`,
+#: que são identificadores compostos, não o verbo isolado).
+#: `persistence.py` — sobre FORMATO de serialização (calibrador/learner
+#: como coef/intercept crus, sem `pickle`), agnóstico a se o `fit`
+#: upstream usou OOF ou não; essa garantia é de `fit_side_model`/
+#: `run_meta_fold` (arquivos onde o token `is_oof` de fato importa), não
+#: de como o resultado do fit é gravado em disco depois.
+_B07_ALLOWLIST: frozenset[str] = frozenset({"pipeline.py", "_paths.py", "persistence.py"})
+_B07_TRIGGER_RE = re.compile(r"predictions\.parquet|\bp_alpha\b|\bp_long\b|\bp_short\b")
+_B07_FIT_TRAIN_RE = re.compile(r"\bfit\b|\btrain\b")
+_B07_IS_OOF_RE = re.compile(r"\bis_oof\b")
+
+
+def _check_b07_meta_is_oof(path: Path, source: str) -> list[Violation]:
+    """B07 — cobertura PARCIAL declarada (grep de arquivo inteiro, não
+    prova de fluxo de dado): sinaliza quando um arquivo em `src/models/`
+    referencia sinal do Alpha (`predictions.parquet`/`p_alpha`/`p_long`/
+    `p_short`) e treina algo (`fit`/`train` como token) sem NUNCA
+    mencionar `is_oof` em lugar nenhum do arquivo — nem no código, nem em
+    comentário/docstring explicando de onde vem a garantia. Reportar
+    `automated=True` com esta cobertura parcial é estritamente melhor que
+    `automated=False` (§10.4 do design doc do Meta) — não prova ausência
+    de vazamento, mas transforma "ninguém documentou de onde vem o OOF"
+    de silêncio em achado."""
+    if path.name in _B07_ALLOWLIST:
+        return []
+    if not (_B07_TRIGGER_RE.search(source) and _B07_FIT_TRAIN_RE.search(source)):
+        return []
+    if _B07_IS_OOF_RE.search(source):
+        return []
+    return [
+        Violation(
+            "B07",
+            path,
+            1,
+            "menciona sinal do Alpha (predictions.parquet/p_alpha/p_long/p_short) e "
+            "fit/train, mas nunca menciona is_oof — sem referência de onde vem a "
+            "garantia de OOF (mesmo em comentário), documente ou adicione a "
+            "allowlist com justificativa",
+        )
+    ]
+
+
 def _check_repo_root(root: Path) -> list[Violation]:
     """B27 — nenhum artefato de pip/venv/conda no root do projeto."""
     violations: list[Violation] = []
@@ -287,6 +337,8 @@ def scan(path: Path) -> list[Violation]:
             continue
         violations.extend(_check_ast(py_file, tree, source))
         violations.extend(_check_text(py_file, source))
+        if "models" in py_file.parts:
+            violations.extend(_check_b07_meta_is_oof(py_file, source))
     return violations
 
 

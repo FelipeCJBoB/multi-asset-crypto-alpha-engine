@@ -100,6 +100,12 @@ IntArray = NDArray[np.int64]
 _SRC_ROOT: Path = REPO_ROOT / "src"
 _TRIPLE_BARRIER_PATH: Path = _SRC_ROOT / "labels" / "triple_barrier.py"
 _ALPHA_PATH: Path = _SRC_ROOT / "models" / "alpha.py"
+#: F7 (D-13, §10.3 do design doc do Meta, 2026-09-01) — não existia em
+#: lugar nenhum do código até esta correção; teste #11 passa a auditar
+#: `meta.py` além de `alpha.py`.
+_META_PATH: Path = _SRC_ROOT / "models" / "meta.py"
+_META_DATASET_PATH: Path = _SRC_ROOT / "models" / "meta_dataset.py"
+_META_DATASET_TEST_PATH: Path = REPO_ROOT / "tests" / "unit" / "test_models_meta_dataset.py"
 _FEATURES_PARITY_TEST_PATH: Path = REPO_ROOT / "tests" / "parity" / "test_features_parity.py"
 
 # Escopo dos grep estáticos de auditoria (testes 8/13): pacotes de PIPELINE,
@@ -552,18 +558,72 @@ def _test_09_lookahead_resample() -> LeakageTestResult:
 
 
 def _test_10_encadeamento_modelo() -> LeakageTestResult:
-    return LeakageTestResult(
-        10,
-        "encadeamento de modelo (assert df_meta.is_oof.all())",
-        "§11.5 #10",
-        LeakageStatus.NOT_APPLICABLE_V1_1,
-        "O Meta sai do MVP (§6.1) — vai para a V1.1. Não existe df_meta nem is_oof em nenhum "
-        "artefato real hoje (is_oof é coluna de predictions/alpha/{model_id}/"
-        "predictions.parquet, §5.12, que também não existe antes do Sprint 8). Documentado "
-        "como N/A, não simulado com um dataframe fictício — simular is_oof=True para um Meta "
-        "que não existe produziria um PASS que não prova nada.",
-        note="Reavaliar quando o Meta entrar em escopo (critério de entrada em §6.8).",
+    """F7 (D-13, §10.2 do design doc do Meta, 2026-09-01) — sai de
+    `NOT_APPLICABLE_V1_1`: o Meta ganhou escopo real nesta sessão (F0-F6b
+    implementados, `PLANO_MESTRE_PRINCE2.md` §15.19+). Camada 1
+    (`meta_dataset.assert_no_meta_leakage`, as 4 asserções falsificáveis
+    do §10.1) já existe — auditoria estática confirma (a) presença das 4
+    asserções no código-fonte E (b) o CONTROLE POSITIVO obrigatório do
+    §10.2: um teste por asserção, construindo um frame que a viola e
+    confirmando que o builder levanta `MetaLeakageError` — sem ele o
+    teste não pode falhar e não prova nada, mesma crítica que este
+    módulo já faz de si mesmo no teste 12."""
+    name = "encadeamento de modelo (assert_no_meta_leakage roda de verdade, com controle positivo)"
+    if not _META_DATASET_PATH.exists():
+        return LeakageTestResult(
+            10, name, "§11.5 #10", LeakageStatus.FAIL, f"{_META_DATASET_PATH} não existe."
+        )
+    source = _META_DATASET_PATH.read_text(encoding="utf-8")
+    has_assert_fn = "def assert_no_meta_leakage(" in source
+    has_check_a = "§10.1(a)" in source
+    has_check_b = "§10.1(b)" in source
+    has_check_c = "§10.1(c)" in source
+    has_check_d = "§10.1(d)" in source
+
+    test_source = (
+        _META_DATASET_TEST_PATH.read_text(encoding="utf-8")
+        if _META_DATASET_TEST_PATH.exists()
+        else ""
     )
+    # Literais com barra invertida ESCAPADA de propósito: o texto real do
+    # arquivo de teste contém `10\.1\(a\)` (regex de `pytest.raises(...,
+    # match=r"...")`) — buscar o literal exato, não uma versão
+    # desescapada, é o que confirma que É o mesmo `match=` que os testes
+    # 8/13 já verificam contra referência real (não confiar no texto).
+    positive_control_a = "10\\.1\\(a\\)" in test_source
+    positive_control_b = "10\\.1\\(b\\)" in test_source
+    positive_control_c = "10\\.1\\(c\\)" in test_source
+    positive_control_d = "10\\.1\\(d\\)" in test_source
+
+    ok = bool(
+        has_assert_fn
+        and has_check_a
+        and has_check_b
+        and has_check_c
+        and has_check_d
+        and positive_control_a
+        and positive_control_b
+        and positive_control_c
+        and positive_control_d
+    )
+    status = LeakageStatus.PASS if ok else LeakageStatus.FAIL
+    detail = (
+        f"meta_dataset.assert_no_meta_leakage existe: {has_assert_fn}. As 4 asserções "
+        f"falsificáveis do §10.1 estão presentes no código: (a) {has_check_a}, "
+        f"(b) {has_check_b}, (c) {has_check_c}, (d) {has_check_d}. Controle positivo "
+        f"obrigatório (§10.2) — 1 teste por asserção confirmando `MetaLeakageError`: "
+        f"(a) {positive_control_a}, (b) {positive_control_b}, (c) {positive_control_c}, "
+        f"(d) {positive_control_d}."
+    )
+    note = (
+        "Auditoria estática (mesmo padrão dos testes 13/14) — confirma presença do "
+        "mecanismo + do controle positivo por referência de código real, não reexecuta "
+        "assert_no_meta_leakage contra artefato aqui (isso é tests/unit/"
+        "test_models_meta_dataset.py, que já roda via pytest -m 'not slow', não via este "
+        "runner). F7 fecha D-13/§10 do design doc do Meta — Camada 1 (runtime) e Camada 2 "
+        "(este teste) prontas."
+    )
+    return LeakageTestResult(10, name, "§11.5 #10", status, detail, note)
 
 
 def _test_11_calibracao_vazada() -> LeakageTestResult:
@@ -631,32 +691,82 @@ def _test_11_calibracao_vazada() -> LeakageTestResult:
         )
     )
 
-    ok = bool(
+    alpha_ok = bool(
         def_match
         and no_test_param
         and only_called_with_train
         and calib_split_from_train
         and calibrator_fits_on_calib_split
     )
+
+    # F7 (§10.3) — extensão pro Meta. As 4 checagens de ARQUIVO acima
+    # (def_match/no_test_param, calib_split_from_train,
+    # calibrator_fits_on_calib_split — `only_called_with_train` já varre
+    # `src/models/` inteiro, de graça, sem precisar de extensão) viram 3
+    # propriedades no Meta, que não tem calibrador (D-07): (a) `LogitL2Meta.
+    # fit` sem parâmetro de teste — mesma propriedade de def_match+no_test_
+    # param; (b) `ScoreRankTransform.fit` (a normalização do Meta, análoga
+    # ao scaler global do teste #8) ajustada só com dado de TREINO — mesma
+    # propriedade de calib_split_from_train; (c) `resolve_tau_meta` (o
+    # limiar de decisão do Meta, análogo ao calibrador do Alpha) derivado
+    # só de `score_train`/`ret_net_train` — mesma propriedade de
+    # calibrator_fits_on_calib_split.
+    if not _META_PATH.exists():
+        meta_ok = False
+        meta_detail = f"{_META_PATH} não existe."
+    else:
+        meta_source = _META_PATH.read_text(encoding="utf-8")
+        meta_fit_def_match = re.search(
+            r"def fit\(\s*self,\s*X: FloatArray,\s*y: IntArray,\s*w: FloatArray\s*\)",
+            meta_source,
+        )
+        meta_fit_no_test_param = meta_fit_def_match is not None and not re.search(
+            r"def fit\([^)]*\btest\w*\s*:", meta_source, re.DOTALL
+        )
+        meta_rank_fit_from_train = bool(
+            re.search(r"ScoreRankTransform\.fit\(\s*\n?\s*train\[", meta_source)
+        )
+        meta_tau_from_train = bool(
+            re.search(r"resolve_tau_meta\(\s*score_train,\s*ret_net_train", meta_source)
+        )
+        meta_ok = bool(
+            meta_fit_def_match
+            and meta_fit_no_test_param
+            and meta_rank_fit_from_train
+            and meta_tau_from_train
+        )
+        meta_detail = (
+            f"LogitL2Meta.fit(self, X, y, w) sem parâmetro de teste/OOF: "
+            f"{meta_fit_def_match is not None and meta_fit_no_test_param}. "
+            f"ScoreRankTransform.fit chamado só com dado de treino (train[...]): "
+            f"{meta_rank_fit_from_train}. resolve_tau_meta chamado só com "
+            f"score_train/ret_net_train (nunca score_test/ret_net_test): "
+            f"{meta_tau_from_train}."
+        )
+
+    ok = alpha_ok and meta_ok
     status = LeakageStatus.PASS if ok else LeakageStatus.FAIL
     detail = (
-        f"fit_side_model(train_side_df: pl.DataFrame, ...) sem parâmetro de teste/OOF: "
-        f"{def_match is not None and no_test_param}. Nenhuma chamada em src/models/ passa "
-        f"dado de teste para fit_side_model: {only_called_with_train}. Sub-split de "
-        f"calibração (_stratified_calib_split) aplicado a y_all (derivado de "
+        f"[alpha.py] fit_side_model(train_side_df: pl.DataFrame, ...) sem parâmetro de "
+        f"teste/OOF: {def_match is not None and no_test_param}. Nenhuma chamada em "
+        f"src/models/ passa dado de teste para fit_side_model: {only_called_with_train}. "
+        f"Sub-split de calibração (_stratified_calib_split) aplicado a y_all (derivado de "
         f"train_side_df, não de X_all bruto nem do teste): {calib_split_from_train}. "
         f"IsotonicRegression.fit chamado com raw_calib/y_calib/w_calib* fatiado por "
         f"calib_idx, qualquer que seja a politica de peso de AG-312 (não raw_train_all "
-        f"nem dado de teste): {calibrator_fits_on_calib_split}."
+        f"nem dado de teste): {calibrator_fits_on_calib_split}. [meta.py] {meta_detail}"
     )
     note = (
         "Auditoria estática do código-fonte (mesmo padrão do teste 13), não execução real "
         "sobre labels/v1/labels.parquet — a execução real (Sprint 8) já rodou via "
         "src.models.pipeline.run_layer1_sprint e produziu "
         "predictions/alpha/{alpha_c1_v1,alpha_c0_baseline_v1}/predictions.parquet, "
-        "verificados em tests/unit/test_models_alpha.py (schema + invariantes §5.13)."
+        "verificados em tests/unit/test_models_alpha.py (schema + invariantes §5.13). "
+        "Extensão F7/§10.3 (2026-09-01): meta.py auditado com as mesmas 4 checagens, "
+        "adaptadas — Meta não tem calibrador (D-07), então 'calibrador ajustado no "
+        "sub-split' vira 'resolve_tau_meta derivado só do treino'."
     )
-    name = "calibração vazada (calibrador ajustado em sub-split interno)"
+    name = "calibração vazada (calibrador/threshold ajustado em dado de treino, alpha.py + meta.py)"
     return LeakageTestResult(11, name, "§11.5 #11", status, detail, note)
 
 

@@ -79,13 +79,16 @@ def test_teste_11_calibracao_passa_apos_sprint_8() -> None:
     assert result.status == leakage.LeakageStatus.PASS, result.detail
 
 
-def test_teste_10_meta_e_not_applicable_v1_1_nao_pending() -> None:
-    """Distinção deliberada: o Meta NÃO é "pendente de sprint" — está fora
-    da V1 inteira (§6.1). Sentinela diferente de PENDING_SPRINT_8."""
+def test_teste_10_meta_passa_apos_f7() -> None:
+    """F7 (2026-09-01) — o Meta ganhou escopo real (F0-F6b implementados),
+    teste 10 sai de NOT_APPLICABLE_V1_1 para PASS: auditoria estática
+    confirma que `meta_dataset.assert_no_meta_leakage` existe com as 4
+    asserções do §10.1 E que cada uma tem controle positivo (§10.2) em
+    tests/unit/test_models_meta_dataset.py."""
     result = leakage._test_10_encadeamento_modelo()
     assert result.test_id == 10
-    assert result.status == leakage.LeakageStatus.NOT_APPLICABLE_V1_1
-    assert result.status != leakage.LeakageStatus.PENDING_SPRINT_8
+    assert result.status == leakage.LeakageStatus.PASS, result.detail
+    assert result.status != leakage.LeakageStatus.NOT_APPLICABLE_V1_1
 
 
 # ============================================================================
@@ -342,12 +345,13 @@ def test_run_all_leakage_tests_sentinelas_corretos_sobre_sintetico(
         r.test_id: r for r in leakage.run_all_leakage_tests(labels, feature_ids=T1_FEATURE_IDS)
     }
     assert results[1].status == leakage.LeakageStatus.PENDING_SPRINT_8
-    assert results[10].status == leakage.LeakageStatus.NOT_APPLICABLE_V1_1
-    # teste 11 saiu de PENDING_SPRINT_8 para PASS no Sprint 8 — ver
+    # teste 10 saiu de NOT_APPLICABLE_V1_1 para PASS em F7 (2026-09-01) —
+    # ver test_teste_10_meta_passa_apos_f7 acima. teste 11 saiu de
+    # PENDING_SPRINT_8 para PASS no Sprint 8 — ver
     # test_teste_11_calibracao_passa_apos_sprint_8 acima.
-    # os demais 12 (2,3,4,5,6,7,8,9,11,12,13,14) precisam ter rodado de
+    # os demais 13 (2,3,4,5,6,7,8,9,10,11,12,13,14) precisam ter rodado de
     # verdade e reportado PASS contra o dataset sintético/registry real
-    ran_for_real = {2, 3, 4, 5, 6, 7, 8, 9, 11, 12, 13, 14}
+    ran_for_real = {2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14}
     for tid in ran_for_real:
         assert results[tid].status == leakage.LeakageStatus.PASS, (
             f"teste {tid}: {results[tid].detail}"
@@ -357,7 +361,7 @@ def test_run_all_leakage_tests_sentinelas_corretos_sobre_sintetico(
 def test_leakage_test_result_to_dict_serializa_status_como_string() -> None:
     result = leakage._test_10_encadeamento_modelo()
     d = result.to_dict()
-    assert d["status"] == "NOT_APPLICABLE_V1_1"
+    assert d["status"] == "PASS"
     assert isinstance(d["status"], str)
 
 
@@ -444,7 +448,7 @@ def test_run_all_leakage_tests_sobre_dataset_real(
     }
     assert len(results) == 14
     assert results[1].status == leakage.LeakageStatus.PENDING_SPRINT_8
-    assert results[10].status == leakage.LeakageStatus.NOT_APPLICABLE_V1_1
+    assert results[10].status == leakage.LeakageStatus.PASS, results[10].detail
     assert results[11].status == leakage.LeakageStatus.PASS, results[11].detail
     assert results[6].status == leakage.LeakageStatus.PASS, results[6].detail
     assert results[7].status == leakage.LeakageStatus.PASS, results[7].detail

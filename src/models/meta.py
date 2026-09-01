@@ -22,6 +22,17 @@ iguala o mapeamento — mascara, não resolve. O posto é invariante a
 qualquer monótona, logo imune tanto ao achatamento isotônico quanto à
 heterogeneidade de mapeamento.
 
+**Garantia de `is_oof` (B07/D-13, §10.4).** As funções deste módulo
+(`run_meta_fold`/`run_all_meta_folds`/`run_meta_sprint`) nunca verificam
+`is_oof` elas mesmas — a garantia é estrutural, imposta ANTES de
+qualquer linha chegar aqui: `meta_dataset.build_meta_signal_table`
+seleciona só `predictions.side_hat != 0` (OOF por construção do Alpha,
+`alpha.py:428`) e `assert_no_meta_leakage` (§10.1(a)) confirma
+`_pos ∈ splits[fold_id].test_idx` pra toda linha antes de devolver a
+tabela. `run_meta_fold` recebe essa tabela já garantida, não reconstrói
+a garantia — mesma disciplina de "recebe o objeto, não reconstrói" do
+resto do módulo.
+
 **Fora do design matrix, por decisão medida:**
 - `regime_tradeable` — `tradeable = decoded_mask & ~is_stress_state` é
   combinação linear EXATA das dummies de regime; incluí-la deixa a matriz

@@ -230,6 +230,20 @@ type = "forbidden"
 source_modules = ["src.data"]
 forbidden_modules = ["src.analysis"]
 
-# TODO(Sprint 8): "alpha não pode importar meta" — formalizar como contrato
-# forbidden (src.models.alpha -> src.models.meta) quando esses módulos
-# existirem como arquivos reais, não pacote models/ genérico.
+[[tool.importlinter.contracts]]
+# F7 (D-13, §10.5 do design doc do Meta, 2026-09-01) — formalizado agora
+# que os módulos existem como arquivos reais (alpha.py desde Sprint 8;
+# meta.py/meta_dataset.py/meta_ablation.py/meta_walk_forward.py desde
+# F0-F6b desta sessão). Meta-labeling é, por definição, um modelo do erro
+# do PRIMÁRIO (Alpha) — a dependência só pode ir Meta -> Alpha; o inverso
+# seria o Alpha (produção canônica) carregando lógica de uma camada
+# secundária que nem passou nos próprios gates (AG-404/AG-409/AG-413).
+name = "alpha não importa meta"
+type = "forbidden"
+source_modules = ["src.models.alpha"]
+forbidden_modules = [
+    "src.models.meta",
+    "src.models.meta_dataset",
+    "src.models.meta_ablation",
+    "src.models.meta_walk_forward",
+]

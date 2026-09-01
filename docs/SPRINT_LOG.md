@@ -6476,3 +6476,40 @@ novo. Registrado (`evidence_ledger.yaml`, `AG-413`), não bloqueante <!-- check-
 por decisão explícita do Manager. Detalhe completo: <!-- check-sprint-log: skip -->
 `PLANO_MESTRE_PRINCE2.md` §15.40. Próximo passo: F7 (enforcement: <!-- check-sprint-log: skip -->
 teste #10/#11, import-linter, banned_patterns), F8 (constantes TBD). <!-- check-sprint-log: skip -->
+
+## 2026-09-01 — Meta F7: enforcement B07/B08 fechado, as 5 camadas (D-13, §10) <!-- check-sprint-log: skip -->
+
+Estado antes: B07/B08 `automated=False`; teste #10 `NOT_APPLICABLE_ <!-- check-sprint-log: skip -->
+V1_1`; teste #11 regex só sobre `_ALPHA_PATH`; `alpha↛meta` era TODO <!-- check-sprint-log: skip -->
+comentado — o próprio design doc já documentava o gap, fechado agora <!-- check-sprint-log: skip -->
+que o Meta tem escopo real (F0-F6b).
+
+Camada 1 (runtime) já existia (`assert_no_meta_leakage`, F1). Camada <!-- check-sprint-log: skip -->
+2: teste #10 sai de `NOT_APPLICABLE_V1_1` pra auditoria estática real <!-- check-sprint-log: skip -->
+— confirma as 4 asserções do §10.1 no código E o controle positivo <!-- check-sprint-log: skip -->
+obrigatório (1 teste por asserção, já existente desde F1, confirmando <!-- check-sprint-log: skip -->
+`MetaLeakageError`). Camada 3: `_META_PATH` adicionado (não existia), <!-- check-sprint-log: skip -->
+teste #11 estendido com 3 propriedades análogas às do Alpha —
+`LogitL2Meta.fit` sem parâmetro de teste, `ScoreRankTransform.fit` só <!-- check-sprint-log: skip -->
+com `train[...]`, `resolve_tau_meta` só com `score_train`/`ret_net_ <!-- check-sprint-log: skip -->
+train` (o Meta não tem calibrador, D-07 — a checagem vira sobre o <!-- check-sprint-log: skip -->
+limiar de decisão em vez do calibrador).
+
+Camada 4 (B07 `automated=True`, allowlist): achado real rodando pela <!-- check-sprint-log: skip -->
+primeira vez — a regra disparava em `meta.py`/`meta_ablation.py` <!-- check-sprint-log: skip -->
+(sinal real do Alpha, sem menção de `is_oof`) e em `persistence.py` <!-- check-sprint-log: skip -->
+(falso positivo — formato de serialização, agnóstico a OOF). <!-- check-sprint-log: skip -->
+Corrigido: nota de proveniência de `is_oof` adicionada ao docstring <!-- check-sprint-log: skip -->
+de `meta.py`/`meta_ablation.py`; `persistence.py` entrou na allowlist <!-- check-sprint-log: skip -->
+junto de `pipeline.py`/`_paths.py`. 0 violações B07 novas contra <!-- check-sprint-log: skip -->
+`src/` inteiro. Camada 5: contrato import-linter `alpha não importa <!-- check-sprint-log: skip -->
+meta` formalizado — `alpha.py` nunca importava Meta antes (verificado <!-- check-sprint-log: skip -->
+por grep), contrato trava o estado atual. `lint-imports`: 8 contratos <!-- check-sprint-log: skip -->
+mantidos, 0 quebrados.
+
+165 testes passam (`test_validation_leakage.py` + os 3 arquivos de <!-- check-sprint-log: skip -->
+teste do Meta), incluindo 3 testes que citavam `NOT_APPLICABLE_V1_1` <!-- check-sprint-log: skip -->
+pro teste #10 e precisaram ser atualizados pra `PASS`. F7 fecha <!-- check-sprint-log: skip -->
+D-13/§10 do design doc por completo. Detalhe completo: <!-- check-sprint-log: skip -->
+`PLANO_MESTRE_PRINCE2.md` §15.41. Próximo passo: F8 (preencher <!-- check-sprint-log: skip -->
+`constants.yaml` com valores MEDIDOS onde hoje é TBD, `N_lifetime++`). <!-- check-sprint-log: skip -->
