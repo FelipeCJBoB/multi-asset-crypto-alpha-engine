@@ -141,7 +141,28 @@ def weighted_state_positive_rate(
     reajustado dentro de cada permutação" do §2.6, sem isso o nulo não
     carrega o otimismo do ajuste). Estado sem massa de peso (`sum(weight)
     <= 0` no estado, incluindo estado nunca observado) vira `NaN`, não
-    `0.0` — taxa indefinida é diferente de taxa zero."""
+    `0.0` — taxa indefinida é diferente de taxa zero.
+
+    Precondição validada (achado real, 2026-08-31): `state_ids` fora de
+    `[0, n_states)` — ex. sentinela de `NaN`/nulo convertido pra
+    `int64` por um mapeamento upstream descuidado (`regime` pode ter
+    linhas nulas de verdade, `models.dataset.build_modeling_frame`
+    mede e loga `n_missing_regime` > 0 às vezes) — indexava
+    `state_rate[state_ids]` fora dos limites em `score_from_state` com
+    `IndexError` sem contexto nenhum. Falha aqui, alto e cedo, com
+    mensagem acionável: quem constrói `state_ids` precisa FILTRAR
+    linhas de regime nulo antes de chamar, não é responsabilidade
+    deste módulo adivinhar o que fazer com elas."""
+    if state_ids.shape[0] > 0 and not bool(
+        np.all((state_ids >= 0) & (state_ids < n_states))
+    ):
+        bad = state_ids[(state_ids < 0) | (state_ids >= n_states)]
+        raise MetaFpInventoryError(
+            f"weighted_state_positive_rate: state_ids fora de [0, {n_states}) -- "
+            f"{bad.shape[0]} linha(s), exemplo {bad[0]!r}. Provável causa: regime nulo "
+            "mapeado sem filtro upstream (ver n_missing_regime no log de "
+            "build_modeling_frame) -- filtre antes de chamar, não corrija aqui."
+        )
     rates = np.full(n_states, np.nan, dtype=np.float64)
     for state in range(n_states):
         mask = state_ids == state

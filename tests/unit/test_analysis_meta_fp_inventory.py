@@ -151,6 +151,28 @@ def test_weighted_state_positive_rate_estado_sem_massa_vira_nan() -> None:
     assert np.isnan(rate[2])
 
 
+def test_weighted_state_positive_rate_state_ids_fora_intervalo_levanta_erro_com_contexto() -> None:
+    """Achado real (2026-08-31): `regime` nulo mapeado sem filtro upstream
+    vira o sentinela de overflow int64 (`-9223372036854775808`) e indexava
+    fora dos limites com `IndexError` sem nenhum contexto. Precisa falhar
+    alto, cedo, com `MetaFpInventoryError` explicando a causa provável."""
+    y = np.array([1.0, 0.0, 1.0], dtype=np.float64)
+    state_ids = np.array([0, 1, -9223372036854775808], dtype=np.int64)
+    weight = np.ones(3, dtype=np.float64)
+    with pytest.raises(fpi.MetaFpInventoryError, match="fora de"):
+        fpi.weighted_state_positive_rate(y, state_ids, weight, n_states=3)
+
+
+def test_weighted_state_positive_rate_state_ids_igual_a_n_states_levanta_erro() -> None:
+    """Fora-de-intervalo também pelo lado de CIMA (`state_ids == n_states`
+    é o erro clássico off-by-one, não só sentinelas negativos)."""
+    y = np.array([1.0, 0.0], dtype=np.float64)
+    state_ids = np.array([0, 3], dtype=np.int64)  # n_states=3 -> válido é 0,1,2
+    weight = np.ones(2, dtype=np.float64)
+    with pytest.raises(fpi.MetaFpInventoryError):
+        fpi.weighted_state_positive_rate(y, state_ids, weight, n_states=3)
+
+
 def test_weighted_state_auc_estado_perfeitamente_discriminativo_da_auc_1() -> None:
     n = 200
     state_ids = np.array([0] * (n // 2) + [1] * (n // 2), dtype=np.int64)

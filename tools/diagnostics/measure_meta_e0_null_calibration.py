@@ -74,7 +74,14 @@ def _population(symbol: str, resolution_id: str) -> dict[str, Any]:
         symbol=symbol, resolution_id=resolution_id, vol_estimator_id=_VOL_ESTIMATOR_ID
     )
     labeled = fpi.classify_fp_binary(mf.data)
-    sub = labeled.filter(labeled["y_fp"].is_not_null()).sort("t0")
+    # regime pode ser nulo numa fração minúscula de linhas (achado real,
+    # 2026-08-31: build_modeling_frame mede e loga n_missing_regime > 0 --
+    # nao e bug deste script, e realidade de dado ja instrumentada
+    # upstream; sem este filtro, o mapeamento pra int abaixo produz o
+    # sentinela de overflow int64 e derruba weighted_state_positive_rate).
+    sub = labeled.filter(
+        labeled["y_fp"].is_not_null() & labeled["regime"].is_not_null()
+    ).sort("t0")
 
     t0_ms = sub["t0"].dt.epoch(time_unit="ms").to_numpy().astype(np.int64)
     y = sub["y_fp"].to_numpy().astype(np.float64)
