@@ -860,7 +860,7 @@ proposta a confirmar, não como verdade estabelecida:
 | V41-7 — Pesos + Features | ≤3 | ⬜ não iniciado — depende de V41-6 | `PRD_V4_1.md` §4.2 |
 | V41-8 — Controle 19 (risco agregado) + sizing por ativo | 0 | 🟡 **parcial** — Controle 19 (`control_19_risco_agregado`, `src/risk/limits.py`) IMPLEMENTADO 2026-08-17, desacoplado da sequência (`AG-081`, autorizado pelo Manager): risco já quantificado (§5.3, ρ≈0,91 = 4,82x, cap efetivo 2 posições), não precisava esperar V41-5/6/7. `NOT_COMPUTABLE` em produção até existir rastreador de posições live + série de correlação (Sprint 12+). `aggregate_risk_max` (classe A, `ASSUMED`) e "sizing por ativo" (§5.4) seguem não iniciados. **[CORRIGIDO 2026-08-22, `AG-144`]**: `ρ≈0,91` nunca teve janela/proveniência declarada — remedido sobre dado real (5 símbolos, log-retornos 15m, 4 janelas): média entre pares fica em 0,70 (histórica completa) a 0,83 (180d), nunca 0,91; instável (range até 0,23/par). Multiplicador de 5 posições recalculado: 4,36x-4,65x, não 4,82x — mas **o cap efetivo de 2 posições é ROBUSTO à correção** (precisaria ρ≤0,167 pra N=3 caber no limite de 1,00%, nenhuma janela medida chega perto). Achado colateral: a mesma correlação mais baixa/instável enfraquece a leitura de que os 5 ativos "seriam ~1 aposta só" (§2.8) — converge com `M6` (Fator Comum, H0 rejeitada, I²=96-98%, componente idiossincrático real). Detalhe completo: `audit/evidence_ledger.yaml::ag144-correlacao-cross-asset-15m-4-janelas`, `audit/architecture_gaps_log.yaml::AG-144` | `PRD_V4_1.md` §5.3, `AG-081`, `AG-144` |
 | V41-9 — Calibração + `confidence_rank` | 0 | ⬜ não iniciado — `confidence_rank` existe (§5.12 do V3.2) mas nunca foi avaliado | `PRD_V4_1.md` §4.4 |
-| V41-10 — Meta-Model + Grupo J | ≤2 ⚠️ | 🟢 **F0-F5 implementados** (2026-08-30, `§15.30`/`§15.31`); desenho travado v3 em 2026-08-22 (`§15.19`) — ADR-001 §3.7/§2.7 revogado pelo Manager; regime entra como feature, fonte **HMM k=4** por decisão do Manager (2026-08-30); **Grupo J desacoplado e movido para DEPOIS**. O gate "retreino do Alpha" CAIU (feito 2× em 08-23/08-28). `P1`/`AG-151` (purge cross-símbolo) **fechado** 2026-08-31 (`§15.34`, commit `cc83208`). `P0` (esquema de permutação + validação do nulo) **medido contra dado real** 2026-08-31 (`§15.36`, commit `288fbc1`) — 9 de 10 combos (5 símbolos × R2/R3) BEM CALIBRADOS, 1 achado real aberto (`XRPUSDT/R3`, `AG-402`, não bloqueante). Restam: Gate E0 não executado, P2/P3 não iniciados. ⚠️ **o orçamento `≤2` é inconsistente** com a contabilidade do §11 do próprio design doc (E0 + 2 braços de doador + F6 + F6b + sweep + ablação) por 1-2 ordens de grandeza — não reconciliado; `N_lifetime` deixou de ser gate vinculante em `AG-077` | `docs/meta_model_design_doc_2026-08-22.md`, `§15.19`, `§15.30`, `§15.34`, `§15.36` |
+| V41-10 — Meta-Model + Grupo J | ≤2 ⚠️ | 🔴 **F0-F5 implementados, Gate E0 REAL reprova os 5 candidatos** (2026-08-30/31, `§15.30`/`§15.31`); desenho travado v3 em 2026-08-22 (`§15.19`) — ADR-001 §3.7/§2.7 revogado pelo Manager; regime entra como feature, fonte **HMM k=4** por decisão do Manager (2026-08-30, mas artefato ainda não persistido — Gate E0 rodou sob `quantile_classifier_v1`); **Grupo J desacoplado e movido para DEPOIS**. `P1`/`AG-151` **fechado** 2026-08-31 (`§15.34`). `P0` **medido** 2026-08-31 (`§15.36`) — 9/10 calibrado. **`P3`/Gate E0 REAL rodou 2026-08-31 (`§15.38`) contra os 5 combos de produção — 0 de 5 passam** (`AG-404`) — converge com "0/20" do Alpha (`AG-391`) por metodologia diferente. Consequência pré-declarada do design doc ("Meta sai do roadmap") NÃO aplicada unilateralmente — pendente decisão do Manager. ⚠️ **o orçamento `≤2` é inconsistente** com a contabilidade do §11 do próprio design doc por 1-2 ordens de grandeza — não reconciliado; `N_lifetime` deixou de ser gate vinculante em `AG-077` | `docs/meta_model_design_doc_2026-08-22.md`, `§15.19`, `§15.30`, `§15.34`, `§15.36`-`§15.38` |
 | — (novo, sem V41-N formal — item de arquitetura, não medição M-style) | Alpha multi-ativo × multi-resolução (LightGBM + GPU) | 🟢 **IMPLEMENTADO E TREINADO DE VERDADE (2026-08-23, `§15.20.2`)** — D-01 a D-18 codificados (`§15.20.1`), D-06 integrado (escopo estreito, fecha `AG-154`), 4 bugs reais achados e fechados rodando pela primeira vez contra dado de produção (`AG-199`/`AG-200`/`AG-202` fechados; `AG-201` aberto — GPU/CUDA inviável no Windows nativo, treino real rodou em CPU). Primeiro sweep completo (5 símbolos × R1/R2/R3 = 15 combinações): **3/15 (20%) passam o gate de permanência** (ETHUSDT/R1, SOLUSDT/R2, SOLUSDT/R3) — achado misto real, registrado em `audit/evidence_ledger.yaml::alpha-lightgbm-sweep-15-combinacoes-2026-08-23`, não decisão de promoção pra produção ainda. **Atualização 2026-08-27/28 (`AG-207`→`AG-362`→`AG-371`, ver `§15.29`)**: o sweep de 3/15 acima ficou obsoleto em 3 camadas — override T2→T1 (`AG-207`), reversão do gate marginal de `ADR-005 §2.2` (`AG-362`, `T1_FEATURE_IDS` 7→22), retreino canônico real sob 22 features (**0/15 `permanence_pass`**, sinal misto). `AG-371` corrigiu um viés estrutural real de Camada 0, mas a validação ficou CONFUNDIDA por uma sessão paralela mudando `T1_FEATURE_IDS` no meio do teste (22→29→36, últimos 2 não commitados) — decisão pendente do Manager sobre qual vetor é autoritativo. **Não citar "3/15 (20%)" nem "0/15" como veredito definitivo sem ler `§15.29`**. **[CORREÇÃO 2026-08-29, Changelog v3.57]** `AG-201` ("GPU/CUDA inviável no Windows nativo") **corrigido** — GPU real funciona via WSL2, ver §15.20 alínea D; `AG-371` **FECHADO** por reformulação (Optuna real substitui o YAML estático de hiperparâmetro por combo, não recalibração). **[CORREÇÃO 2026-08-30/31, ADR-007/ADR-008 — Governança item 2, 40 commits desde `022b0bd`]** `AG-371` (Optuna real) executado em produção pela primeira vez: campanha completa 1.800 trials (6 combos × 2 camadas × 150, `ADR-007` Item 1) → confirmação profunda 720 trials/10 seeds (Item 2) → **ZERO dos 6 combos passa o gate duplo** (`median_n_better`: `BTCUSDT/R3`=2,5, `BTCUSDT/R2`=3,0, `SOLUSDT/R2`=2,5, `SOLUSDT/R3`=3,0, `XRPUSDT/R2`=2,0, `XRPUSDT/R3`=2,5 — nenhum atinge o piso). `SOLUSDT/R2` confirma viés de seleção **+8,356, recorde do projeto** (Item 2). Calibração do FPR do gate duplo sob ruído puro (Item 3, `AG-220`): 8,0%/0,0%/0,0% — o gate não é impossível de passar por acaso, a ausência de sinal é real. Correção FDR aplicada à taxa-base H0-H7 (Item 4): 7/15 → 4/15 (BH) → 3/15 (BY). **Apesar da reprovação formal, o Manager autorizou override manual promovendo 5 candidatos a produção canônica** (`BTCUSDT/R2`, `SOLUSDT/R2`, `SOLUSDT/R3`, `XRPUSDT/R2`, `XRPUSDT/R3` — `BTCUSDT/R3` excluído deliberadamente; `config/constants.yaml::alpha_production_hyperparam_override`, `N_lifetime` id=38-40). **Auditoria institucional independente em seguida (`ADR-008`, 9 fases + correção de thresholds + auditoria de engenharia adversarial, `n_lifetime` id=42): walk-forward real refuta os 5 — AUC out-of-time≈0,50 na maioria dos combos/lados, `0 de 20` combo×variant×lado passa os 3 gates codificados (Data/Model/Alpha) mesmo após sweep de sensibilidade ±50%+ confirmar robustez do limiar.** Nenhum dos 5 candidatos promovidos sobrevive à avaliação fora-da-amostra no tempo — achado consolidado, decisão de produção sobre os 5 candidatos segue com o Manager. Detalhe completo: `docs/ADR-007_medicao_producao_hiperparametro_optuna_15_combos_2026-08-30.md`, `docs/ADR-008_auditoria_ml_alpha_institucional_score_quality_walkforward_2026-08-31.md`, `audit/architecture_gaps_log.yaml::AG-389`-`AG-392` | `docs/alpha_model_design_doc_2026-08-22.md`, `§15.20`, `§15.20.2`, `§15.29`, `§15.32`, `§15.33` |
 | V41-11 — Walk-forward + PBO + Lo | 0 | ⬜ não iniciado — `src/validation/walk_forward.py` não existe ainda | `PRD_V4_1.md` §4.6/§4.7 |
 | V41-12 — ~~DSR final, `N_lifetime`=60~~ — **REDEFINIDO 2026-08-28** | 0 | 🟡 Gate 6 = lucro entregue em Live Demo (`AG-077`, fechado). Definição operacional: "lucro" = PnL positivo E distinguível de ruído (mesmo framework de `economic_gate.py::is_distinguishable`); "Live Demo" = capital real reduzido (não testnet/paper), dentro de `capital_inicial_brl` (R$ 1.000, §0); janela mínima 1 mês. **N mínimo de trades e semântica AND/OR entre janela e N seguem TBD** (`AG-374`, parcial) | `PRD_V4_1.md` §6.1, `audit/architecture_gaps_log.yaml::AG-077`, `AG-374` |
@@ -1505,7 +1505,7 @@ LIVE TRADING LAYER
 | `09_LEARNER` | sem equivalente ativo | `AG-079` fechado — gatilho de reabertura declarado em §4.3, não decisão sem critério. **[ATUALIZADO 2026-08-23]** deixou de ser hipotético: LightGBM treinado de verdade em 15 combinações reais (`§15.20.2`), resultado 3/15 gate de permanência — ver `evidence_ledger.yaml::alpha-lightgbm-sweep-15-combinacoes-2026-08-23`. **[NOVO 2026-08-24]** `AG-204` corrige `tp_atr_mult`/`sl_atr_mult` de produção pós-S1, retreino redisparado; ablação T2→T1 (H7) refuta promoção na Fase 1 — ver linha `09_LEARNER` da tabela ASCII acima. **[NOVO 2026-08-30/31]** Optuna real (`ADR-007`) + auditoria walk-forward (`ADR-008`) — 0/20 combo×variant×lado passa os 3 gates codificados, nenhum dos 5 candidatos promovidos sobrevive; ver linha `09_LEARNER` da tabela ASCII acima e `§15.32`/`§15.33` |
 | `09b_CALIBRACAO` | V41-9 (Calibração+`confidence_rank`) | ⬜ não iniciado |
 | `10_VALIDACAO` | V41-11 (Walk-forward+PBO+Lo) | ⬜ não iniciado, `walk_forward.py` não existe. **Nota de leitura (`stage_readiness_audit`, 2026-08-22): esta linha e a linha `10_VALIDACAO` da tabela ASCII acima não se contradizem** — CPCV (`cpcv.py`) está completo e wired em produção real (`pipeline.py`); DSR/leakage (`dsr.py`/`leakage.py`) existem e são maduros mas não são gate de nada; PBO/CSCV e `walk_forward.py` (medição de decaimento do Alpha treinado, diferente de `volatility_walkforward.py`/`regime_utility.py`, que são seleção de componente M1/M4) simplesmente não existem — as duas linhas, juntas, dão o quadro completo |
-| `11_META_MODEL` | V41-10 (Meta-Model) — **Grupo J desacoplado, movido para depois** (`§15.19`) | 🟢 **F0-F5 implementados** (2026-08-30, `§15.30`/`§15.31`): `src/models/meta_dataset.py` (`build_meta_signal_table`, regra de doador `path_matched`, 4 asserções §10.1, `UniquenessDivergenceDiagnostic`, controle positivo de vazamento), `src/regime/artifact_hmm.py` (regime HMM k=4 persistido), `src/models/meta.py` (`LogitL2Meta`/`BlockedGBMMeta`, `resolve_tau_meta` §8.3, `apply_meta_filter` veto-em-zero D-05, `write_meta_fold_bundle` D-17), `src/validation/cpcv.py` (`compute_pooled_edges_ms`, `AG-151` fechado, `§15.34`), `src/analysis/meta_fp_inventory.py` (esquema de permutação P0 + validação do nulo, `§15.35`/`§15.36`). F6-F8 pendentes. O gate do retreino do Alpha CAIU (retreino feito 2× em 08-23/08-28); o Gate E0 segue não executado — `P1`/`AG-151` fechado 2026-08-31, `P0` medido contra dado real 2026-08-31 (9/10 combos calibrados, `AG-402` aberto não bloqueante), P2/P3 não iniciados |
+| `11_META_MODEL` | V41-10 (Meta-Model) — **Grupo J desacoplado, movido para depois** (`§15.19`) | 🔴 **F0-F5 implementados, mas Gate E0 REPROVA os 5 candidatos reais** (2026-08-30/31, `§15.30`/`§15.31`/`§15.38`): `src/models/meta_dataset.py`, `src/models/meta.py`, `src/validation/cpcv.py` (`AG-151` fechado), `src/analysis/meta_fp_inventory.py` (P0-P3 completos). `P0`/`P1` fechados 2026-08-31 (9/10 calibrado, `AG-402` não bloqueante). **`P3`/Gate E0 REAL rodou 2026-08-31 contra os 5 combos de produção — 0 de 5 passam** (`AG-404`, vermelho) — converge com o "0/20" do próprio Alpha (`AG-391`) por metodologia totalmente diferente. Consequência pré-declarada do design doc ("Meta sai do roadmap") NÃO aplicada unilateralmente — decisão do Manager pendente. F6-F8 não iniciados, bloqueados até essa decisão | `docs/meta_model_design_doc_2026-08-22.md`, `§15.19`, `§15.35`-`§15.38`, `AG-404` |
 | `11b_DECISION_ENGINE` | sem equivalente de medição | ⬜ não iniciado — `AG-095` (2026-08-19): estágio adicionado à tabela nesta data, existia no PRD_V3_2 (Parte VII) desde sempre mas nunca tinha entrado neste modelo; consome `regime.tradeable` (gate 01, §7.3) — consumidor real de Regime. **[DESATUALIZADO, `AG-123`]** lista original citava "Alpha" como um dos consumidores de Regime — caiu na Fase A de `§15.13` (2026-08-21): regime SAIU do vetor de treino do Alpha (`DESIGN_COLUMNS` só as 10 features T1), ADR-001 §2.7 ratificado (regime = gate, não feature). Consumidores reais hoje: Risk (`§15.13` Fase C, hoje desligado — ver `12_RISK_ENGINE`), Decision Engine (esta linha, não implementado — `AG-143`), Meta/Execução (não implementados) |
 | `12_RISK_ENGINE` | V41-8 (Controle 19+sizing) | 🟡 parcial — Controle 19 implementado (`AG-081`), sizing por ativo não. **[DESATUALIZADO, 3ª ocorrência confirmada `AG-123`]** "Regime wired" foi DESLIGADO de `evaluate_all()` em 2026-08-22 (`AG-114`/`AG-118`, commit `3c0d83d`) — função mantida definida/testada/exportada, não chamada |
 | `13_EXECUCAO` | sem equivalente de medição hoje | RPI vs. post-only (`§9.5.1`, `AG-078`) é Sprint 16, ainda distante |
@@ -6278,6 +6278,99 @@ envolvendo `XRPUSDT` (o símbolo de histórico mais curto dos 5).
 próximo, testaria diretamente a hipótese de assimetria) se o Manager
 priorizar fechar essa dúvida antes de seguir adiante — decisão do
 Manager, não tomada aqui.
+
+### 15.37 Meta-model — P2: saturação isotônica real, 5 combos de produção (2026-08-31)
+
+Manager: "Pode executar ponta a ponta" — em vez de retreinar Alpha em
+R2/R3 pra gerar `predictions.parquet`, descoberto que os artefatos JÁ
+EXISTEM em disco (`artifacts/predictions_alpha/`, escritos por
+`run_layer1_sprint` numa sessão anterior, mesma que gerou os relatórios
+`_adr007canonico.json` de hoje). `config_hash` de cada combo calculado
+localmente (`hyperparams_by_combo.load_production_override` +
+`io_artifact.compute_config_hash`, determinístico, sem executar nada) e
+todos os 10 hashes (5 combos × 2 camadas) bateram com diretórios já
+existentes — **zero retreino necessário**, só leitura.
+
+`tools/diagnostics/measure_meta_p2_isotonic_saturation.py` mede
+`n_distinct(p_alpha)` vs `n_distinct(score_raw)` na subpopulação
+`side_hat != 0 ∧ is_oof`, por lado, sobre os 5 combos de produção reais
+(`BTCUSDT/R2`, `SOLUSDT/R2`, `SOLUSDT/R3`, `XRPUSDT/R2`, `XRPUSDT/R3`
+— os únicos com hiperparâmetro confirmado, não os 5 símbolos × 2
+resoluções inteiros).
+
+**Resultado**: razão de saturação (`p_alpha`/`score_raw`) consistentemente
+BAIXA — entre 0,081 (`BTCUSDT/R2` short) e 0,667 (`SOLUSDT/R2` short,
+mas `n=36`, amostra minúscula). O calibrador isotônico colapsa 77-92%
+dos scores brutos distintos em poucos níveis de probabilidade (ex.
+`BTCUSDT/R2` long: 1.370 scores brutos → só 144 níveis de `p_alpha`).
+Esperado de regressão isotônica (função em degrau), mas a magnitude é
+real — relevante pra resolução da seleção de `tau_meta` por quantil
+(§8.3) se o Meta chegar a essa etapa. Registrado em `evidence_ledger.yaml`
+(`meta-p2-saturacao-isotonica-2026-08-31`, status amarelo — achado real,
+não necessariamente invalidante sozinho).
+
+### 15.38 Meta-model — P3: Gate E0 REAL — 0 de 5 combos passam (AG-404) (2026-08-31)
+
+**A peça consequente.** `tools/diagnostics/measure_meta_p3_e0_piloto.py`
+roda o inventário completo de FP/TP + a decisão REAL do Gate E0 (não
+mais "piloto"/legado — decisão do Manager, R2/R3, dado real) sobre os
+mesmos 5 combos de produção, Camada1. Universo: `side_hat != 0 ∧
+is_oof`, joinado a `labels` por `(t0, side_hat) → (t0, side)` via
+`meta_fp_inventory.join_predictions_to_universe` (novo). `path_id` via
+`meta_fp_inventory.path_id_by_fold` (mapeia `fold_id` → `path_id` do
+CPCV). `n_seeds = alpha_b1_n_seeds = 1000` — o orçamento de PRODUÇÃO
+(P0 já validou a calibração do esquema com orçamento reduzido, `§15.36`).
+Runtime real: ~106s pros 5 combos (populações pequenas, ~260-2800 linhas
+por combo — nada a ver com o custo do P0, que rodava sobre o dataset
+inteiro).
+
+**Resultado: 0 de 5 combos passam o Gate E0** (critério travado do
+§2.6: PASS sse AUC ponderada observada exceder o p95 do nulo em ≥4 dos
+5 paths). `BTCUSDT/R2`: 0/5 paths — nenhum chega perto (AUC observada
+0,53-0,57 contra p95 do nulo 0,56-0,62 em TODOS os 5). `SOLUSDT/R2`:
+3/5 — o melhor resultado dos 5 combos, ainda abaixo do piso de 4.
+`SOLUSDT/R3`, `XRPUSDT/R2`, `XRPUSDT/R3`: 1/5 cada.
+
+`fp_rate` (taxa de falso-positivo entre trades preenchidos) entre 40,8%
+e 45,5% nos 5 combos — próximo de moeda honesta, **mesma ordem de
+grandeza do achado independente "0/20" do próprio Alpha** (`AG-391`,
+ADR-008, `§15.33`). `pnl_fp_total` (teto teórico de um filtro perfeito)
+negativo nos 5. V de Cramér (`regime` × `group_id` do CPCV): 0,155 a
+0,301 — fraca-a-moderada, não sustenta "regime é só carimbo de data"
+mas também não é desprezível. Estabilidade estado→característica:
+estado `R0` (o mais raro, ~0,1% das barras globalmente) teve **zero
+ocorrências na subpopulação sinalizada em TODOS os 5 combos** — o
+Alpha praticamente nunca sinaliza sob esse regime.
+
+**Por que isto importa mais do que um resultado isolado**: converge com
+o achado "0/20" do Alpha (`§15.33`) por um caminho de medição
+COMPLETAMENTE DIFERENTE — ADR-008 mede AUC out-of-time do próprio score
+do Alpha via walk-forward ancorado real; este Gate E0 mede se `regime`
+discrimina FP de TP DENTRO do universo já sinalizado pelo Alpha, via
+permutação circular-shift-by-block (a mesma primitiva que `§15.36`
+validou contra dado real, `AG-402`). Duas medições independentes,
+metodologias diferentes, mesma conclusão qualitativa: nenhum sinal
+robusto detectável fora da amostra em NENHUMA das duas camadas do
+motor (Alpha nem Meta), nos 5 candidatos reais medidos.
+
+**Consequência pré-declarada, não executada unilateralmente**: o
+próprio design doc declara ANTES de qualquer número real existir
+(§15.2, P3): *"falha em ≥2 paths ⟹ registro em evidence_ledger + Meta
+sai do roadmap."* Os 5 combos falham com 2 a 5 paths reprovados cada —
+a consequência pré-declarada está tecnicamente disparada pelos números
+medidos. **Esta sessão NÃO aplicou essa consequência unilateralmente**
+— é decisão do Manager, não de código, registrada como tal em
+`evidence_ledger.yaml` (`meta-p3-gate-e0-0-de-5-2026-08-31`, vermelho)
+e `architecture_gaps_log.yaml::AG-404` (aberto, severidade alta, achado
+consolidado — mesmo padrão de `AG-391`).
+
+**Decisões que ficam com o Manager, não tomadas aqui**: (a) aplicar a
+consequência pré-declarada como escrita; (b) revisitar à luz do quadro
+mais amplo (Alpha TAMBÉM em 0/20 — a decisão pode ser sobre o motor
+inteiro, não só o Meta); (c) investigar mais antes de decidir (os 2
+casos menos ruins — `SOLUSDT/R2` 3/5, e o path de `XRPUSDT/R3` com
+AUC=0,80 mas `n=26` — merecem uma segunda olhada antes do veredito
+final, se o Manager quiser essa investigação extra).
 
 ---
 ## Fontes desta pesquisa

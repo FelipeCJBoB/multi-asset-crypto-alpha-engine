@@ -1,0 +1,114 @@
+{
+  "_gerado_por": "tools/diagnostics/measure_meta_p2_isotonic_saturation.py",
+  "_proposito": "P2 do Gate E0 (docs/meta_model_design_doc_2026-08-22.md Sec3.4) -- n_distinct(p_alpha) vs n_distinct(score_raw) na subpopulacao side_hat!=0 ^ is_oof, sobre os 5 combos de producao reais (config/constants.yaml::alpha_production_hyperparam_override).",
+  "_schema": "meta_p2_isotonic_saturation/1.0.0",
+  "combos": [
+    {
+      "long": {
+        "n_distinct_p_alpha": 144,
+        "n_distinct_score_raw": 1370,
+        "n_rows": 1722,
+        "saturation_ratio": 0.10510948905109489,
+        "variance_p_alpha": 0.018327447444428952,
+        "variance_score_raw": 0.0036310431115942504
+      },
+      "n_calibradores": 24,
+      "resolution_id": "R2",
+      "short": {
+        "n_distinct_p_alpha": 72,
+        "n_distinct_score_raw": 891,
+        "n_rows": 1075,
+        "saturation_ratio": 0.08080808080808081,
+        "variance_p_alpha": 0.006343257734107616,
+        "variance_score_raw": 0.001066849102545909
+      },
+      "symbol": "BTCUSDT"
+    },
+    {
+      "long": {
+        "n_distinct_p_alpha": 76,
+        "n_distinct_score_raw": 445,
+        "n_rows": 818,
+        "saturation_ratio": 0.1707865168539326,
+        "variance_p_alpha": 0.024154316943120174,
+        "variance_score_raw": 0.0005719275906014045
+      },
+      "n_calibradores": 14,
+      "resolution_id": "R2",
+      "short": {
+        "n_distinct_p_alpha": 6,
+        "n_distinct_score_raw": 9,
+        "n_rows": 36,
+        "saturation_ratio": 0.6666666666666666,
+        "variance_p_alpha": 0.03645649776187608,
+        "variance_score_raw": 0.00020013947228426153
+      },
+      "symbol": "SOLUSDT"
+    },
+    {
+      "long": {
+        "n_distinct_p_alpha": 40,
+        "n_distinct_score_raw": 174,
+        "n_rows": 233,
+        "saturation_ratio": 0.22988505747126436,
+        "variance_p_alpha": 0.025704442813897024,
+        "variance_score_raw": 0.0008182539441199978
+      },
+      "n_calibradores": 13,
+      "resolution_id": "R3",
+      "short": {
+        "n_distinct_p_alpha": 35,
+        "n_distinct_score_raw": 237,
+        "n_rows": 347,
+        "saturation_ratio": 0.14767932489451477,
+        "variance_p_alpha": 0.018855372316857914,
+        "variance_score_raw": 9.865624986451639e-05
+      },
+      "symbol": "SOLUSDT"
+    },
+    {
+      "long": {
+        "n_distinct_p_alpha": 33,
+        "n_distinct_score_raw": 372,
+        "n_rows": 1242,
+        "saturation_ratio": 0.08870967741935484,
+        "variance_p_alpha": 0.0054498083909267055,
+        "variance_score_raw": 0.0014761460930168301
+      },
+      "n_calibradores": 12,
+      "resolution_id": "R2",
+      "short": {
+        "n_distinct_p_alpha": 7,
+        "n_distinct_score_raw": 73,
+        "n_rows": 350,
+        "saturation_ratio": 0.0958904109589041,
+        "variance_p_alpha": 0.00467228659472753,
+        "variance_score_raw": 0.0002544314789348484
+      },
+      "symbol": "XRPUSDT"
+    },
+    {
+      "long": {
+        "n_distinct_p_alpha": 46,
+        "n_distinct_score_raw": 230,
+        "n_rows": 668,
+        "saturation_ratio": 0.2,
+        "variance_p_alpha": 0.01864859706602854,
+        "variance_score_raw": 0.0035474419519884275
+      },
+      "n_calibradores": 14,
+      "resolution_id": "R3",
+      "short": {
+        "n_distinct_p_alpha": 20,
+        "n_distinct_score_raw": 99,
+        "n_rows": 135,
+        "saturation_ratio": 0.20202020202020202,
+        "variance_p_alpha": 0.005259866381480763,
+        "variance_score_raw": 0.00021888021479627603
+      },
+      "symbol": "XRPUSDT"
+    }
+  ],
+  "n_combos": 5,
+  "total_elapsed_s": 0.5476107597351074
+}

@@ -26161,6 +26161,19 @@ entries:
       um bug de calibracao que pode reincidir em combos futuros com
       populacao de treino minuscula por lado).
 
+      ADENDO 2026-08-31 (mesmo dia, autorizacao de execucao do Manager)
+      -- item 3 (calibrador isotonico colapsando pra constante) ganhou
+      VISIBILIDADE, nao correcao de causa raiz: `SideModelResult.calib_
+      target_single_class` (novo, `alpha.py`) sinaliza quando `y_calib`
+      tem 1 classe so (o mecanismo exato que faz `IsotonicRegression.
+      fit` devolver constante -- verificado, nao mais so hipotese),
+      propagado ate `WalkForwardFoldMetrics.calib_degenerate_by_side`
+      (commit `4d724ac`). NAO resolve por que o split de calib fica
+      degenerado pra `SOLUSDT/R2` fold_id=3/short especificamente --
+      isso continua aberto, agora pelo menos rastreavel sem precisar
+      comparar `score_quality_by_side` byte a byte entre camadas de novo.
+      Item 1 (gap de dado 2022 em `BTCUSDT/R2`) segue sem acao.
+
   - id: AG-394
     date: "2026-08-31"
     file: "src/analysis/walk_forward_gates.py; src/models/score_quality.py"
@@ -26437,11 +26450,19 @@ entries:
       classe de defeito que a Secao 12 da ADR-008 (AG-392) ja corrigiu em
       `score_quality.py` (piso `n>=5` por lado) -- sobreviveu intacto no
       gate de degeneracao de fold, um modulo irmao.
-    resolved_by_commit: null
+    resolved_by_commit: "4d724ac"
     status: >
-      ABERTO -- mecanismo confirmado em codigo nesta sessao. Acao
-      registrada no roadmap ("Caso 0/20", Exhibit VI, item 8, prioridade
-      P2): aplicar `min_trades` por LADO, nao por fold combinado.
+      PARCIALMENTE RESOLVIDO 2026-08-31 (mesmo dia, autorizacao de
+      execucao do Manager) -- `backtest_lite.PathBacktestResult` ganhou
+      `n_filled_long`/`n_filled_short` (aditivo, side_hat sobrevive ao
+      join de `join_signals_to_labels`); `WalkForwardFoldMetrics` ganhou
+      `degenerado_by_side` (novo campo, NAO substitui `degenerado` --
+      decisao de mudar o CONTRATO do fold-level degenerado, isto e,
+      gatear Sharpe/edge_bps/win_rate do fold por lado em vez de
+      combinado, fica separada, nao decidida unilateralmente). Piso por
+      lado agora VISIVEL nos artefatos; ainda nao consome essa
+      visibilidade pra excluir nada do agregado automaticamente. 62
+      testes afetados, todos verdes.
 
   - id: AG-402
     date: "2026-08-31"
@@ -26581,3 +26602,86 @@ entries:
       paralela concorrente no mesmo arquivo, commits `df5e9cf`/`288fbc1`)
       ja ocupando o proximo ID -- numerada AG-403 pra evitar colisao,
       nenhum conteudo de outra sessao foi tocado ou sobrescrito."
+
+  - id: AG-404
+    date: "2026-08-31"
+    file: "src/analysis/meta_fp_inventory.py::evaluate_gate_e0; tools/diagnostics/measure_meta_p3_e0_piloto.py"
+    related_file: "audit/evidence_ledger.yaml::meta-p3-gate-e0-0-de-5-2026-08-31; docs/meta_model_design_doc_2026-08-22.md Sec2.6/Sec15.1/15.2; AG-391 (achado consolidado analogo do Alpha, 0/20); experiments/meta_p3_e0_real_2026-08-31.json"
+    found_by: "Medicao real de P3/Gate E0 (2026-08-31) -- 5 combos de producao reais (BTCUSDT/R2, SOLUSDT/R2, SOLUSDT/R3, XRPUSDT/R2, XRPUSDT/R3), n_seeds=1000 (alpha_b1_n_seeds, orcamento de producao)."
+    gap: >
+      ACHADO CONSOLIDADO (nao bug de codigo -- resultado de medicao). O
+      Gate E0 do Meta-model (Sec2.6: PASS sse AUC ponderada observada
+      -- regime discriminando FP de TP -- exceder o p95 do nulo
+      permutado em >=4 dos 5 paths do CPCV) reprova os 5 combos de
+      producao reais: BTCUSDT/R2 0/5 paths, SOLUSDT/R2 3/5 (melhor
+      caso, ainda abaixo do piso), SOLUSDT/R3 1/5, XRPUSDT/R2 1/5,
+      XRPUSDT/R3 1/5. `fp_rate` (taxa de falso-positivo entre trades
+      preenchidos) fica entre 40,8% e 45,5% nos 5 -- proximo de moeda
+      honesta, mesma ordem de grandeza do achado independente sobre o
+      proprio Alpha (`AG-391`, "0/20").
+
+      Consequencia declarada A PRIORI no proprio design doc (Sec15.2,
+      antes de qualquer numero real existir): "falha em >=2 paths ⟹
+      registro em evidence_ledger + Meta sai do roadmap." Os 5 combos
+      falham com 2 a 5 paths reprovados cada -- a consequencia
+      pre-declarada esta tecnicamente disparada pelos numeros medidos.
+    severity: "alto"
+    layer: "analysis -- medicao pos-hoc do Gate E0, decisao de roadmap consome o resultado mas nao e tomada por este achado"
+    consequence: >
+      Duas medicoes INDEPENDENTES, metodologias COMPLETAMENTE
+      DIFERENTES, mesma conclusao qualitativa: `AG-391`/ADR-008 mede
+      AUC out-of-time do proprio score do Alpha via walk-forward
+      ancorado real (0/20 combo x variant x lado); este achado mede se
+      `regime` (o unico candidato primario do Gate E0, Sec2.6) consegue
+      discriminar FP de TP dentro do universo JA sinalizado pelo Alpha,
+      via permutacao circular-shift-by-block (P0, ja calibrada e
+      validada contra dado real, `AG-402`). Convergencia entre duas
+      medicoes tao diferentes metodologicamente e evidencia mais forte
+      do que qualquer uma sozinha -- nao ha sinal robusto detectavel
+      fora da amostra em NENHUMA das duas camadas do motor (Alpha nem
+      Meta), nos 5 candidatos reais medidos.
+    resolved_by_commit: null
+    resolution: null
+    status: "aberto -- a consequencia pre-declarada ('Meta sai do roadmap') NAO foi executada unilateralmente; e decisao do Manager, nao de codigo. Registrado para o Manager decidir: (a) aplicar a consequencia pre-declarada como escrita; (b) revisitar a consequencia a luz do quadro mais amplo (Alpha tambem em 0/20, decisao pode ser sobre o motor inteiro, nao so o Meta); (c) investigar mais antes de decidir (ex. os 2 casos menos ruins -- SOLUSDT/R2 3/5, XRPUSDT/R3 path com AUC alto mas n pequeno -- merecem uma segunda olhada antes do veredito final)."
+
+  - id: AG-405
+    date: "2026-08-31"
+    file: "src/analysis/walk_forward_gates.py::apply_fdr_to_model_gates; scripts/evaluate_walk_forward_gates.py"
+    related_file: "AG-391; AG-403; docs/prompts/REFUTACAO_CONSOLIDADA_0de20_20260831.md achado N8"
+    numeracao: "AG-405."
+    found_by: "Auditoria adversarial externa (achado N8) -- confirmado nesta sessao por grep: apply_fdr_to_model_gates so aparece em walk_forward_gates.py (definicao + docstrings de outros trechos do mesmo modulo se auto-referenciando) e nos proprios testes -- nenhum caller de producao."
+    gap: >
+      `apply_fdr_to_model_gates` (`walk_forward_gates.py:258`, 3 testes)
+      consolida um LOTE de `GateVerdict` com correcao de multiplas
+      comparacoes (BH+BY) -- a propria docstring do modulo instrui "quem
+      for consolidar um lote real deve usar apply_fdr_to_model_gates, nao
+      o veredito bruto por celula". Nunca foi chamada em producao porque
+      NAO EXISTE nenhum caller de producao que itere varios combos
+      atraves de `evaluate_gates` e consolide o resultado -- o "0/20" da
+      ADR-008 foi produzido por processo nao reproduzivel (mesma raiz de
+      `AG-396`: sem script commitado, sem seed gravada), entao a pergunta
+      "quem deveria ter chamado apply_fdr_to_model_gates" nao tinha
+      resposta ate agora -- nao existia NENHUM ponto de consolidacao real
+      pra religar a funcao.
+    severity: "media -- FDR so pode tornar um gate MAIS conservador, nunca menos (nao inflava falso-positivo por omissao), mas a lacuna de reprodutibilidade que a motiva e real"
+    layer: "analysis (gates) / process (script de consolidacao ausente, mesma familia de AG-396)"
+    consequence: >
+      Sem um caller real, nenhuma decisao de producao ja tomada usou FDR
+      -- nao inflava confianca indevidamente (o veredito bruto celula a
+      celula e mais conservador que o FDR-corrigido seria, entao o "0/20"
+      original nao fica mais fraco por essa omissao). O gap real e
+      reprodutibilidade/auditabilidade: nao havia como reproduzir "0/20"
+      com ou sem FDR de forma consistente.
+    resolved_by_commit: "4d724ac"
+    status: >
+      RESOLVIDO 2026-08-31 (mesmo dia, autorizacao de execucao do
+      Manager) -- `scripts/evaluate_walk_forward_gates.py` novo, primeiro
+      caller real de `apply_fdr_to_model_gates`. Rodado contra os 5
+      artefatos canonicos: reproduz "0/20" exatamente, célula a célula,
+      inclusive sob correcao BH/BY (validacao cruzada com a ADR-008
+      original). Rodado contra os 5 artefatos sob `tau_policy=total_
+      common_oof` (`AG-403`): tambem 0/20 sob FDR. Ressalva: o script e
+      um utilitario invocado manualmente, nao um passo automatico de
+      nenhum pipeline de producao -- fecha a lacuna de CAPACIDADE, nao
+      cria um gate automatico obrigatorio (decisao de tornar isso parte
+      do fluxo de promocao fica com o Manager).

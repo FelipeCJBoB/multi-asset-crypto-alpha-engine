@@ -1,0 +1,510 @@
+{
+  "_gerado_por": "tools/diagnostics/measure_meta_p3_e0_piloto.py",
+  "_proposito": "P3 do Gate E0 (docs/meta_model_design_doc_2026-08-22.md Sec2.6) -- FP inventory + decisao real do Gate E0 sobre Camada1, 5 combos de producao reais (R2/R3, 15m/R1 fora de escopo -- decisao do Manager 2026-08-31).",
+  "_schema": "meta_p3_e0_real/1.0.0",
+  "combos": [
+    {
+      "cramers_v_regime_vs_group": 0.2521067448619157,
+      "fp_inventory": {
+        "fp_rate": 0.4364820846905538,
+        "n_eff_subpop": 1742.9935064840015,
+        "n_fp": 1206,
+        "n_nofill": 0,
+        "n_tp": 1557,
+        "pnl_fp_total": -9.510247133182357
+      },
+      "gate_e0": {
+        "gate_passed": false,
+        "min_paths_required": 4,
+        "n_paths_passed": 0,
+        "n_paths_total": 5,
+        "n_seeds": 1000,
+        "path_results": [
+          {
+            "auc_observed": 0.5579486809940977,
+            "n_effective_blocks": 5.385131118511293,
+            "n_rows": 427,
+            "n_states_observed": 5,
+            "p95_null": 0.5753945025413797,
+            "passed": false,
+            "path_id": 0
+          },
+          {
+            "auc_observed": 0.5293622507791373,
+            "n_effective_blocks": 5.190302633930966,
+            "n_rows": 742,
+            "n_states_observed": 5,
+            "p95_null": 0.5571419390629854,
+            "passed": false,
+            "path_id": 1
+          },
+          {
+            "auc_observed": 0.5430468067358054,
+            "n_effective_blocks": 4.374249521753557,
+            "n_rows": 650,
+            "n_states_observed": 5,
+            "p95_null": 0.5730014976628764,
+            "passed": false,
+            "path_id": 2
+          },
+          {
+            "auc_observed": 0.5393412126121593,
+            "n_effective_blocks": 5.380998884755465,
+            "n_rows": 683,
+            "n_states_observed": 5,
+            "p95_null": 0.5717725739062738,
+            "passed": false,
+            "path_id": 3
+          },
+          {
+            "auc_observed": 0.5697068480743516,
+            "n_effective_blocks": 3.8333588706242816,
+            "n_rows": 261,
+            "n_states_observed": 5,
+            "p95_null": 0.6230720380027673,
+            "passed": false,
+            "path_id": 4
+          }
+        ]
+      },
+      "n_universe_rows": 2797,
+      "resolution_id": "R2",
+      "state_characteristic_stability_atr": [
+        {
+          "coefficient_of_variation": NaN,
+          "n_groups_observed": 0,
+          "state": 0
+        },
+        {
+          "coefficient_of_variation": 0.3840066039422489,
+          "n_groups_observed": 6,
+          "state": 1
+        },
+        {
+          "coefficient_of_variation": 0.21492644963808988,
+          "n_groups_observed": 4,
+          "state": 2
+        },
+        {
+          "coefficient_of_variation": 0.6735827712821767,
+          "n_groups_observed": 6,
+          "state": 3
+        },
+        {
+          "coefficient_of_variation": 0.47104137149646175,
+          "n_groups_observed": 6,
+          "state": 4
+        },
+        {
+          "coefficient_of_variation": 0.9617370542845963,
+          "n_groups_observed": 6,
+          "state": 5
+        }
+      ],
+      "symbol": "BTCUSDT"
+    },
+    {
+      "cramers_v_regime_vs_group": 0.15456150850607886,
+      "fp_inventory": {
+        "fp_rate": 0.43601895734597157,
+        "n_eff_subpop": 712.6725000000009,
+        "n_fp": 368,
+        "n_nofill": 0,
+        "n_tp": 476,
+        "pnl_fp_total": -5.74934497275726
+      },
+      "gate_e0": {
+        "gate_passed": false,
+        "min_paths_required": 4,
+        "n_paths_passed": 3,
+        "n_paths_total": 5,
+        "n_seeds": 1000,
+        "path_results": [
+          {
+            "auc_observed": 0.6501342094972433,
+            "n_effective_blocks": 4.8181328742499,
+            "n_rows": 48,
+            "n_states_observed": 4,
+            "p95_null": 0.6327351612941388,
+            "passed": true,
+            "path_id": 0
+          },
+          {
+            "auc_observed": 0.6219917358663024,
+            "n_effective_blocks": 2.7130812443423453,
+            "n_rows": 73,
+            "n_states_observed": 5,
+            "p95_null": 0.6055313313915826,
+            "passed": true,
+            "path_id": 1
+          },
+          {
+            "auc_observed": 0.5564098160960496,
+            "n_effective_blocks": 4.452789016195163,
+            "n_rows": 409,
+            "n_states_observed": 5,
+            "p95_null": 0.5764094462179474,
+            "passed": false,
+            "path_id": 2
+          },
+          {
+            "auc_observed": 0.6329856435047445,
+            "n_effective_blocks": 4.836276005933475,
+            "n_rows": 173,
+            "n_states_observed": 5,
+            "p95_null": 0.6181085234466558,
+            "passed": true,
+            "path_id": 3
+          },
+          {
+            "auc_observed": 0.5470318599646578,
+            "n_effective_blocks": 4.741667538584413,
+            "n_rows": 141,
+            "n_states_observed": 5,
+            "p95_null": 0.6127188068679602,
+            "passed": false,
+            "path_id": 4
+          }
+        ]
+      },
+      "n_universe_rows": 854,
+      "resolution_id": "R2",
+      "state_characteristic_stability_atr": [
+        {
+          "coefficient_of_variation": NaN,
+          "n_groups_observed": 0,
+          "state": 0
+        },
+        {
+          "coefficient_of_variation": 0.14115643850982196,
+          "n_groups_observed": 6,
+          "state": 1
+        },
+        {
+          "coefficient_of_variation": 0.10336653336305254,
+          "n_groups_observed": 5,
+          "state": 2
+        },
+        {
+          "coefficient_of_variation": 0.24726771624586327,
+          "n_groups_observed": 6,
+          "state": 3
+        },
+        {
+          "coefficient_of_variation": 0.13494721459338538,
+          "n_groups_observed": 6,
+          "state": 4
+        },
+        {
+          "coefficient_of_variation": 0.5046024626948936,
+          "n_groups_observed": 5,
+          "state": 5
+        }
+      ],
+      "symbol": "SOLUSDT"
+    },
+    {
+      "cramers_v_regime_vs_group": 0.16599031352139684,
+      "fp_inventory": {
+        "fp_rate": 0.4080560420315236,
+        "n_eff_subpop": 469.36861111111114,
+        "n_fp": 233,
+        "n_nofill": 0,
+        "n_tp": 338,
+        "pnl_fp_total": -4.1888000351097485
+      },
+      "gate_e0": {
+        "gate_passed": false,
+        "min_paths_required": 4,
+        "n_paths_passed": 1,
+        "n_paths_total": 5,
+        "n_seeds": 1000,
+        "path_results": [
+          {
+            "auc_observed": 0.5552647143737052,
+            "n_effective_blocks": 3.959782415336158,
+            "n_rows": 157,
+            "n_states_observed": 5,
+            "p95_null": 0.6304310545511773,
+            "passed": false,
+            "path_id": 0
+          },
+          {
+            "auc_observed": 0.6815098328604094,
+            "n_effective_blocks": 3.262528885248507,
+            "n_rows": 38,
+            "n_states_observed": 5,
+            "p95_null": 0.7069099891828458,
+            "passed": false,
+            "path_id": 1
+          },
+          {
+            "auc_observed": 0.7066308608966154,
+            "n_effective_blocks": 4.870552824132191,
+            "n_rows": 88,
+            "n_states_observed": 5,
+            "p95_null": 0.6495110529153614,
+            "passed": true,
+            "path_id": 2
+          },
+          {
+            "auc_observed": 0.5266096628597426,
+            "n_effective_blocks": 5.77754620944913,
+            "n_rows": 265,
+            "n_states_observed": 5,
+            "p95_null": 0.6038716326699219,
+            "passed": false,
+            "path_id": 3
+          },
+          {
+            "auc_observed": 0.6631016042780749,
+            "n_effective_blocks": 5.28704927832527,
+            "n_rows": 23,
+            "n_states_observed": 4,
+            "p95_null": 0.7098293862999746,
+            "passed": false,
+            "path_id": 4
+          }
+        ]
+      },
+      "n_universe_rows": 580,
+      "resolution_id": "R3",
+      "state_characteristic_stability_atr": [
+        {
+          "coefficient_of_variation": NaN,
+          "n_groups_observed": 0,
+          "state": 0
+        },
+        {
+          "coefficient_of_variation": 0.27695824300535915,
+          "n_groups_observed": 6,
+          "state": 1
+        },
+        {
+          "coefficient_of_variation": 0.21187480823978955,
+          "n_groups_observed": 6,
+          "state": 2
+        },
+        {
+          "coefficient_of_variation": 0.22110144842955637,
+          "n_groups_observed": 6,
+          "state": 3
+        },
+        {
+          "coefficient_of_variation": 0.12206729523551356,
+          "n_groups_observed": 6,
+          "state": 4
+        },
+        {
+          "coefficient_of_variation": 0.2254776733952911,
+          "n_groups_observed": 6,
+          "state": 5
+        }
+      ],
+      "symbol": "SOLUSDT"
+    },
+    {
+      "cramers_v_regime_vs_group": 0.24116672328944028,
+      "fp_inventory": {
+        "fp_rate": 0.4483850538315389,
+        "n_eff_subpop": 1096.3170948742236,
+        "n_fp": 708,
+        "n_nofill": 0,
+        "n_tp": 871,
+        "pnl_fp_total": -11.397730417424057
+      },
+      "gate_e0": {
+        "gate_passed": false,
+        "min_paths_required": 4,
+        "n_paths_passed": 1,
+        "n_paths_total": 5,
+        "n_seeds": 1000,
+        "path_results": [
+          {
+            "auc_observed": 0.5683597289141871,
+            "n_effective_blocks": 3.897306863283444,
+            "n_rows": 149,
+            "n_states_observed": 5,
+            "p95_null": 0.6370266728585928,
+            "passed": false,
+            "path_id": 0
+          },
+          {
+            "auc_observed": 0.5688333286799214,
+            "n_effective_blocks": 4.48122298355892,
+            "n_rows": 319,
+            "n_states_observed": 5,
+            "p95_null": 0.5852919653400455,
+            "passed": false,
+            "path_id": 1
+          },
+          {
+            "auc_observed": 0.626418137038756,
+            "n_effective_blocks": 3.338583914142038,
+            "n_rows": 171,
+            "n_states_observed": 5,
+            "p95_null": 0.599365624147822,
+            "passed": true,
+            "path_id": 2
+          },
+          {
+            "auc_observed": 0.5572932457445587,
+            "n_effective_blocks": 5.962895067802213,
+            "n_rows": 583,
+            "n_states_observed": 5,
+            "p95_null": 0.5664074474275245,
+            "passed": false,
+            "path_id": 3
+          },
+          {
+            "auc_observed": 0.5539161253013828,
+            "n_effective_blocks": 3.607721116543481,
+            "n_rows": 357,
+            "n_states_observed": 5,
+            "p95_null": 0.5849185085031899,
+            "passed": false,
+            "path_id": 4
+          }
+        ]
+      },
+      "n_universe_rows": 1592,
+      "resolution_id": "R2",
+      "state_characteristic_stability_atr": [
+        {
+          "coefficient_of_variation": NaN,
+          "n_groups_observed": 0,
+          "state": 0
+        },
+        {
+          "coefficient_of_variation": 0.19274994621777608,
+          "n_groups_observed": 6,
+          "state": 1
+        },
+        {
+          "coefficient_of_variation": 0.13236500519039354,
+          "n_groups_observed": 6,
+          "state": 2
+        },
+        {
+          "coefficient_of_variation": 0.17347274543335256,
+          "n_groups_observed": 6,
+          "state": 3
+        },
+        {
+          "coefficient_of_variation": 0.0958608889075663,
+          "n_groups_observed": 6,
+          "state": 4
+        },
+        {
+          "coefficient_of_variation": 0.5101559279888648,
+          "n_groups_observed": 6,
+          "state": 5
+        }
+      ],
+      "symbol": "XRPUSDT"
+    },
+    {
+      "cramers_v_regime_vs_group": 0.30090293115151573,
+      "fp_inventory": {
+        "fp_rate": 0.45545796737766625,
+        "n_eff_subpop": 534.2225524376406,
+        "n_fp": 363,
+        "n_nofill": 0,
+        "n_tp": 434,
+        "pnl_fp_total": -8.516801588309502
+      },
+      "gate_e0": {
+        "gate_passed": false,
+        "min_paths_required": 4,
+        "n_paths_passed": 1,
+        "n_paths_total": 5,
+        "n_seeds": 1000,
+        "path_results": [
+          {
+            "auc_observed": 0.6030356062960671,
+            "n_effective_blocks": 5.48490366522265,
+            "n_rows": 175,
+            "n_states_observed": 5,
+            "p95_null": 0.6132303349558936,
+            "passed": false,
+            "path_id": 0
+          },
+          {
+            "auc_observed": 0.8040125687202014,
+            "n_effective_blocks": 1.8468848523553258,
+            "n_rows": 26,
+            "n_states_observed": 5,
+            "p95_null": 0.6906058539071569,
+            "passed": true,
+            "path_id": 1
+          },
+          {
+            "auc_observed": 0.5541345037487384,
+            "n_effective_blocks": 4.76024530102451,
+            "n_rows": 245,
+            "n_states_observed": 5,
+            "p95_null": 0.5791457766217176,
+            "passed": false,
+            "path_id": 2
+          },
+          {
+            "auc_observed": 0.6155584913849086,
+            "n_effective_blocks": 5.848894271454786,
+            "n_rows": 152,
+            "n_states_observed": 5,
+            "p95_null": 0.6171941348925217,
+            "passed": false,
+            "path_id": 3
+          },
+          {
+            "auc_observed": 0.5852487385114651,
+            "n_effective_blocks": 4.734536482811924,
+            "n_rows": 199,
+            "n_states_observed": 5,
+            "p95_null": 0.5900834615987146,
+            "passed": false,
+            "path_id": 4
+          }
+        ]
+      },
+      "n_universe_rows": 803,
+      "resolution_id": "R3",
+      "state_characteristic_stability_atr": [
+        {
+          "coefficient_of_variation": NaN,
+          "n_groups_observed": 0,
+          "state": 0
+        },
+        {
+          "coefficient_of_variation": 0.1896337422953961,
+          "n_groups_observed": 4,
+          "state": 1
+        },
+        {
+          "coefficient_of_variation": 0.2477994773637356,
+          "n_groups_observed": 6,
+          "state": 2
+        },
+        {
+          "coefficient_of_variation": 0.28796125087878827,
+          "n_groups_observed": 6,
+          "state": 3
+        },
+        {
+          "coefficient_of_variation": 0.09219509352819427,
+          "n_groups_observed": 5,
+          "state": 4
+        },
+        {
+          "coefficient_of_variation": 0.5932036741805906,
+          "n_groups_observed": 5,
+          "state": 5
+        }
+      ],
+      "symbol": "XRPUSDT"
+    }
+  ],
+  "n_combos": 5,
+  "n_combos_gate_passed": 0,
+  "total_elapsed_s": 105.89089369773865
+}

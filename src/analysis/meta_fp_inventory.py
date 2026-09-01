@@ -8,20 +8,25 @@ propósito). `analysis` pode ler `models`/`labels`/`validation` livremente
 risk/execution/live/monitoring` são proibidos de ler `labels`; `models não
 importa analysis` é a única direção fechada — o inverso é livre).
 
-**Escopo desta rodada: só P0.** `§15.2`:
+**Escopo**: `§15.2`:
 
 ```
-P0  Esquema de permutação travado + VALIDAÇÃO DO NULO (§2.6)  [bloqueante]
+P0  Esquema de permutação travado + VALIDAÇÃO DO NULO (§2.6)  [bloqueante, FECHADO]
 P1  edges_ms sobre união temporal (D-16, AG-151)              [bloqueante, FECHADO]
-P2  Diagnóstico de saturação isotônica                         [não iniciado]
-P3  E0-piloto (provisório, single-symbol, grade legada)        [não iniciado]
+P2  Diagnóstico de saturação isotônica                         [tools/diagnostics/, separado]
+P3  E0-piloto (FP inventory + Gate E0 real)                    [FECHADO -- ver abaixo]
 ```
 
-Este módulo entrega a PRIMITIVA de permutação + a estatística agregada
-(AUC ponderada por `uniqueness`) + a validação obrigatória do nulo. A
-inventariação completa de FP/TP sobre `predictions.parquet` real
-(universo `side_hat != 0 ∧ is_oof`, diagnósticos de §2.6) é P3/E0-piloto,
-NÃO construída aqui — não é escopo de P0, é o próximo passo depois deste.
+Este módulo entrega: a PRIMITIVA de permutação + a estatística agregada
+(AUC ponderada por `uniqueness`) + a validação obrigatória do nulo (P0);
+e a inventariação completa de FP/TP sobre `predictions.parquet` REAL —
+`join_predictions_to_universe`, `compute_fp_inventory`, `cramers_v`,
+`state_characteristic_stability` (P3). **P3 rodou 2026-08-31 contra os 5
+combos de produção reais (não mais "piloto"/legado 15m — decisão do
+Manager, R2/R3, `predictions.parquet` real via `run_layer1_sprint`) — ver
+`PLANO_MESTRE_PRINCE2.md §15.37` pro resultado e a decisão do Gate E0
+propriamente dita (fora deste módulo, é decisão do Manager, não
+código).**
 
 ## Duas decisões de interpretação que o design doc não fecha por completo
 
@@ -447,3 +452,244 @@ def uniqueness_per_side(t0: pl.Series, t1: pl.Series, side: pl.Series) -> FloatA
         partes.append(ordenado.with_columns(uniqueness=pl.Series(unicidade)))
     out = pl.concat(partes, how="vertical").sort("_pos")
     return out["uniqueness"].to_numpy().astype(np.float64)
+
+
+# ============================================================================
+# P3 — E0-piloto: universo real (§2.6, join (t0, side_hat) -> (t0, side))
+# ============================================================================
+
+
+def join_predictions_to_universe(predictions: pl.DataFrame, dense: pl.DataFrame) -> pl.DataFrame:
+    """Universo do Gate E0 (§2.6): `side_hat != 0 ∧ is_oof`, joinado a
+    `labels` por `(t0, side_hat) → (t0, side)` — texto literal: "`symbol`
+    NÃO é coluna de `labels` — é chave de caminho (`cpcv.py:760-780`);
+    entra como parâmetro do pipeline, não como chave de join." `dense` é
+    o `ModelingFrame.data` (`src.models.dataset.build_modeling_frame`) do
+    MESMO `(symbol, resolution_id)` das `predictions` — carrega
+    `barrier_hit`/`ret_net`/`t1`/`atr_at_t0`/`regime` já causal e
+    corretamente unidos, sem reimplementar esse join aqui.
+
+    Uma linha de `predictions` pode aparecer em até 5 `fold_id` (`t0`
+    revisitado por múltiplos splits do CPCV) — o join é 1:1 em `dense`
+    (`t0` único por lado), então a saída tem uma linha por (`t0`,
+    `side_hat`, `fold_id`) de `predictions`, cada uma carregando os
+    mesmos campos de `dense` (correto: cada `fold_id` é uma AVALIAÇÃO
+    independente do mesmo evento real)."""
+    sinalizado = predictions.filter((pl.col("side_hat") != 0) & pl.col("is_oof"))
+    return sinalizado.join(
+        dense, left_on=["t0", "side_hat"], right_on=["t0", "side"], how="inner"
+    )
+
+
+def path_id_by_fold(splits: object) -> dict[int, int]:
+    """`{fold_id: path_id}` a partir de `CPCVResult.splits` — `fold_id`
+    em `predictions.parquet` é `split.split_id` (`src.models.alpha`,
+    `"fold_id": pl.Series([split.split_id] * n_rows)`), e `path_id` vem
+    de `split.path_id` (1-fatoração de `src.validation.cpcv`)."""
+    return {s.split_id: s.path_id for s in splits}  # type: ignore[attr-defined]
+
+
+# ============================================================================
+# P3 — Inventário de FP/TP (§2.6, "Métricas por path")
+# ============================================================================
+
+
+@dataclass(frozen=True, slots=True)
+class FpInventory:
+    n_tp: int
+    n_fp: int
+    n_nofill: int
+    fp_rate: float
+    pnl_fp_total: float
+    n_eff_subpop: float
+
+
+def compute_fp_inventory(table: pl.DataFrame, weight: FloatArray) -> FpInventory:
+    """§2.6, "Métricas por path": `n_fp`, `n_tp`, `n_nofill`, `fp_rate =
+    n_fp/(n_fp+n_tp)`, `pnl_fp_total = Σ ret_net | FP` (teto teórico de
+    um filtro perfeito é `-pnl_fp_total`), `n_eff_subpop = Σ uniqueness`
+    (B24). `table` precisa ter `barrier_hit`/`ret_net`; `weight`
+    alinhado posicionalmente a `table` (tipicamente `uniqueness_per_
+    side`). `fp_rate` é `NaN` (não `0.0`) quando `n_fp+n_tp == 0`."""
+    barrier_hit = table["barrier_hit"].cast(pl.Utf8)
+    ret_net = table["ret_net"].to_numpy().astype(np.float64)
+
+    is_nofill = (barrier_hit == "NOFILL").to_numpy()
+    is_sl = (barrier_hit == "SL").to_numpy()
+    is_tp = (barrier_hit == "TP").to_numpy()
+    is_time = (barrier_hit == "TIME").to_numpy()
+    is_time_loss = is_time & (ret_net <= 0.0)
+    is_time_win = is_time & (ret_net > 0.0)
+
+    fp_mask = is_sl | is_time_loss
+    tp_mask = is_tp | is_time_win
+
+    n_fp = int(fp_mask.sum())
+    n_tp = int(tp_mask.sum())
+    n_nofill = int(is_nofill.sum())
+    denom = n_fp + n_tp
+    fp_rate = (n_fp / denom) if denom > 0 else float("nan")  # noqa: unguarded-ratio — guarda inline no ternário (denom>0), heurística não reconhece ternário na mesma linha
+    pnl_fp_total = float(ret_net[fp_mask].sum())
+    n_eff_subpop = float(weight[~is_nofill].sum())
+
+    return FpInventory(
+        n_tp=n_tp,
+        n_fp=n_fp,
+        n_nofill=n_nofill,
+        fp_rate=fp_rate,
+        pnl_fp_total=pnl_fp_total,
+        n_eff_subpop=n_eff_subpop,
+    )
+
+
+# ============================================================================
+# P3 — Diagnósticos (§2.6, "custo zero, mudam decisões a jusante")
+# ============================================================================
+
+
+def cramers_v(state_ids: IntArray, group_id: IntArray) -> float:
+    """V de Cramér entre `regime` e `group_id` do CPCV (§2.4) — mede se
+    `regime` é, na prática, um carimbo de data disfarçado (associação
+    forte com o grupo cronológico) em vez de um estado econômico real.
+    `NaN` se a tabela de contingência degenerar (< 2 categorias
+    OBSERVADAS em algum eixo).
+
+    A tabela é construída só sobre valores de `state_ids`/`group_id`
+    REALMENTE observados (`np.unique`, reindexado compacto) — não sobre
+    `[0, max]` inteiro. Achado real (2026-08-31, subpopulação pequena de
+    `side_hat != 0`, ~2-3 mil linhas): um estado de regime intermediário
+    pode ter ZERO ocorrências nessa subpopulação mesmo com outro estado
+    de índice maior presente — `[0, max]` cru produzia uma linha inteira
+    de zeros no meio da tabela, e `scipy.stats.contingency.association`
+    levanta `ValueError` (frequência esperada zero) nesse caso, não
+    devolve `NaN` sozinho — o guard precisa evitar CONSTRUIR essa linha,
+    não só contar categorias depois."""
+    from scipy.stats.contingency import association
+
+    if state_ids.shape[0] == 0:
+        return float("nan")
+    _states_unicos, state_idx = np.unique(state_ids, return_inverse=True)
+    _groups_unicos, group_idx = np.unique(group_id, return_inverse=True)
+    n_states_obs = _states_unicos.shape[0]
+    n_groups_obs = _groups_unicos.shape[0]
+    if n_states_obs < 2 or n_groups_obs < 2:
+        return float("nan")
+    table = np.zeros((n_states_obs, n_groups_obs), dtype=np.int64)
+    for s, g in zip(state_idx.tolist(), group_idx.tolist(), strict=True):
+        table[s, g] += 1
+    return float(association(table, method="cramer"))
+
+
+def state_characteristic_stability(
+    state_ids: IntArray, group_id: IntArray, characteristic: FloatArray, *, n_states: int
+) -> pl.DataFrame:
+    """Estabilidade do mapeamento estado↔característica ENTRE grupos
+    cronológicos do CPCV (§6.2) — operacionalização: para cada estado,
+    a média de `characteristic` (ex. `atr_at_t0`) DENTRO de cada grupo, e
+    o coeficiente de variação (`std/mean`) dessas médias ENTRE grupos.
+    CV baixo = a característica do estado é estável ao longo do tempo
+    (o estado "significa a mesma coisa" em qualquer grupo); CV alto =
+    o mapeamento estado→característica deriva entre janelas -- sinal de
+    que `regime` pode não ser um candidato estável o bastante pro Meta
+    consumir como feature. Estado observado em < 2 grupos -> `NaN`
+    (instabilidade indefinida, não `0.0`)."""
+    frame = pl.DataFrame(
+        {"state": state_ids, "group": group_id, "characteristic": characteristic}
+    )
+    por_grupo = (
+        frame.group_by(["state", "group"], maintain_order=True)
+        .agg(pl.col("characteristic").mean().alias("mean_characteristic"))
+    )
+    linhas: list[dict[str, object]] = []
+    for state in range(n_states):
+        sub = por_grupo.filter(pl.col("state") == state)
+        means = sub["mean_characteristic"].to_numpy().astype(np.float64)
+        n_groups_observed = int(means.shape[0])
+        if n_groups_observed < 2:
+            cv = float("nan")
+        else:
+            mean_of_means = float(np.mean(means))
+            cv = (
+                float(np.std(means, ddof=1) / mean_of_means)  # noqa: unguarded-ratio — guarda inline no ternário (!=0.0), heurística não reconhece ternário na mesma linha
+                if mean_of_means != 0.0
+                else float("nan")
+            )
+        linhas.append(
+            {"state": state, "n_groups_observed": n_groups_observed, "coefficient_of_variation": cv}
+        )
+    return pl.DataFrame(linhas)
+
+
+# ============================================================================
+# P3 — Gate E0 real (§2.6, critério: PASS sse AUC observada > p95 do nulo
+# em >= alpha_layer1_permanence_min_paths de 5 paths)
+# ============================================================================
+
+
+@dataclass(frozen=True, slots=True)
+class GateE0Result:
+    symbol: str
+    resolution_id: str
+    path_results: tuple[PathNullResult, ...]
+    n_paths_passed: int
+    n_paths_total: int
+    min_paths_required: int
+    gate_passed: bool
+
+
+def evaluate_gate_e0(
+    table: pl.DataFrame,
+    *,
+    symbol: str,
+    resolution_id: str,
+    n_states: int,
+    block_width_ms: int,
+    rng: np.random.Generator,
+    n_seeds: int | None = None,
+    min_paths_required: int | None = None,
+) -> GateE0Result:
+    """Decisão real do Gate E0 (§2.6) sobre `table` — precisa já ter
+    `y_fp` (via `classify_fp_binary`), `state_ids` (coluna `_state_id`,
+    int, mapeado de `regime`), `path_id`, `t0`, e `weight` (coluna
+    `_weight`). Roda `evaluate_path_null` por `path_id`, agrega pelo
+    critério travado. `n_seeds`/`min_paths_required` `None` (default)
+    resolvem de `constants.yaml` (`alpha_b1_n_seeds`, `alpha_layer1_
+    permanence_min_paths`) -- os MESMOS orçamentos que o resto do Alpha
+    já usa pra permutação/permanência, não números novos."""
+    n_seeds = n_seeds if n_seeds is not None else int(load_constant("alpha_b1_n_seeds"))
+    min_paths_required = (
+        min_paths_required
+        if min_paths_required is not None
+        else int(load_constant("alpha_layer1_permanence_min_paths"))
+    )
+
+    path_results: list[PathNullResult] = []
+    for path_id in sorted(table["path_id"].unique().to_list()):
+        sub = table.filter(pl.col("path_id") == path_id).filter(pl.col("y_fp").is_not_null())
+        t0_ms = sub["t0"].dt.epoch(time_unit="ms").to_numpy().astype(np.int64)
+        y = sub["y_fp"].to_numpy().astype(np.float64)
+        state_ids = sub["_state_id"].to_numpy().astype(np.int64)
+        weight = sub["_weight"].to_numpy().astype(np.float64)
+        result = evaluate_path_null(
+            t0_ms,
+            state_ids,
+            y,
+            weight,
+            n_states=n_states,
+            block_width_ms=block_width_ms,
+            n_seeds=n_seeds,
+            rng=rng,
+            path_id=int(path_id),
+        )
+        path_results.append(result)
+
+    n_paths_passed = sum(1 for r in path_results if r.passed)
+    return GateE0Result(
+        symbol=symbol,
+        resolution_id=resolution_id,
+        path_results=tuple(path_results),
+        n_paths_passed=n_paths_passed,
+        n_paths_total=len(path_results),
+        min_paths_required=min_paths_required,
+        gate_passed=bool(n_paths_passed >= min_paths_required),
+    )

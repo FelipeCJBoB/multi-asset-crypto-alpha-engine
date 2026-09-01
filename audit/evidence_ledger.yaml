@@ -4129,3 +4129,115 @@ entries:
 
     Ver audit/architecture_gaps_log.yaml::AG-402 (aberto) para o achado
     de arquitetura correspondente.
+
+- id_curto: meta-p2-saturacao-isotonica-2026-08-31
+  data: '2026-08-31'
+  fase: 'Meta-model P2 (docs/meta_model_design_doc_2026-08-22.md Sec3.4, Sec15.1/15.2)
+    -- diagnostico de saturacao isotonica, zero treino, sobre predictions.parquet
+    REAL dos 5 combos de producao (config/constants.yaml::alpha_production_
+    hyperparam_override)'
+  symbol: 'BTCUSDT, SOLUSDT (R2+R3), XRPUSDT (R2+R3) -- os 5 combos com
+    hiperparametro confirmado pelo Manager'
+  tf: 'dollar-bar R2/R3'
+  lado: 'long e short separados (p_long/score_long_raw vs p_short/score_short_raw)'
+  regime: n/a
+  feature_ou_filtro: 'src.analysis.meta_fp_inventory (leitura), predictions.parquet
+    Camada1 via src.io.artifact.read_artifact -- zero retreino, artefatos ja
+    existiam em disco'
+  metrica_tipo: 'n_distinct(p_alpha) / n_distinct(score_raw) na subpopulacao
+    side_hat!=0 ^ is_oof, por lado'
+  metrica_valor: >
+    Razao de saturacao (p_alpha/score_raw) consistentemente BAIXA nos 5
+    combos: BTCUSDT/R2 long=0,105 short=0,081; SOLUSDT/R2 long=0,171
+    short=0,667 (n=36, amostra minuscula); SOLUSDT/R3 long=0,230
+    short=0,148; XRPUSDT/R2 long=0,089 short=0,096; XRPUSDT/R3 long=0,200
+    short=0,202. O calibrador isotonico colapsa entre 77% e 92% dos
+    scores brutos distintos em poucos niveis de probabilidade (ex.
+    BTCUSDT/R2 long: 1.370 scores brutos distintos -> so 144 niveis de
+    p_alpha). Efeito esperado de regressao isotonica (funcao em degrau),
+    mas a magnitude e real e relevante pra resolucao da selecao de
+    tau_meta por quantil (Sec8.3) -- poucos niveis distintos de p_alpha
+    limitam quantos quantis genuinamente diferentes existem pra escolher.
+  n: 5
+  status: amarelo
+  fonte_arquivo: 'experiments/meta_p2_isotonic_saturation_2026-08-31.json'
+  fonte_secao: 'tools/diagnostics/measure_meta_p2_isotonic_saturation.py;
+    PLANO_MESTRE_PRINCE2.md Sec15.37'
+  nota: >
+    AMARELO -- achado real e mensuravel, mas nao necessariamente
+    invalidante por si so (saturacao e esperada de calibracao isotonica).
+    Nao decide nada sozinho; e insumo pra interpretar a granularidade
+    de tau_meta quando/se o Meta chegar a essa etapa.
+
+- id_curto: meta-p3-gate-e0-0-de-5-2026-08-31
+  data: '2026-08-31'
+  fase: 'Meta-model P3/Gate E0 REAL (docs/meta_model_design_doc_2026-08-22.md
+    Sec2.6, Sec15.1/15.2) -- FP inventory + decisao do Gate E0 sobre Camada1,
+    nao mais "piloto"/grade legada -- 5 combos de producao reais (decisao do
+    Manager 2026-08-31: R2/R3, nao 15m/R1)'
+  symbol: 'BTCUSDT/R2, SOLUSDT/R2, SOLUSDT/R3, XRPUSDT/R2, XRPUSDT/R3 -- os 5
+    combos com hiperparametro de producao confirmado'
+  tf: 'dollar-bar R2/R3, Camada1 (alpha_c1_v1)'
+  lado: 'long e short pooled no universo (side_hat != 0 ^ is_oof)'
+  regime: 'quantile_classifier_v1 (R0-R5) -- sem artefato HMM persistido ainda'
+  feature_ou_filtro: 'src.analysis.meta_fp_inventory.evaluate_gate_e0 (circular-shift-by-time,
+    n_seeds=alpha_b1_n_seeds=1000, orcamento de producao -- P0 ja validou a
+    calibracao do esquema com n_trials/n_seeds reduzidos)'
+  metrica_tipo: 'Criterio travado do Sec2.6: PASS sse AUC ponderada observada
+    (regime -> P(FP)) exceder o p95 do nulo permutado, em >= alpha_layer1_
+    permanence_min_paths (4) dos 5 paths do CPCV, por combo'
+  metrica_valor: >
+    **0 de 5 combos passam o Gate E0.** BTCUSDT/R2: 0/5 paths (nenhum
+    path chega perto -- AUC observada 0,53-0,57 contra p95 do nulo
+    0,56-0,62 em TODOS os 5). SOLUSDT/R2: 3/5 paths (o melhor resultado
+    dos 5 combos, ainda abaixo do piso de 4). SOLUSDT/R3: 1/5.
+    XRPUSDT/R2: 1/5. XRPUSDT/R3: 1/5 (path 1 teve AUC=0,804 vs p95=0,691,
+    mas n=26 linhas -- amostra pequena, um unico path nao muda o
+    veredito do combo).
+
+    `fp_rate` (SL + TIME-com-perda, sobre FP+TP, exclui NOFILL)
+    consistente nos 5 combos: 40,8% a 45,5% -- proximo de moeda honesta
+    (50%), mesma ordem de grandeza do achado "0/20" do Alpha em si
+    (ADR-008, ver adr008-walkforward-real-0-de-20-2026-08-31 acima).
+    `pnl_fp_total` (teto teorico de um filtro perfeito) negativo em
+    todos os 5 -- BTCUSDT/R2: -9,51 (fracao de equity, pooled sobre
+    1.206 FPs); XRPUSDT/R3: -8,52 (363 FPs).
+
+    V de Cramer (regime x group_id do CPCV) fraca-a-moderada: 0,155
+    (SOLUSDT/R2) a 0,301 (XRPUSDT/R3) -- nao sustenta a hipotese "regime
+    e so um carimbo de data disfarcado" (Sec2.4), mas tambem nao e
+    desprezivel.
+
+    Estabilidade estado->caracteristica (atr_at_t0) entre grupos
+    cronologicos: estado R0 (o estado mais raro, ~0,1% das barras
+    globalmente) teve ZERO ocorrencias na subpopulacao sinalizada
+    (side_hat!=0) em TODOS os 5 combos -- o Alpha praticamente nunca
+    sinaliza sob esse regime. Demais estados com coeficiente de
+    variacao entre 0,09 e 0,96 entre grupos -- sem padrao consistente
+    de estabilidade alta ou baixa entre os 5 combos.
+  n: 5
+  status: vermelho
+  fonte_arquivo: 'experiments/meta_p3_e0_real_2026-08-31.json'
+  fonte_secao: 'src/analysis/meta_fp_inventory.py::evaluate_gate_e0; tools/diagnostics/measure_meta_p3_e0_piloto.py;
+    PLANO_MESTRE_PRINCE2.md Sec15.38'
+  nota: >
+    VERMELHO -- achado negativo explicito e consequente. O design doc
+    declara a CONSEQUENCIA antes de rodar (Sec15.2, P3): "falha em >=2
+    paths por combo" ja dispara registro em evidence_ledger -- os 5
+    combos falham com 2 a 5 paths reprovados cada, muito alem do piso.
+
+    Este NAO e um achado isolado -- converge com adr008-walkforward-
+    real-0-de-20-2026-08-31 (Alpha em si, 0/20 combo x variant x lado,
+    walk-forward real) por um caminho de medicao COMPLETAMENTE
+    DIFERENTE (Gate E0 mede se `regime` discrimina FP de TP dentro do
+    universo ja sinalizado pelo Alpha, via permutacao; ADR-008 mede AUC
+    out-of-time do proprio score do Alpha, via walk-forward ancorado).
+    Duas medicoes independentes, metodologias diferentes, mesma
+    conclusao qualitativa: nenhum sinal robusto detectavel fora da
+    amostra nos 5 candidatos reais, em NENHUMA das duas camadas
+    (Alpha nem Meta).
+
+    Decisao sobre o Meta-model (segue no roadmap apesar da consequencia
+    pre-declarada, pausa, ou outra acao) NAO foi tomada aqui -- e do
+    Manager. Ver audit/architecture_gaps_log.yaml::AG-404 (achado
+    consolidado).

@@ -339,3 +339,200 @@ def test_uniqueness_per_side_preserva_ordem_de_entrada() -> None:
             t0_vals[mask].astype(np.int64), (t0_vals[mask] + 4 * _BAR_MS).astype(np.int64)
         )
         np.testing.assert_allclose(unicidade[mask], esperado)
+
+
+# ============================================================================
+# P3 — join_predictions_to_universe / path_id_by_fold
+# ============================================================================
+
+
+def _t0_datetime(t0_ms: np.ndarray) -> pl.Series:
+    return pl.Series(t0_ms).cast(pl.Datetime("ms")).dt.replace_time_zone("UTC")
+
+
+def test_join_predictions_to_universe_filtra_side_hat_zero_e_nao_oof() -> None:
+    t0_ms = _t0_series(4)
+    predictions = pl.DataFrame(
+        {
+            "t0": _t0_datetime(t0_ms),
+            "side_hat": pl.Series([1, -1, 0, 1], dtype=pl.Int8),
+            "is_oof": pl.Series([True, True, True, False]),
+        }
+    )
+    dense = pl.DataFrame(
+        {
+            "t0": _t0_datetime(t0_ms),
+            "side": pl.Series([1, -1, 0, 1], dtype=pl.Int8),
+            "barrier_hit": ["TP", "SL", "TP", "TP"],
+        }
+    )
+    out = fpi.join_predictions_to_universe(predictions, dense)
+    # linha 2 (side_hat=0) e linha 3 (is_oof=False) saem -- sobram 0 e 1
+    assert out.height == 2
+    assert set(out["side_hat"].to_list()) == {1, -1}
+
+
+def test_join_predictions_to_universe_side_hat_vira_a_chave_de_join() -> None:
+    """`side_hat=-1` precisa casar com `side=-1` de `dense` no MESMO
+    `t0` -- não confundir com a linha `side=1` do mesmo `t0`."""
+    t0_ms = _t0_series(1)
+    predictions = pl.DataFrame(
+        {
+            "t0": _t0_datetime(t0_ms),
+            "side_hat": pl.Series([-1], dtype=pl.Int8),
+            "is_oof": pl.Series([True]),
+        }
+    )
+    dense = pl.DataFrame(
+        {
+            "t0": _t0_datetime(np.concatenate([t0_ms, t0_ms])),
+            "side": pl.Series([1, -1], dtype=pl.Int8),
+            "barrier_hit": ["TP", "SL"],
+        }
+    )
+    out = fpi.join_predictions_to_universe(predictions, dense)
+    assert out.height == 1
+    assert out["barrier_hit"].to_list() == ["SL"]
+
+
+def test_path_id_by_fold_mapeia_split_id_para_path_id() -> None:
+    class _FakeSplit:
+        def __init__(self, split_id: int, path_id: int) -> None:
+            self.split_id = split_id
+            self.path_id = path_id
+
+    splits = [_FakeSplit(0, 0), _FakeSplit(1, 0), _FakeSplit(2, 1)]
+    mapping = fpi.path_id_by_fold(splits)
+    assert mapping == {0: 0, 1: 0, 2: 1}
+
+
+# ============================================================================
+# P3 — compute_fp_inventory
+# ============================================================================
+
+
+def test_compute_fp_inventory_classifica_as_4_classes() -> None:
+    table = pl.DataFrame(
+        {
+            "barrier_hit": ["SL", "TP", "TIME", "TIME", "NOFILL", "NOFILL"],
+            "ret_net": [-0.01, 0.02, 0.005, -0.003, 0.0, 0.0],
+        }
+    )
+    weight = np.ones(6, dtype=np.float64)
+    inv = fpi.compute_fp_inventory(table, weight)
+    assert inv.n_fp == 2  # SL + TIME(ret<=0)
+    assert inv.n_tp == 2  # TP + TIME(ret>0)
+    assert inv.n_nofill == 2
+    assert inv.fp_rate == pytest.approx(0.5)
+    assert inv.pnl_fp_total == pytest.approx(-0.01 + -0.003)
+    assert inv.n_eff_subpop == pytest.approx(4.0)  # exclui as 2 NOFILL
+
+
+def test_compute_fp_inventory_sem_fp_nem_tp_da_nan() -> None:
+    table = pl.DataFrame({"barrier_hit": ["NOFILL", "NOFILL"], "ret_net": [0.0, 0.0]})
+    weight = np.ones(2, dtype=np.float64)
+    inv = fpi.compute_fp_inventory(table, weight)
+    assert inv.n_fp == 0
+    assert inv.n_tp == 0
+    assert np.isnan(inv.fp_rate)
+    assert inv.n_eff_subpop == pytest.approx(0.0)
+
+
+# ============================================================================
+# P3 — cramers_v
+# ============================================================================
+
+
+def test_cramers_v_associacao_perfeita_da_1() -> None:
+    # estado == grupo sempre -- associação perfeita
+    state_ids = np.array([0, 0, 1, 1, 2, 2], dtype=np.int64)
+    group_id = np.array([0, 0, 1, 1, 2, 2], dtype=np.int64)
+    v = fpi.cramers_v(state_ids, group_id)
+    assert v == pytest.approx(1.0, abs=1e-9)
+
+
+def test_cramers_v_independencia_fica_perto_de_0() -> None:
+    rng = np.random.default_rng(5)
+    n = 4000
+    state_ids = rng.integers(0, 4, size=n).astype(np.int64)
+    group_id = rng.integers(0, 6, size=n).astype(np.int64)
+    v = fpi.cramers_v(state_ids, group_id)
+    assert v == pytest.approx(0.0, abs=0.05)
+
+
+def test_cramers_v_menos_de_2_categorias_da_nan() -> None:
+    state_ids = np.zeros(5, dtype=np.int64)
+    group_id = np.array([0, 1, 0, 1, 0], dtype=np.int64)
+    assert np.isnan(fpi.cramers_v(state_ids, group_id))
+
+
+# ============================================================================
+# P3 — state_characteristic_stability
+# ============================================================================
+
+
+def test_state_characteristic_stability_constante_da_cv_zero() -> None:
+    # estado 0 sempre tem characteristic=10.0, em 3 grupos diferentes
+    state_ids = np.array([0, 0, 0], dtype=np.int64)
+    group_id = np.array([0, 1, 2], dtype=np.int64)
+    characteristic = np.array([10.0, 10.0, 10.0], dtype=np.float64)
+    out = fpi.state_characteristic_stability(state_ids, group_id, characteristic, n_states=1)
+    row = out.filter(pl.col("state") == 0)
+    assert row["n_groups_observed"].to_list() == [3]
+    assert row["coefficient_of_variation"].to_list()[0] == pytest.approx(0.0)
+
+
+def test_state_characteristic_stability_menos_de_2_grupos_da_nan() -> None:
+    state_ids = np.array([0], dtype=np.int64)
+    group_id = np.array([0], dtype=np.int64)
+    characteristic = np.array([5.0], dtype=np.float64)
+    out = fpi.state_characteristic_stability(state_ids, group_id, characteristic, n_states=1)
+    row = out.filter(pl.col("state") == 0)
+    assert row["n_groups_observed"].to_list() == [1]
+    assert np.isnan(row["coefficient_of_variation"].to_list()[0])
+
+
+# ============================================================================
+# P3 — evaluate_gate_e0
+# ============================================================================
+
+
+def test_evaluate_gate_e0_agrega_por_path_e_aplica_criterio_minimo() -> None:
+    rng_data = np.random.default_rng(11)
+    n_per_path = 400
+    frames: list[pl.DataFrame] = []
+    for path_id in range(5):
+        t0_ms = _t0_series(n_per_path, start_ms=path_id * n_per_path * _BAR_MS)
+        state_ids = rng_data.integers(0, 3, size=n_per_path).astype(np.int64)
+        # sinal forte de verdade -- estado 0 sempre "FP" (y_fp=1), com ruido
+        y_fp = (state_ids == 0).astype(np.float64)
+        noise = rng_data.random(n_per_path) < 0.1
+        y_fp[noise] = 1.0 - y_fp[noise]
+        frames.append(
+            pl.DataFrame(
+                {
+                    "t0": _t0_datetime(t0_ms),
+                    "path_id": pl.Series([path_id] * n_per_path, dtype=pl.Int64),
+                    "y_fp": pl.Series(y_fp.tolist(), dtype=pl.Float64),
+                    "_state_id": pl.Series(state_ids.tolist(), dtype=pl.Int64),
+                    "_weight": pl.Series([1.0] * n_per_path, dtype=pl.Float64),
+                }
+            )
+        )
+    table = pl.concat(frames, how="vertical")
+
+    rng = np.random.default_rng(12)
+    result = fpi.evaluate_gate_e0(
+        table,
+        symbol="TESTUSDT",
+        resolution_id="R2",
+        n_states=3,
+        block_width_ms=40 * _BAR_MS,
+        rng=rng,
+        n_seeds=50,
+        min_paths_required=4,
+    )
+    assert result.n_paths_total == 5
+    assert result.n_paths_passed >= 4  # sinal forte -- deve passar na maioria/todos
+    assert result.gate_passed is True
+    assert len(result.path_results) == 5

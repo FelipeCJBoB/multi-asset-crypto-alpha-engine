@@ -6335,3 +6335,42 @@ símbolos no E0-vinculante real. <!-- check-sprint-log: skip -->
 **Próximo passo**: P2 (diagnóstico de saturação isotônica) e P3 <!-- check-sprint-log: skip -->
 (E0-piloto) — ou investigar `AG-402` primeiro (proxy alternativo pra <!-- check-sprint-log: skip -->
 XRPUSDT/R3, ex. SOLUSDT em vez de BTCUSDT) se o Manager priorizar <!-- check-sprint-log: skip -->
+
+## 2026-08-31 (continuação) — Meta P2/P3: Gate E0 real reprova os 5 combos de produção (AG-404) <!-- check-sprint-log: skip -->
+
+Ver `PLANO_MESTRE_PRINCE2.md` §15.37/§15.38 para o detalhe completo.
+Resumo:
+
+Manager: "Pode executar ponta a ponta" — descoberto que `predictions.parquet`
+dos 5 combos de produção já existia em `artifacts/predictions_alpha/`
+(escrito por `run_layer1_sprint` em sessão anterior). `config_hash`
+calculado localmente (determinístico) bateu com os 10 diretórios
+existentes (5 combos × 2 camadas) — zero retreino necessário.
+
+**P2** (`tools/diagnostics/measure_meta_p2_isotonic_saturation.py`):
+saturação isotônica real — razão `n_distinct(p_alpha)/n_distinct(score_
+raw)` entre 0,08 e 0,67 (a maioria <0,25) nos 5 combos. Calibrador
+colapsa 77-92% dos scores brutos em poucos níveis de probabilidade.
+Registrado, status amarelo (não invalidante sozinho).
+
+**P3** (`tools/diagnostics/measure_meta_p3_e0_piloto.py`): inventário
+FP/TP + decisão REAL do Gate E0 sobre Camada1, `n_seeds=1000`
+(orçamento de produção). Achado real no caminho: `state.max()+1` do
+`cramers_v` original quebrava com `ValueError` quando um estado
+intermediário tinha zero ocorrências na subpopulação pequena — corrigido
+reindexando só sobre valores REALMENTE observados (`np.unique`), não
+`[0,max]` cru. <!-- check-sprint-log: skip -->
+
+**Resultado: 0 de 5 combos passam o Gate E0** (critério: ≥4/5 paths).
+`BTCUSDT/R2` 0/5, `SOLUSDT/R2` 3/5 (melhor caso), `SOLUSDT/R3`/`XRPUSDT/R2`/`XRPUSDT/R3`
+1/5 cada. `fp_rate` 40,8%-45,5% — perto de moeda honesta, mesma ordem
+de grandeza do "0/20" do próprio Alpha (`AG-391`). Converge com esse
+achado por metodologia COMPLETAMENTE diferente (Gate E0 mede se
+`regime` discrimina FP/TP via permutação; ADR-008 mede AUC out-of-time
+via walk-forward). Duas medições independentes, mesma conclusão.
+
+Consequência pré-declarada do design doc ("falha em ≥2 paths ⟹ Meta <!-- check-sprint-log: skip -->
+sai do roadmap") está tecnicamente disparada — **NÃO aplicada
+unilateralmente nesta sessão**, registrada em `evidence_ledger.yaml`
+(vermelho) e `architecture_gaps_log.yaml::AG-404` (aberto, severidade <!-- check-sprint-log: skip -->
+alta) para decisão do Manager.
