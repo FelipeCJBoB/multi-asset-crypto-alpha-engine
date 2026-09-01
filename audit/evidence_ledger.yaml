@@ -4438,3 +4438,106 @@ entries:
     simbolo, `AG-151` ja fechado como primitiva) e pre-requisito antes de
     qualquer novo teste de edge, nao so um detalhe de configuracao. Ver
     audit/architecture_gaps_log.yaml::AG-413.
+
+# --- "Caso 0/20" -- auditoria adversarial do veredito ADR-008 (Sec15.43), 2026-08-31/2026-09-01 ---
+
+- id_curto: caso0de20-angulos-7-8-pooled-portfolio-2026-08-31
+  data: '2026-08-31'
+  fase: 'Auditoria adversarial do "0/20" (ADR-008/Sec15.33) -- Angulos 7/8, meta-analise
+    de variancia inversa sobre os 5 candidatos ja promovidos'
+  symbol: 'BTCUSDT/R2, SOLUSDT/R2, SOLUSDT/R3, XRPUSDT/R2, XRPUSDT/R3 -- portfolio agregado'
+  tf: 'dollar-bar R2/R3, Camada1 (producao) e Camada0 (baseline)'
+  lado: 'long e short pooled'
+  regime: 'nao segmentado -- pooled sobre toda a janela de teste walk-forward'
+  feature_ou_filtro: 'score calibrado (confidence) vs. ret_net>0; identidade t_stat=sharpe_naive*sqrt(span_years)
+    pro edge_bps (sem trades brutos)'
+  metrica_tipo: 'AUC pooled (Angulo 7, Hanley-McNeil) e edge_bps pooled (Angulo 8, identidade
+    via sharpe_naive), meta-analise de efeito fixo ponderada por variancia inversa'
+  metrica_valor: >
+    AUC pooled portfolio: Camada1=0,5025 (z=0,131, p=0,448), Camada0=0,4951
+    (z=-0,225, p=0,589) -- indistinguivel de moeda honesta mesmo com poder
+    suficiente pra detectar AUC>=0,54-0,55. edge_bps pooled: Camada1=-3,32bps
+    (z=-1,805, p=0,964 pra H1:edge>0), Camada0=-0,84bps (z=-0,377, p=0,647).
+    Refinado por bootstrap em bloco (`AG-414`, 2026-09-01): AUC pooled fica
+    com SE MENOR que o parametrico (reforca o null), edge pooled fica com SE
+    2-2,5x MAIOR (parametrico subestimava a incerteza, sem mudar o veredito).
+  n: 948
+  status: vermelho
+  fonte_arquivo: 'experiments/alpha_walk_forward_{symbol}_{resolution}.json (5 artefatos canonicos)'
+  fonte_secao: 'docs/adendo_angulos_7_8_pooled_meta_analise_gate_model_alpha_2026-08-31.md
+    Sec1-2; PLANO_MESTRE_PRINCE2.md Sec15.43'
+  nota: >
+    VERMELHO -- confirma "0/20" (ADR-008/Sec15.33) por caminho estatistico
+    independente (poder do teste, nao qualidade do dado/codigo). Ver
+    audit/architecture_gaps_log.yaml::AG-394-AG-395 (Angulos originais D1/D2),
+    AG-414 (bootstrap).
+
+- id_curto: caso0de20-regime-condicional-barra-a-barra-2026-09-01
+  data: '2026-09-01'
+  fase: '"Caso 0/20" item 16 -- condicionamento por regime na granularidade IDEAL
+    (barra-a-barra, upgrade do proxy fold-a-fold de AG-415)'
+  symbol: 'BTCUSDT/R2, SOLUSDT/R2, SOLUSDT/R3, XRPUSDT/R2, XRPUSDT/R3'
+  tf: 'dollar-bar R2/R3, Camada1 e Camada0'
+  lado: 'long e short, separados por tercil de regime'
+  regime: 'tercis GLOBAIS de E05f_time_to_funding_h/E16f_global_ls_ratio (as 2 features
+    SHAP-dominantes), sobre toda barra OOS'
+  feature_ou_filtro: 'p_long/p_short (populacao completa, mesmo nucleo de AG-394) pra AUC;
+    trades realizados (side_hat!=0, NOFILL descartado) pra edge_bps'
+  metrica_tipo: 'AUC condicional por bucket de regime (roc_auc_score) e edge_bps medio/mediano
+    por bucket'
+  metrica_valor: >
+    AUC por bucket varia 0,4955-0,5112 (E05f) e 0,5004-0,5112 (E16f) entre os
+    3 tercis x 2 lados -- nenhum bucket se aproxima do limiar de ~0,54-0,55
+    necessario pra edge liquido (medido em `AG-406`), mesmo com n~70.000 por
+    celula (poder ordens de magnitude maior que qualquer teste anterior desta
+    auditoria). edge_bps por bucket (n~600-614/bucket): E05f mostra tendencia
+    quase-monotonica (bucket baixo -16,72bps -> bucket alto +3,06bps, nao
+    decisivo com so 3 buckets); E16f sem padrao (bucket do meio pior, sem
+    tendencia).
+  n: 420126
+  status: vermelho
+  fonte_arquivo: 'experiments/alpha_walk_forward_predictions_{symbol}_{resolution}_{variant}.parquet
+    (10 arquivos, keep_predictions=True)'
+  fonte_secao: 'scripts/measure_bar_level_regime_conditioning.py; docs/adendo_angulos_7_8_pooled_meta_analise_gate_model_alpha_2026-08-31.md
+    Sec6.1 (atualizacao 2026-09-01)'
+  nota: >
+    VERMELHO -- teste decisivo de R10 (documento-fonte: "janela de teste e
+    um unico regime macro"). Converge com o proxy fold-a-fold (AG-415, n=36-46,
+    poder baixo) agora com poder suficiente pra ser conclusivo. Fecha item 16
+    do roadmap "Caso 0/20". Ver audit/architecture_gaps_log.yaml::AG-418.
+
+- id_curto: caso0de20-item12-isolamento-causal-seed-vs-corte-2026-09-01
+  data: '2026-09-01'
+  fase: '"Caso 0/20" item 12 -- campanha de controle isola se a melhora vista sob
+    corte de data (t0_end) e real ou confundida com o bug de seed (AG-399)'
+  symbol: 'BTCUSDT/R2, SOLUSDT/R2, SOLUSDT/R3, XRPUSDT/R2, XRPUSDT/R3'
+  tf: 'dollar-bar R2/R3, Camada1 e Camada0'
+  lado: 'long e short pooled (edge_bps agregado por combo x camada)'
+  regime: 'nao segmentado'
+  feature_ou_filtro: 'walk-forward real com hiperparametro achado sob 3 campanhas Optuna
+    de 150 trials x 10 studies: canonico (producao, seed=42 GLOBAL bugado), t0cutoff (seed
+    corrigido + t0_end), controle (seed corrigido, SEM t0_end)'
+  metrica_tipo: 'edge_bps agregado (media por fold) comparado entre os 3 hiperparametros,
+    mesmo walk-forward/seed/tau_policy -- so o hiperparametro muda'
+  metrica_valor: >
+    Controle (seed corrigido, sem corte) melhora 7/10 celulas vs. canonico
+    (mediana +12,47bps, media +19,38bps) -- quase identico ao t0cutoff (8/10,
+    mediana +13,44bps, media +28,74bps). Comparando controle vs. t0cutoff
+    DIRETAMENTE (seed igual nos dois, isolando so o corte): 5 de 9 celulas
+    computaveis favorecem NAO ter corte, 4 favorecem TER corte -- sem direcao
+    consistente (+50,95bps a -83,85bps). SOLUSDT/R2 C0 sob controle produz 0
+    folds usaveis (100% degenerado).
+  n: 10
+  status: vermelho
+  fonte_arquivo: 'experiments/t0_cutoff_full_campaign_results.json; experiments/t0_cutoff_control_campaign_results.json;
+    experiments/alpha_walk_forward_{symbol}_{resolution}_{t0cutoff,control}.json'
+  fonte_secao: 'scripts/run_t0_cutoff_full_campaign.py; scripts/compare_t0_cutoff_full_campaign.py;
+    docs/adendo_angulos_7_8_pooled_meta_analise_gate_model_alpha_2026-08-31.md Sec6.3'
+  nota: >
+    VERMELHO -- nao e um achado de edge positivo, e a RESPOSTA CAUSAL que
+    fecha item 12: a melhora observada em campanhas anteriores (`AG-411`/`AG-416`)
+    e majoritariamente efeito colateral do seed corrigido (`AG-399`), nao do
+    corte de data em si. Nenhuma das 2 campanhas justifica promover
+    hiperparametro novo pra producao -- melhorar sobre um canonico BUGADO
+    nao e evidencia de generalizacao real. Ver
+    audit/architecture_gaps_log.yaml::AG-419.

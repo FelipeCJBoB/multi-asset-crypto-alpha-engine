@@ -861,7 +861,7 @@ proposta a confirmar, não como verdade estabelecida:
 | V41-8 — Controle 19 (risco agregado) + sizing por ativo | 0 | 🟡 **parcial** — Controle 19 (`control_19_risco_agregado`, `src/risk/limits.py`) IMPLEMENTADO 2026-08-17, desacoplado da sequência (`AG-081`, autorizado pelo Manager): risco já quantificado (§5.3, ρ≈0,91 = 4,82x, cap efetivo 2 posições), não precisava esperar V41-5/6/7. `NOT_COMPUTABLE` em produção até existir rastreador de posições live + série de correlação (Sprint 12+). `aggregate_risk_max` (classe A, `ASSUMED`) e "sizing por ativo" (§5.4) seguem não iniciados. **[CORRIGIDO 2026-08-22, `AG-144`]**: `ρ≈0,91` nunca teve janela/proveniência declarada — remedido sobre dado real (5 símbolos, log-retornos 15m, 4 janelas): média entre pares fica em 0,70 (histórica completa) a 0,83 (180d), nunca 0,91; instável (range até 0,23/par). Multiplicador de 5 posições recalculado: 4,36x-4,65x, não 4,82x — mas **o cap efetivo de 2 posições é ROBUSTO à correção** (precisaria ρ≤0,167 pra N=3 caber no limite de 1,00%, nenhuma janela medida chega perto). Achado colateral: a mesma correlação mais baixa/instável enfraquece a leitura de que os 5 ativos "seriam ~1 aposta só" (§2.8) — converge com `M6` (Fator Comum, H0 rejeitada, I²=96-98%, componente idiossincrático real). Detalhe completo: `audit/evidence_ledger.yaml::ag144-correlacao-cross-asset-15m-4-janelas`, `audit/architecture_gaps_log.yaml::AG-144` | `PRD_V4_1.md` §5.3, `AG-081`, `AG-144` |
 | V41-9 — Calibração + `confidence_rank` | 0 | ⬜ não iniciado — `confidence_rank` existe (§5.12 do V3.2) mas nunca foi avaliado | `PRD_V4_1.md` §4.4 |
 | V41-10 — Meta-Model + Grupo J | ≤2 ⚠️ | 🔴 **F0-F5 implementados, Gate E0 REAL reprova os 5 candidatos** (2026-08-30/31, `§15.30`/`§15.31`); desenho travado v3 em 2026-08-22 (`§15.19`) — ADR-001 §3.7/§2.7 revogado pelo Manager; regime entra como feature, fonte **HMM k=4** por decisão do Manager (2026-08-30, mas artefato ainda não persistido — Gate E0 rodou sob `quantile_classifier_v1`); **Grupo J desacoplado e movido para DEPOIS**. `P1`/`AG-151` **fechado** 2026-08-31 (`§15.34`). `P0` **medido** 2026-08-31 (`§15.36`) — 9/10 calibrado. **`P3`/Gate E0 REAL rodou 2026-08-31 (`§15.38`) contra os 5 combos de produção — 0 de 5 passam** (`AG-404`). **F6 (ablação real) rodou 2026-09-01 (`§15.39`) — 0 de 5 SÍMBOLOS passam o critério primário** (`AG-409`) — Jaccard(A1,A3)=1,000 exato na maioria dos combos (Meta ≈ reparametrização de `tau`). **F6b (ablação sobre walk-forward ancorado) rodou 2026-09-01 (`§15.40`) — 0 de 5, MAIS decisivo: os 5 caem em `INSUFFICIENT_SAMPLE`, o Meta nunca ajusta modelo sob causalidade real, nem `BTCUSDT/R2`** (`AG-413`). QUATRO medições independentes convergentes (Alpha `AG-391`, Gate E0 `AG-404`, F6 `AG-409`, F6b `AG-413`). **F7 (enforcement B07/B08, D-13/§10, as 5 camadas) fechado 2026-09-01 (`§15.41`)**: runtime + teste #10 real + teste #11 estendido (`_META_PATH`) + B07 `automated=True` + import-linter `alpha↛meta`. **F8 (`§15.42`) fecha o roadmap por CONFIRMAÇÃO — nenhuma das 6 constantes "não criadas" do `§11` precisava ser criada** (mecanismo/já-sem-limiar-declarado/gate-bloqueado/fabricação), `N_lifetime++` (ids 43/44). **Roadmap F0-F8 completo.** Consequência pré-declarada do design doc ("Meta sai do roadmap") NÃO aplicada — decisão explícita do Manager: "não é impeditivo agora, finalize a construção mesmo assim". ⚠️ **o orçamento `≤2` é inconsistente** com a contabilidade do §11 do próprio design doc por 1-2 ordens de grandeza — não reconciliado; `N_lifetime` deixou de ser gate vinculante em `AG-077` | `docs/meta_model_design_doc_2026-08-22.md`, `§15.19`, `§15.30`, `§15.34`, `§15.36`-`§15.42` |
-| — (novo, sem V41-N formal — item de arquitetura, não medição M-style) | Alpha multi-ativo × multi-resolução (LightGBM + GPU) | 🟢 **IMPLEMENTADO E TREINADO DE VERDADE (2026-08-23, `§15.20.2`)** — D-01 a D-18 codificados (`§15.20.1`), D-06 integrado (escopo estreito, fecha `AG-154`), 4 bugs reais achados e fechados rodando pela primeira vez contra dado de produção (`AG-199`/`AG-200`/`AG-202` fechados; `AG-201` aberto — GPU/CUDA inviável no Windows nativo, treino real rodou em CPU). Primeiro sweep completo (5 símbolos × R1/R2/R3 = 15 combinações): **3/15 (20%) passam o gate de permanência** (ETHUSDT/R1, SOLUSDT/R2, SOLUSDT/R3) — achado misto real, registrado em `audit/evidence_ledger.yaml::alpha-lightgbm-sweep-15-combinacoes-2026-08-23`, não decisão de promoção pra produção ainda. **Atualização 2026-08-27/28 (`AG-207`→`AG-362`→`AG-371`, ver `§15.29`)**: o sweep de 3/15 acima ficou obsoleto em 3 camadas — override T2→T1 (`AG-207`), reversão do gate marginal de `ADR-005 §2.2` (`AG-362`, `T1_FEATURE_IDS` 7→22), retreino canônico real sob 22 features (**0/15 `permanence_pass`**, sinal misto). `AG-371` corrigiu um viés estrutural real de Camada 0, mas a validação ficou CONFUNDIDA por uma sessão paralela mudando `T1_FEATURE_IDS` no meio do teste (22→29→36, últimos 2 não commitados) — decisão pendente do Manager sobre qual vetor é autoritativo. **Não citar "3/15 (20%)" nem "0/15" como veredito definitivo sem ler `§15.29`**. **[CORREÇÃO 2026-08-29, Changelog v3.57]** `AG-201` ("GPU/CUDA inviável no Windows nativo") **corrigido** — GPU real funciona via WSL2, ver §15.20 alínea D; `AG-371` **FECHADO** por reformulação (Optuna real substitui o YAML estático de hiperparâmetro por combo, não recalibração). **[CORREÇÃO 2026-08-30/31, ADR-007/ADR-008 — Governança item 2, 40 commits desde `022b0bd`]** `AG-371` (Optuna real) executado em produção pela primeira vez: campanha completa 1.800 trials (6 combos × 2 camadas × 150, `ADR-007` Item 1) → confirmação profunda 720 trials/10 seeds (Item 2) → **ZERO dos 6 combos passa o gate duplo** (`median_n_better`: `BTCUSDT/R3`=2,5, `BTCUSDT/R2`=3,0, `SOLUSDT/R2`=2,5, `SOLUSDT/R3`=3,0, `XRPUSDT/R2`=2,0, `XRPUSDT/R3`=2,5 — nenhum atinge o piso). `SOLUSDT/R2` confirma viés de seleção **+8,356, recorde do projeto** (Item 2). Calibração do FPR do gate duplo sob ruído puro (Item 3, `AG-220`): 8,0%/0,0%/0,0% — o gate não é impossível de passar por acaso, a ausência de sinal é real. Correção FDR aplicada à taxa-base H0-H7 (Item 4): 7/15 → 4/15 (BH) → 3/15 (BY). **Apesar da reprovação formal, o Manager autorizou override manual promovendo 5 candidatos a produção canônica** (`BTCUSDT/R2`, `SOLUSDT/R2`, `SOLUSDT/R3`, `XRPUSDT/R2`, `XRPUSDT/R3` — `BTCUSDT/R3` excluído deliberadamente; `config/constants.yaml::alpha_production_hyperparam_override`, `N_lifetime` id=38-40). **Auditoria institucional independente em seguida (`ADR-008`, 9 fases + correção de thresholds + auditoria de engenharia adversarial, `n_lifetime` id=42): walk-forward real refuta os 5 — AUC out-of-time≈0,50 na maioria dos combos/lados, `0 de 20` combo×variant×lado passa os 3 gates codificados (Data/Model/Alpha) mesmo após sweep de sensibilidade ±50%+ confirmar robustez do limiar.** Nenhum dos 5 candidatos promovidos sobrevive à avaliação fora-da-amostra no tempo — achado consolidado, decisão de produção sobre os 5 candidatos segue com o Manager. Detalhe completo: `docs/ADR-007_medicao_producao_hiperparametro_optuna_15_combos_2026-08-30.md`, `docs/ADR-008_auditoria_ml_alpha_institucional_score_quality_walkforward_2026-08-31.md`, `audit/architecture_gaps_log.yaml::AG-389`-`AG-392` | `docs/alpha_model_design_doc_2026-08-22.md`, `§15.20`, `§15.20.2`, `§15.29`, `§15.32`, `§15.33` |
+| — (novo, sem V41-N formal — item de arquitetura, não medição M-style) | Alpha multi-ativo × multi-resolução (LightGBM + GPU) | 🟢 **IMPLEMENTADO E TREINADO DE VERDADE (2026-08-23, `§15.20.2`)** — D-01 a D-18 codificados (`§15.20.1`), D-06 integrado (escopo estreito, fecha `AG-154`), 4 bugs reais achados e fechados rodando pela primeira vez contra dado de produção (`AG-199`/`AG-200`/`AG-202` fechados; `AG-201` aberto — GPU/CUDA inviável no Windows nativo, treino real rodou em CPU). Primeiro sweep completo (5 símbolos × R1/R2/R3 = 15 combinações): **3/15 (20%) passam o gate de permanência** (ETHUSDT/R1, SOLUSDT/R2, SOLUSDT/R3) — achado misto real, registrado em `audit/evidence_ledger.yaml::alpha-lightgbm-sweep-15-combinacoes-2026-08-23`, não decisão de promoção pra produção ainda. **Atualização 2026-08-27/28 (`AG-207`→`AG-362`→`AG-371`, ver `§15.29`)**: o sweep de 3/15 acima ficou obsoleto em 3 camadas — override T2→T1 (`AG-207`), reversão do gate marginal de `ADR-005 §2.2` (`AG-362`, `T1_FEATURE_IDS` 7→22), retreino canônico real sob 22 features (**0/15 `permanence_pass`**, sinal misto). `AG-371` corrigiu um viés estrutural real de Camada 0, mas a validação ficou CONFUNDIDA por uma sessão paralela mudando `T1_FEATURE_IDS` no meio do teste (22→29→36, últimos 2 não commitados) — decisão pendente do Manager sobre qual vetor é autoritativo. **Não citar "3/15 (20%)" nem "0/15" como veredito definitivo sem ler `§15.29`**. **[CORREÇÃO 2026-08-29, Changelog v3.57]** `AG-201` ("GPU/CUDA inviável no Windows nativo") **corrigido** — GPU real funciona via WSL2, ver §15.20 alínea D; `AG-371` **FECHADO** por reformulação (Optuna real substitui o YAML estático de hiperparâmetro por combo, não recalibração). **[CORREÇÃO 2026-08-30/31, ADR-007/ADR-008 — Governança item 2, 40 commits desde `022b0bd`]** `AG-371` (Optuna real) executado em produção pela primeira vez: campanha completa 1.800 trials (6 combos × 2 camadas × 150, `ADR-007` Item 1) → confirmação profunda 720 trials/10 seeds (Item 2) → **ZERO dos 6 combos passa o gate duplo** (`median_n_better`: `BTCUSDT/R3`=2,5, `BTCUSDT/R2`=3,0, `SOLUSDT/R2`=2,5, `SOLUSDT/R3`=3,0, `XRPUSDT/R2`=2,0, `XRPUSDT/R3`=2,5 — nenhum atinge o piso). `SOLUSDT/R2` confirma viés de seleção **+8,356, recorde do projeto** (Item 2). Calibração do FPR do gate duplo sob ruído puro (Item 3, `AG-220`): 8,0%/0,0%/0,0% — o gate não é impossível de passar por acaso, a ausência de sinal é real. Correção FDR aplicada à taxa-base H0-H7 (Item 4): 7/15 → 4/15 (BH) → 3/15 (BY). **Apesar da reprovação formal, o Manager autorizou override manual promovendo 5 candidatos a produção canônica** (`BTCUSDT/R2`, `SOLUSDT/R2`, `SOLUSDT/R3`, `XRPUSDT/R2`, `XRPUSDT/R3` — `BTCUSDT/R3` excluído deliberadamente; `config/constants.yaml::alpha_production_hyperparam_override`, `N_lifetime` id=38-40). **Auditoria institucional independente em seguida (`ADR-008`, 9 fases + correção de thresholds + auditoria de engenharia adversarial, `n_lifetime` id=42): walk-forward real refuta os 5 — AUC out-of-time≈0,50 na maioria dos combos/lados, `0 de 20` combo×variant×lado passa os 3 gates codificados (Data/Model/Alpha) mesmo após sweep de sensibilidade ±50%+ confirmar robustez do limiar.** Nenhum dos 5 candidatos promovidos sobrevive à avaliação fora-da-amostra no tempo — achado consolidado, decisão de produção sobre os 5 candidatos segue com o Manager. **[ATUALIZAÇÃO 2026-08-31/2026-09-01, auditoria adversarial, `§15.43`]** Sessão dedicada tentou REFUTAR "0/20" por 8 ângulos independentes (incluindo poder estatístico do gate Model/Alpha via meta-análise, bootstrap em bloco, condicionamento por regime barra-a-barra com n~70.000, causa raiz isolada de uma melhora de 8/10 células vista numa campanha de correção de `t0_end`) — **nenhum reverteu o veredito**; achado colateral real corrigido no caminho: seed do sampler Optuna era GLOBAL compartilhada entre as 10 studies de produção (`AG-399`), corrigido pra derivação por combo, mas os hiperparâmetros JÁ EM PRODUÇÃO não foram re-promovidos só por isso (melhorar sobre um canônico bugado não prova generalização). Detalhe completo: `docs/ADR-007_medicao_producao_hiperparametro_optuna_15_combos_2026-08-30.md`, `docs/ADR-008_auditoria_ml_alpha_institucional_score_quality_walkforward_2026-08-31.md`, `audit/architecture_gaps_log.yaml::AG-389`-`AG-392`,`AG-394`-`AG-419` | `docs/alpha_model_design_doc_2026-08-22.md`, `§15.20`, `§15.20.2`, `§15.29`, `§15.32`, `§15.33`, `§15.43` |
 | V41-11 — Walk-forward + PBO + Lo | 0 | ⬜ não iniciado — `src/validation/walk_forward.py` não existe ainda | `PRD_V4_1.md` §4.6/§4.7 |
 | V41-12 — ~~DSR final, `N_lifetime`=60~~ — **REDEFINIDO 2026-08-28** | 0 | 🟡 Gate 6 = lucro entregue em Live Demo (`AG-077`, fechado). Definição operacional: "lucro" = PnL positivo E distinguível de ruído (mesmo framework de `economic_gate.py::is_distinguishable`); "Live Demo" = capital real reduzido (não testnet/paper), dentro de `capital_inicial_brl` (R$ 1.000, §0); janela mínima 1 mês. **N mínimo de trades e semântica AND/OR entre janela e N seguem TBD** (`AG-374`, parcial) | `PRD_V4_1.md` §6.1, `audit/architecture_gaps_log.yaml::AG-077`, `AG-374` |
 
@@ -1502,7 +1502,7 @@ LIVE TRADING LAYER
 | `07_LABEL` | sem equivalente de medição | `AG-079` fechado — proveniência de literatura fechada em `PRD_V4_1.md` §4.2, não estudo M-style. **[DESATUALIZADO 2026-08-23]** "sem equivalente" segue correto, mas ver linha `07_LABEL` da tabela ASCII acima — `AG-100`/`AG-140` (`AG-140` corrigido, ver §15.24). **[NOVO 2026-08-24]** fill gap-aware de SL (`AG-205`) + `config_hash` fechando ponto cego do B15 (§15.24-H) |
 | `07b_PESOS` | V41-7 (Pesos+Features) | mesmo item de `03_FEATURES` |
 | `08_SPLIT` | sem equivalente de medição | `AG-079` fechado — `G-WF-1..6` (CPCV↔walk-forward) já é comparação de facto |
-| `09_LEARNER` | sem equivalente ativo | `AG-079` fechado — gatilho de reabertura declarado em §4.3, não decisão sem critério. **[ATUALIZADO 2026-08-23]** deixou de ser hipotético: LightGBM treinado de verdade em 15 combinações reais (`§15.20.2`), resultado 3/15 gate de permanência — ver `evidence_ledger.yaml::alpha-lightgbm-sweep-15-combinacoes-2026-08-23`. **[NOVO 2026-08-24]** `AG-204` corrige `tp_atr_mult`/`sl_atr_mult` de produção pós-S1, retreino redisparado; ablação T2→T1 (H7) refuta promoção na Fase 1 — ver linha `09_LEARNER` da tabela ASCII acima. **[NOVO 2026-08-30/31]** Optuna real (`ADR-007`) + auditoria walk-forward (`ADR-008`) — 0/20 combo×variant×lado passa os 3 gates codificados, nenhum dos 5 candidatos promovidos sobrevive; ver linha `09_LEARNER` da tabela ASCII acima e `§15.32`/`§15.33` |
+| `09_LEARNER` | sem equivalente ativo | `AG-079` fechado — gatilho de reabertura declarado em §4.3, não decisão sem critério. **[ATUALIZADO 2026-08-23]** deixou de ser hipotético: LightGBM treinado de verdade em 15 combinações reais (`§15.20.2`), resultado 3/15 gate de permanência — ver `evidence_ledger.yaml::alpha-lightgbm-sweep-15-combinacoes-2026-08-23`. **[NOVO 2026-08-24]** `AG-204` corrige `tp_atr_mult`/`sl_atr_mult` de produção pós-S1, retreino redisparado; ablação T2→T1 (H7) refuta promoção na Fase 1 — ver linha `09_LEARNER` da tabela ASCII acima. **[NOVO 2026-08-30/31]** Optuna real (`ADR-007`) + auditoria walk-forward (`ADR-008`) — 0/20 combo×variant×lado passa os 3 gates codificados, nenhum dos 5 candidatos promovidos sobrevive; ver linha `09_LEARNER` da tabela ASCII acima e `§15.32`/`§15.33`. **[NOVO 2026-08-31/2026-09-01]** auditoria adversarial dedicada tentou refutar "0/20" por 8 ângulos + roadmap de 17 itens — nenhum reverteu, ver `§15.43` |
 | `09b_CALIBRACAO` | V41-9 (Calibração+`confidence_rank`) | ⬜ não iniciado |
 | `10_VALIDACAO` | V41-11 (Walk-forward+PBO+Lo) | ⬜ não iniciado, `walk_forward.py` não existe. **Nota de leitura (`stage_readiness_audit`, 2026-08-22): esta linha e a linha `10_VALIDACAO` da tabela ASCII acima não se contradizem** — CPCV (`cpcv.py`) está completo e wired em produção real (`pipeline.py`); DSR/leakage (`dsr.py`/`leakage.py`) existem e são maduros mas não são gate de nada; PBO/CSCV e `walk_forward.py` (medição de decaimento do Alpha treinado, diferente de `volatility_walkforward.py`/`regime_utility.py`, que são seleção de componente M1/M4) simplesmente não existem — as duas linhas, juntas, dão o quadro completo |
 | `11_META_MODEL` | V41-10 (Meta-Model) — **Grupo J desacoplado, movido para depois** (`§15.19`) | 🔴 **F0-F8 COMPLETO, QUATRO medições convergentes reprovam** (2026-08-30 a 2026-09-01, `§15.30`/`§15.31`/`§15.38`-`§15.42`): `src/models/meta_dataset.py`, `src/models/meta.py` (orquestração F5.5 completa — `run_meta_fold`/`run_all_meta_folds`/`run_meta_sprint`), `src/models/meta_ablation.py` (F6 — A0/A1/A2-nulo/A3), `src/models/meta_walk_forward.py` (F6b — split causal único), `src/validation/leakage.py` (F7 — testes #10/#11 reais), `src/validation/cpcv.py` (`AG-151` fechado), `src/analysis/meta_fp_inventory.py` (P0-P3 completos). `P0`/`P1` fechados 2026-08-31 (9/10 calibrado, `AG-402` não bloqueante). **`P3`/Gate E0 REAL rodou 2026-08-31 contra os 5 combos de produção — 0 de 5 passam** (`AG-404`, vermelho). **F6 (ablação real) rodou 2026-09-01 — 0 de 5 SÍMBOLOS passam o critério primário** (`AG-409`, vermelho): 2 combos (SOLUSDT/R3, XRPUSDT/R3) sem nenhum fold capaz de ajustar modelo, Jaccard(A1,A3)=1,000 exato na maioria (Meta ≈ reparametrização de `tau`). **F6b (walk-forward ancorado, `§4.4`) rodou 2026-09-01 — 0 de 5, ainda mais decisivo** (`AG-413`, vermelho): os 5 combos caem em `INSUFFICIENT_SAMPLE`, o Meta nunca chega a ajustar modelo sob a estrutura causal real, nem `BTCUSDT/R2`. **F7 (enforcement B07/B08, D-13/`§10`, as 5 camadas) fechado 2026-09-01** — runtime (já existia) + teste #10 real com controle positivo + teste #11 estendido (`_META_PATH`, 3 propriedades análogas) + B07 `automated=True` (0 violações novas contra `src/`) + import-linter `alpha↛meta` (8 contratos mantidos). **F8 fecha por CONFIRMAÇÃO 2026-09-01** — nenhuma das 6 constantes "não criadas" do `§11` precisava ser criada (mecanismo/já-sem-limiar/gate-bloqueado/fabricação dado o resultado medido), `N_lifetime++` (ids 43/44, `counter` 5520→5530). Quatro achados convergem por metodologia totalmente diferente: Alpha "0/20" (`AG-391`), Gate E0 "0/5" (`AG-404`), F6 "0/5 símbolos" (`AG-409`), F6b "0/5, sem amostra pra tentar" (`AG-413`). Consequência pré-declarada do design doc ("Meta sai do roadmap") NÃO aplicada — decisão explícita do Manager, 2026-09-01: "não é impeditivo agora, finalize a construção mesmo assim, eu investigo isso depois" | `docs/meta_model_design_doc_2026-08-22.md`, `§15.19`, `§15.35`-`§15.42`, `AG-404`, `AG-409`, `AG-413` |
@@ -6651,6 +6651,119 @@ doc completo: F0-F8, todas as fases fechadas.** Quatro medições
 negativas independentes convergentes permanecem registradas
 (`AG-391`/`AG-404`/`AG-409`/`AG-413`), decisão de produção sobre o
 Meta-model segue com o Manager — não decidida unilateralmente aqui.
+
+### 15.43 "Caso 0/20" — auditoria adversarial do veredito ADR-008 + roadmap de 17 itens, nenhum reverte "0/20" (2026-08-31/2026-09-01)
+
+Sessão paralela à `§15.33`-`§15.42` (track Meta-model) — mandato
+distinto: auditar o PRÓPRIO veredito "0/20" (`§15.33`) tentando
+REFUTÁ-LO por ângulos novos, não confirmá-lo de novo. Pedido do
+Manager: "Auditor de ML/Algo-Trading... refute um ângulo diferente,
+não apenas confirme". Registro completo em artefato publicado ("Caso
+0/20", `https://claude.ai/code/artifact/0323cb66-1042-4247-b07a-
+1f58d81a3958`) e 2 documentos: `docs/adendo_angulos_7_8_pooled_meta_
+analise_gate_model_alpha_2026-08-31.md` (autoria própria) e `docs/
+prompts/REFUTACAO_CONSOLIDADA_0de20_20260831.md` (auditoria externa
+consolidada pelo Manager). `audit/architecture_gaps_log.yaml::AG-394`
+a `AG-419` (26 entradas), 33 commits, todos em `origin/master`.
+
+**Fase 1 — 6 ângulos originais + 2 novos (Ângulos 7/8), nenhum
+refuta**: vazamento temporal, viés de sobrevivência (exclusão de fold
+degenerado), inversão de AUC, causa raiz da divergência CPCV-vs-
+walk-forward, integridade de dado 2023-2026, recomputo independente
+do "0/20" do zero (reproduz dígito a dígito) — todos SUSTENTAM.
+Ângulo 7 (poder do gate Model via meta-análise de variância inversa):
+AUC pooled portfólio = 0,5025 (Camada1)/0,4951 (Camada0), com poder
+estatístico suficiente pra detectar AUC≥0,54-0,55 se existisse.
+Ângulo 8 (gate Alpha sem teste, aplicando um via identidade
+`t_stat=sharpe_naive·√(span_years)`): edge pooled = -3,32bps
+(Camada1)/-0,84bps (Camada0), z negativo. Achado colateral real:
+`BTCUSDT/R2` tinha bloco de coluna nula não documentado; `SOLUSDT/R2`
+fold_id=3/short com calibrador isotônico colapsado (`y_calib` de 1
+classe só) — corrigido com campo de visibilidade novo (`AG-393`).
+
+**Fase 2 — consolidação em roadmap de 17 itens (P0-P3)**, fundindo o
+adendo próprio com a auditoria externa (skill `frontend-design`, a
+pedido do Manager). P0 (correções sem trade-off) e P2 (medições sem
+retreino) fecham primeiro; P1 (achados que exigem retreino/decisão) e
+P3 (backlog próprio) depois. Correções reais de produção aplicadas no
+caminho: bug de `numpy.float64` vazando pro `ic_tstat` e quebrando
+serialização JSON (achado ao rodar `train_val_test_gap` pela primeira
+vez, corrigido em `score_quality.py`); gate Alpha vira teste-t real
+com `edge_bps_std`/`edge_bps_p_value` (`AG-400`); correção FDR
+consolidada nos 3 gates (`AG-405`); disclosure de que `edge_bps` é
+bruto de spread/seleção adversa, decisão B23 deliberada, não bug
+(`AG-408`); poder real dos gates medido por Monte Carlo — 31,2%
+pra AUC=0,55, 23,8% pra edge=10bps, mesmo pós-correção (`AG-406`).
+
+**Achado mais consequente da Fase 2 — `AG-399`**: seed do sampler
+TPE Optuna era GLOBAL (42) compartilhada por TODAS as 10 studies de
+produção, não derivada por combo/variant — `learning_rate` idêntico
+até a 16ª casa entre `BTCUSDT/R2 C1` e `XRPUSDT/R3 C0`, `min_child_
+samples=77` em 4 de 10 vencedores (`P≈2,9×10⁻⁶` sob sorteio
+independente). Confirmado em código e corrigido (`_derived_sampler_
+seed`, sha256 por combo) — vira default de produção pra qualquer
+busca NOVA a partir de `a60c8c2`, mas os hiperparâmetros JÁ EM
+PRODUÇÃO (`alpha_production_hyperparam_override`) continuam sendo os
+achados sob o bug antigo, não re-promovidos por este achado sozinho
+(ver Fase 4 abaixo).
+
+**Fase 3 — P3 (backlog próprio, sem custo de retreino)**: bootstrap
+em bloco substituindo a aproximação normal dos Ângulos 7/8 — AUC
+pooled fica com SE MENOR que o paramétrico (reforça "0/20" com menos
+incerteza), edge pooled fica com SE 2-2,5× MAIOR (a identidade via
+`sharpe_naive` subestimava a incerteza real, sem mudar o veredito).
+Condicionamento por regime (proxy fold-a-fold, `E05f_time_to_
+funding_h`/`E16f_global_ls_ratio`, as 2 features SHAP-dominantes):
+`E16f` varia >2× entre folds em 3 dos 5 combos — contradiz `R10` do
+documento-fonte parcialmente — mas sem correlação detectável com
+performance na granularidade de fold (n=36-46, poder baixo).
+
+**Fase 4 — item 12 (corte `t0_end` na busca Optuna) rodado em escala
+completa (150 trials × 10 studies) e sua CONFUSÃO real com `AG-399`
+identificada e resolvida por campanha de controle**: a campanha com
+corte de data mostrou 8/10 células melhorando vs. produção — mas essa
+campanha TAMBÉM corrigia o bug do seed na mesma rodada, sem controle
+isolando qual das duas mudanças produzia a melhora. Campanha de
+CONTROLE (mesma escala, MESMO seed corrigido, SEM corte de data)
+resolveu a pergunta: controle sozinho já melhora 7/10 células (mediana
++12,47bps) — quase idêntico ao resultado com corte (mediana
++13,44bps). Comparando as duas campanhas diretamente (seed igual nos
+dois lados): 5 de 9 células favorecem NÃO ter corte, 4 favorecem TER
+corte — sem direção consistente. **Conclusão: a melhora observada é
+majoritariamente efeito colateral do seed corrigido, não do corte de
+data em si.** Nenhuma das 2 campanhas justifica promover hiperparâmetro
+novo pra produção — melhorar sobre um canônico BUGADO não é evidência
+de generalização real (`AG-411`/`AG-416`/`AG-419`).
+
+**Fase 5 — retreino com `keep_predictions=True` (hiperparâmetro de
+PRODUÇÃO inalterado) fecha os 3 itens restantes**: condicionamento por
+regime na granularidade IDEAL (barra-a-barra, n~70.000 por bucket
+via o mesmo núcleo do `AG-394`) — AUC condicional varia só 0,4955 a
+0,5112 entre tercis, nenhum perto do limiar de ~0,54-0,55 necessário
+pra edge líquido, mesmo com poder ordens de magnitude maior que
+qualquer teste anterior (`AG-418`, converge com o proxy de `AG-415`).
+`edge_bps`/`sharpe` por trade individual (não só por fold): a mediana
+por trade é consistentemente MAIOR que a média na maioria das células
+— skew negativo real, perdas individuais raras e grandes (mínimo
+-999,89bps, ~10% num único trade) arrastam a média pra baixo,
+`frac_trades_positivos`~50% na maioria (`AG-417`). Gap in-sample/
+out-of-sample (`train_val_test_gap`) fica populado de graça nos 5
+artefatos, sem custo adicional (`compute_train_val_test_gap` já
+existia, testado, nunca tinha sido chamado no caminho real).
+
+**Conclusão consolidada**: das 6 pendências reais que restaram depois
+do roadmap original (`Exhibit VIII` do artefato — condicionamento de
+regime barra-a-barra, edge por trade, gap in-sample/OOS, causa raiz do
+sampler Optuna, resposta causal do item 12, `SOLUSDT/R2` n=1), todas
+foram fechadas nesta sessão, autorizadas explicitamente pelo Manager
+(incluindo gasto real de `n_lifetime` em 2 campanhas completas de 150
+trials × 10 studies cada). **Nenhum dos 17 itens do roadmap, nenhum
+dos 8 ângulos de auditoria, nenhuma das 6 pendências finais reverteu
+"0/20, nenhum dos 5 candidatos sobrevive" (`§15.33`)** — o veredito
+segue sobredeterminado depois da investigação mais extensa possível
+dentro do escopo desta sessão. Decisão de produção sobre os 5
+candidatos (incluindo se/como re-promover hiperparâmetro sob o seed
+corrigido de `AG-399`) segue com o Manager.
 
 ---
 ## Fontes desta pesquisa

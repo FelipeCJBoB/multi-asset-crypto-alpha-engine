@@ -6542,3 +6542,194 @@ negativas independentes convergentes permanecem registradas <!-- check-sprint-lo
 (`AG-391`/`AG-404`/`AG-409`/`AG-413`) — decisão de produção sobre o <!-- check-sprint-log: skip -->
 Meta-model segue com o Manager. Detalhe completo: <!-- check-sprint-log: skip -->
 `PLANO_MESTRE_PRINCE2.md` §15.42.
+
+---
+
+## 2026-08-31/2026-09-01 — "Caso 0/20": auditoria adversarial do veredito ADR-008, roadmap de 17 itens, nenhum reverte <!-- check-sprint-log: skip -->
+
+Sessão paralela à trilha Meta-model acima (`PLANO_MESTRE_PRINCE2.md` <!-- check-sprint-log: skip -->
+§15.33-§15.42) — mandato diferente. Pedido do Manager: "Auditor de
+ML/Algo-Trading... refute um ângulo diferente do achado '0/20', não
+apenas confirme" (`docs/ADR-008_auditoria_ml_alpha_institucional_
+score_quality_walkforward_2026-08-31.md`, §15.33). Registro completo
+em artefato publicado ("Caso 0/20", `https://claude.ai/code/artifact/
+0323cb66-1042-4247-b07a-1f58d81a3958`) e 2 docs: `docs/adendo_angulos_
+7_8_pooled_meta_analise_gate_model_alpha_2026-08-31.md` (autoria
+própria) + `docs/prompts/REFUTACAO_CONSOLIDADA_0de20_20260831.md`
+(auditoria externa, trazida pelo Manager pra consolidar lado a lado).
+
+**6 ângulos originais + 2 novos (Ângulos 7/8) — nenhum refuta.** <!-- check-sprint-log: skip -->
+Vazamento temporal, viés de sobrevivência (exclusão de fold
+degenerado), inversão de AUC, causa raiz da divergência CPCV-vs-
+walk-forward, integridade de dado 2023-2026 e recomputo independente
+do "0/20" a partir do zero (reproduz dígito a dígito, sem importar
+`walk_forward_gates.py`/`model_card.py`) — todos SUSTENTAM o veredito.
+Ângulos 7/8 (novos, atacam o DESENHO do teste, não a implementação):
+Ângulo 7 — meta-análise de variância inversa (Hanley-McNeil) pergunta
+se o gate Model é anticonservador por falta de poder — AUC pooled
+portfólio fica em 0,5025 (Camada1)/0,4951 (Camada0), com poder <!-- check-sprint-log: skip -->
+suficiente pra detectar AUC≥0,54-0,55 se existisse. Ângulo 8 — o gate
+Alpha decide só por `edge_bps_mean>0`, sem teste algum; aplicando um
+via identidade exata `t_stat=sharpe_naive·√(span_years)` (sem precisar
+dos trades brutos), edge pooled fica em -3,32bps (Camada1)/-0,84bps
+(Camada0), z negativo. 2 achados colaterais reais na auditoria:
+`BTCUSDT/R2` tinha um bloco de coluna nula não documentado dentro da
+janela testada; `SOLUSDT/R2` fold_id=3/short tinha o calibrador
+isotônico colapsado (`y_calib` de 1 classe só faz `IsotonicRegression.
+fit` devolver constante) — corrigido com um campo de visibilidade novo
+em `SideModelResult` (`AG-393`, commit `4d724ac`).
+
+**Consolidação em roadmap de 17 itens (P0-P3).** <!-- check-sprint-log: skip --> Skill
+`frontend-design` a pedido do Manager pra fundir o adendo próprio com
+a auditoria externa num artefato só, sequenciado por custo/informação:
+P0 (correções sem trade-off) e P2 (medições sem retreino) primeiro; P1
+(achados que exigem retreino/decisão do Manager) e P3 (backlog
+próprio) depois. "Pode continuar item a item até finalizar P2" ->
+"Commite tudo... liste próximos passos" -> autorização explícita pra
+`uv run`/scripts `.py` na sessão -> P0/P1/P2 fechados com **13 commits
+reais** (`4d724ac`, `c93c4de`, `a60c8c2`, `36958b3`, `82ed071`,
+`f32fb90`, `9cdfb9d`, `6de9711`, `30df288`, `d731319`, `7168080`, entre
+outros). Correções reais de produção aplicadas no caminho, todas
+aditivas (default preservado, sem trade-off): calibrador degenerado
+vira campo visível em vez de silencioso; piso de `min_trades` por
+LADO, não só por fold combinado (`AG-401`) — achado real:
+`degenerado=False` no fold combinado escondia que um dos 2 lados nunca
+tinha trade nenhum; correção FDR (Benjamini-Hochberg/Yekutieli)
+consolidada nos 3 gates (`AG-405`); gate Alpha vira teste-t real com
+`edge_bps_std`/`edge_bps_p_value` em vez de ponto estimado sem erro-
+padrão (`AG-400`, commit `36958b3`); poder real dos gates medido por
+Monte Carlo (2000 draws) — 31,2% pra detectar AUC=0,55, 23,8% pra
+edge=10bps, mesmo depois da correção acima (`AG-406`, commit
+`82ed071`); disclosure explícito de que `edge_bps` é bruto de spread e
+seleção adversa — decisão B23 deliberada do projeto, não bug (`AG-408`,
+commit `6de9711`); data de início real de `BTCUSDT/R2` corrigida na
+Seção 5.1 da auditoria-fonte (2022-01-01, não 2023-10-01 como os
+outros 4 combos — único que alcança 2022, commit `f32fb90`).
+
+**O achado mais consequente da fase P0-P2 — `AG-399` (commit
+`a60c8c2`).** A seed do sampler TPE do Optuna era GLOBAL (42),
+compartilhada por TODAS as 10 studies de produção, sem variar por
+combo/variant — sinal levantado pela auditoria externa como
+especulativo (`learning_rate` idêntico até a 16ª casa entre
+`BTCUSDT/R2 C1` e `XRPUSDT/R3 C0`, `min_child_samples=77` em 4 de 10
+vencedores, `P≈2,9×10⁻⁶` sob sorteio independente), CONFIRMADO em
+código no mesmo dia: `hyperparams_by_combo.py` passava o mesmo
+`alpha_random_seed` global pra todo study, `build_search_space()` é
+função pura sobre `constants.yaml` (espaço de busca idêntico pra
+qualquer combo), e `TPESampler` usa 10 trials de sorteio quase- <!-- check-sprint-log: skip -->
+aleatório antes do modelo TPE começar a usar histórico — composição
+que produz exatamente a coincidência achada. Corrigido
+(`_derived_sampler_seed`, sha256 por symbol/resolution/variant) — vira <!-- check-sprint-log: skip -->
+default de produção pra QUALQUER busca nova a partir deste commit, mas
+os hiperparâmetros JÁ EM PRODUÇÃO (`alpha_production_hyperparam_
+override`) continuavam sendo os achados sob o seed bugado, decisão de
+re-promover ou não fica pendente (resolvida na fase final, ver abaixo).
+
+**P3 (backlog próprio) — bootstrap em bloco e proxy de regime,
+commits `3532aa5`/`70c22ce`.** Bootstrap em bloco (2000 réplicas,
+L=1/L=2) substitui a aproximação normal dos Ângulos 7/8, respeitando a
+autocorrelação lag-1 predominantemente negativa já medida em `AG-392`
+item 1 — direções OPOSTAS pras 2 métricas: AUC pooled fica com SE
+MENOR que o paramétrico (reforça "0/20" com menos incerteza), edge
+pooled fica com SE 2-2,5× MAIOR (a identidade via `sharpe_naive`
+subestimava a incerteza real, sem mudar o veredito — `AG-414`).
+Condicionamento por regime, versão proxy fold-a-fold (`E05f_time_to_
+funding_h`/`E16f_global_ls_ratio`, as 2 features SHAP-dominantes):
+`E16f` varia mais de 2× entre folds em 3 dos 5 combos — contradiz
+parcialmente `R10` do documento-fonte ("janela de teste é um único
+regime macro") — mas sem correlação (Spearman) detectável com
+performance nessa granularidade (n=36-46 folds, poder baixo, `AG-415`).
+
+**Item 12 (corte `t0_end` na busca Optuna) em escala completa — e a
+confusão real com `AG-399` identificada.** Campanha completa (150
+trials × 10 studies, autorização explícita do Manager pra gastar
+`n_lifetime` real, commits `1af8782`/`70c22ce`) mostrou 8 de 10
+células melhorando vs. produção (mediana +13,44bps) — mas essa mesma
+campanha TAMBÉM já rodava sob o seed corrigido de `AG-399`, então a
+melhora não podia ser atribuída ao corte de data isoladamente
+(`AG-416`, commit `b6ad5c5`). Sinalizado com honestidade em vez de
+reportado como vitória.
+
+**Fechamento das 6 pendências finais (Exhibit VIII) — pacote completo
+autorizado pelo Manager, "n_lifetime não é impeditivo".** Campanha de
+CONTROLE (mesma escala 150×10, MESMO seed corrigido, SEM corte de
+data, commit `1ebaff7`) isolou a variável: controle sozinho já
+melhora 7 de 10 células (mediana +12,47bps) — quase idêntico ao
+resultado com corte (mediana +13,44bps). Comparando as 2 campanhas
+diretamente entre si (seed igual nos dois lados, commit `0ce5a4c`): 5
+de 9 células computáveis favorecem NÃO ter corte, 4 favorecem TER
+corte — sem direção consistente (+50,95bps a -83,85bps). **Conclusão
+definitiva: a melhora observada é majoritariamente efeito colateral
+do seed corrigido, não do corte de data em si** (`AG-419`, commit
+`93b8a09`) — nenhuma das 2 campanhas justifica promover hiperparâmetro
+novo pra produção, porque melhorar sobre um canônico BUGADO não é
+evidência de generalização real.
+
+Em paralelo, retreino com `keep_predictions=True` sobre o
+hiperparâmetro de PRODUÇÃO inalterado (commit `c3547a0`) fechou os 3
+itens restantes de um só retreino: condicionamento por regime na
+granularidade IDEAL (barra-a-barra, n~70.000 por bucket via o mesmo
+núcleo do `AG-394`) — AUC condicional varia só 0,4955 a 0,5112 entre
+tercis, nenhum perto do limiar de ~0,54-0,55 pra edge líquido, mesmo
+com poder ordens de magnitude maior que qualquer teste anterior desta
+auditoria (`AG-418`, commit `faa363b`, converge com o proxy de
+`AG-415`); `edge_bps`/`sharpe` por trade individual, não só por fold
+— achado real de skew negativo: a mediana por trade fica
+consistentemente MAIOR que a média na maioria das células (ex.
+`XRPUSDT/R2` C1 pooled: mean=-15,63bps vs. mediana=+37,02bps), perdas
+individuais raras e grandes (mínimo -999,89bps, ~10% num único trade)
+arrastando a média pra baixo, `frac_trades_positivos`~50% na maioria
+(`AG-417`, commit `faa363b`); gap in-sample/out-of-sample
+(`train_val_test_gap`) fica populado de graça nos 5 artefatos — a
+função já existia, testada, cabeada em `model_card.py`, mas nunca
+tinha sido chamada no caminho real do walk-forward (commit `8b96c6d`).
+Um bug real de serialização apareceu no caminho (achado ao rodar o
+retreino pela primeira vez): `_ic_dispersion_stats::tstat` vazava
+`numpy.float64` pro campo `ic_tstat`, quebrando `orjson.dumps`
+("Type is not JSON serializable") só quando pooled entre MUITOS folds
+(nunca disparado antes em `score_quality_by_side`, que tipicamente tem
+poucos folds por célula) — corrigido em `score_quality.py`, commit
+`4cd32b0`.
+
+**Conclusão consolidada.** Das 6 pendências reais do Exhibit VIII
+(condicionamento de regime barra-a-barra, edge por trade, gap
+in-sample/OOS, causa raiz do sampler Optuna, resposta causal do item
+12, `SOLUSDT/R2` com só 1 fold utilizável documentado como limitação
+permanente de dado), todas fechadas. **Nenhum dos 17 itens do
+roadmap, nenhum dos 8 ângulos de auditoria, nenhuma das 6 pendências
+finais reverteu "0/20, nenhum dos 5 candidatos sobrevive"** — o
+veredito segue sobredeterminado depois da investigação mais extensa
+possível dentro do escopo desta sessão. Decisão de produção sobre os
+5 candidatos (incluindo se/como re-promover hiperparâmetro sob o seed
+corrigido) segue com o Manager. Detalhe completo:
+`PLANO_MESTRE_PRINCE2.md` §15.43.
+
+### Governança
+
+`AG-394` a `AG-419` (26 entradas novas) em
+`audit/architecture_gaps_log.yaml`; 3 achados em
+`audit/evidence_ledger.yaml` (`caso0de20-angulos-7-8-pooled-
+portfolio-2026-08-31`, `caso0de20-regime-condicional-barra-a-
+barra-2026-09-01`, `caso0de20-item12-isolamento-causal-seed-vs-
+corte-2026-09-01`); nenhuma constante nova em `config/constants.yaml`
+(nenhuma foi necessária — todos os parâmetros novos são de script de
+análise, não de pipeline de produção); `PLANO_MESTRE_PRINCE2.md`
+§15.43 (nova) + pointer de atualização em §11.6. **33 commits totais**
+nesta trilha, todos em `origin/master` — 16 scripts novos em
+`scripts/` (todos com `ruff`/`mypy`/`banned_patterns.py`/
+`check_unguarded_ratios.py` limpos antes de commitar), 2 arquivos de
+produção compartilhados editados (`src/models/walk_forward.py`,
+`src/models/score_quality.py`, ambos aditivos — nenhum default de
+produção mudou).
+
+**Nota de coordenação — sessão paralela no mesmo working tree.** Esta
+trilha rodou concorrente com a trilha Meta-model (`§15.33`-`§15.42`
+acima) a sessão inteira. Uma colisão real de índice do git aconteceu
+uma vez (`git add` de outra sessão entrou no meio do meu `git add`
+antes do `git commit`, sem `--verify`/lock) — resolvida trocando pra
+`git commit <paths explícitos>` em vez de `git add` genérico pro resto
+da sessão, sem repetição. `src/models/walk_forward.py` recebeu uma
+edição aditiva da sessão paralela (`986e527`, `keep_predictions`/
+`predictions` novos) entre minhas próprias edições — verificado via
+`git diff` antes de continuar (não conflitava com nada meu), não
+revertido.
