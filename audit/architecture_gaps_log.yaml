@@ -26392,20 +26392,53 @@ entries:
       seed ou estado entre studies distintas, nao com 10 buscas
       independentes -- mas a causa NAO foi verificada no codigo do
       sampler.
-    resolved_by_commit: null
+    resolved_by_commit: "a60c8c2"
     status: >
-      ABERTO -- A VERIFICAR, especulativo por design (o proprio autor
-      externo classifica como "achado de alta prioridade para
-      verificacao, nao como fato estabelecido"; nao reverificado nesta
-      sessao). Se confirmado, o impacto e retroativo e sistemico: `audit/
-      n_lifetime.yaml` conta trials como independentes para efeito de
-      correcao de multiplas comparacoes (DSR) -- trials correlacionados
-      contados como independentes inflam a confianca de QUALQUER
-      promocao ja feita no projeto sob esse orcamento, nao so os 5
-      candidatos desta ADR. Acao registrada no roadmap ("Caso 0/20",
-      Exhibit VI, item 6, prioridade P1): ler o codigo do sampler/config
-      do `optuna.create_study` e confirmar se seed/estado e
-      compartilhado entre studies.
+      CONFIRMADO 2026-08-31 (mesmo dia, autorizacao de execucao do
+      Manager) -- mecanismo exato identificado, nao mais especulativo.
+      `hyperparams_by_combo.py:117`: `sampler_seed = int(load_constant
+      ("alpha_random_seed"))` -- MESMO valor global (42) passado pra
+      TODO study, sem variar por combo/variant (`hyperparams_optuna.py:
+      643` antes da correcao). `build_search_space()` e funcao PURA sobre
+      `constants.yaml` (`"Não depende de feature_ids/dataset algum"`,
+      docstring do proprio modulo) -- espaco de busca identico pra
+      QUALQUER symbol/resolution_id/variant. `optuna.samplers.TPESampler`
+      usa `n_startup_trials=10` (default do Optuna, nunca customizado
+      neste modulo) de sorteio quase-aleatorio ANTES do modelo TPE
+      proprio comecar a usar o historico de trials.
+
+      **Composicao fatal:** seed global identica + espaco de busca
+      identico + fase de startup identica (mesmos 10 primeiros sorteios,
+      mesma ordem, em TODO study) => os primeiros ~10 trials de CADA UM
+      dos 10-15 studies da campanha real sao LITERALMENTE identicos entre
+      combos -- explica `learning_rate` igual a 16 casas entre `BTCUSDT/
+      R2 C1` e `XRPUSDT/R3 C0` e `min_child_samples=77` em 4/10
+      vencedores (a chance de um vencedor cair dentro da janela de
+      startup identica nao e desprezivel com so 10-30 trials por combo
+      nas campanhas anteriores ao ADR-007).
+
+      **Impacto retroativo confirmado, nao so hipotetico:** os "1.800
+      trials" do ADR-007 e as campanhas anteriores (`AG-382`/`AG-383`)
+      NAO sao 1.800 exploracoes independentes -- uma fracao real (~10 por
+      study) e duplicada entre studies. `audit/n_lifetime.yaml` conta
+      esses trials como independentes pra efeito de DSR/correcao de
+      multiplas comparacoes -- infla a confianca de QUALQUER promocao ja
+      feita sob esse orcamento, nao so os 5 candidatos desta ADR.
+      Recontar `n_lifetime` retroativamente NAO foi feito (decisao do
+      Manager, nao de codigo -- exige decidir como contar trials
+      correlacionados, nao so identifica-los).
+
+      **Correcao aplicada pra campanhas FUTURAS** (`hyperparams_optuna.
+      py::_derived_sampler_seed`, nova): sem `sampler_seed` explicito,
+      deriva um seed proprio por `(symbol, resolution_id, variant)` via
+      `sha256` do seed global -- cada study passa a ter sua propria
+      sequencia de sorteio, startup phase incluida. Muda `config_hash`
+      (estudos futuros sob o novo default nunca colidem com um study
+      antigo sob o seed global compartilhado -- `load_if_exists=True`
+      nunca "retoma" por engano um estudo do regime antigo). NAO
+      retroativo: os artefatos ja gravados (e as promocoes ja decididas
+      sobre eles) continuam exatamente como estavam. 3 testes novos
+      (determinismo, variacao por combo, range valido), verdes.
 
   - id: AG-400
     date: "2026-08-31"
