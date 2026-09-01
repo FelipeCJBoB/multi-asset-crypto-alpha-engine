@@ -4,9 +4,9 @@ detecção de guarda contra `CALIBRATION_TF_BY_RESOLUTION`, confirmação de
 e que uma guarda em função aninhada/outro arquivo não se mistura.
 
 Inclui um teste de integração que roda o script real contra `src/` do
-próprio repo — trava o achado atual (4 sites, 1 forma, tudo consistente)
-como regressão: se uma cópia futura divergir, este teste é o primeiro a
-quebrar."""
+próprio repo — trava o achado atual (5 sites em 4 pacotes, 1 forma, tudo
+consistente) como regressão: se uma cópia futura divergir, este teste é
+o primeiro a quebrar."""
 
 from __future__ import annotations
 
@@ -226,20 +226,25 @@ def test_main_path_inexistente_nao_falha(tmp_path: Path, monkeypatch: object) ->
 
 
 # ============================================================================
-# Integração — trava o achado real do repo (4 sites, 1 forma) como regressão
+# Integração — trava o achado real do repo (5 sites em 4 pacotes, 1 forma) como regressão
 # ============================================================================
 
 
-def test_estado_real_do_repo_hoje_4_sites_1_forma_consistente() -> None:
+def test_estado_real_do_repo_hoje_5_sites_4_pacotes_1_forma_consistente() -> None:
     """`AG-176`: os 4 pacotes (`models`/`regime`/`labels`/`validation`)
     duplicam a mesma guarda de propósito -- este teste prova que, hoje,
-    as 4 cópias são comportamentalmente idênticas (mesma condição, todas
-    levantam `ValueError`). Se uma edição futura divergir uma cópia, este
-    teste quebra primeiro -- é exatamente o "script mecânico" que a
-    entrada do ledger propôs, agora também travado como regressão de
-    teste, não só executável manualmente."""
+    as cópias são comportamentalmente idênticas (mesma condição, todas
+    levantam `ValueError`). `models/_paths.py` tem 2 sites independentes
+    (`_resolve_grade` e `meta_bundle_dir`, este último adicionado pela
+    orquestração do Meta-model, commit `90061dc`, 2026-08-31) -- mesmo
+    pacote, 2 funções que precisam validar `resolution_id` cada uma,
+    consistente com a duplicação deliberada já documentada (não uma
+    divergência a corrigir). Se uma edição futura divergir a FORMA de
+    qualquer site, este teste quebra primeiro -- é exatamente o "script
+    mecânico" que a entrada do ledger propôs, agora também travado como
+    regressão de teste, não só executável manualmente."""
     sites = crgp.find_guard_sites(_REPO_ROOT / "src")
-    assert len(sites) == 4
+    assert len(sites) == 5
     assert all(s.raises_valueerror for s in sites)
     assert len({s.condition for s in sites}) == 1
     assert {s.file.parent.name for s in sites} == {"models", "regime", "labels", "validation"}
