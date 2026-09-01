@@ -6241,3 +6241,47 @@ não era escopo de P1. <!-- check-sprint-log: skip -->
 **Próximo passo**: P0 (validação do nulo do Gate E0, circular-shift-by-
 block) — módulo novo `src/analysis/meta_fp_inventory.py`, ainda não
 iniciado, exige rodar contra dado real (execução do Manager).
+
+## 2026-08-31 (continuação) — Meta P0: esquema de permutação do Gate E0 travado + validação do nulo (D-14) <!-- check-sprint-log: skip -->
+
+Ver `PLANO_MESTRE_PRINCE2.md` §15.35 para o detalhe completo. Resumo:
+
+`src/analysis/meta_fp_inventory.py` (novo, commit `df5e9cf`): as duas
+peças bloqueantes de P0 (`§2.6`). `circular_shift_by_time` — a
+primitiva "circular-shift por bloco" travada na v3, implementada como
+UMA rotação circular em tempo contínuo da série inteira (preserva
+blocos contíguos por construção, sem quantizar o deslocamento em
+múltiplos de largura de grupo — decisão de interpretação DOCUMENTADA
+no módulo, já que o texto do design doc não fecha 100% essa <!-- check-sprint-log: skip -->
+granularidade; `alpha_b1_n_seeds=1000` descarta um esquema quantizado
+a `n_groups=6` valores). `weighted_state_auc` — AUC ponderada por
+`uniqueness` entre `y_fp` (`SL`→FP duro, `TP`→acerto, `TIME`→
+`1[ret_net>0]`, `NOFILL` excluído) e `P(y=1|estado)` do regime,
+reajustada a cada permutação (texto literal do `§2.6`).
+`validate_null_calibration` — a validação OBRIGATÓRIA e bloqueante do
+próprio nulo: roda o procedimento completo `n_trials` vezes sobre uma
+feature sabidamente sem sinal, verifica que a taxa de PASS fica perto
+de 5% via IC binomial de 95% (`scipy.stats.binomtest`) — "materialmente
+acima" operacionalizado, não deixado a julgamento. Desenho evita ser
+tautológico (o "observado" de cada trial usa família de amostragem
+diferente do nulo interno daquele trial).
+
+3 constantes novas: `meta_e0_null_percentile` (0,95, LITERATURE, texto
+literal do `§2.6`), `meta_e0_null_calibration_target` (0,05, DERIVED),
+`meta_e0_null_calibration_confidence_level` (0,95, LITERATURE). 21
+testes novos, 100% sintéticos/determinísticos — 117 passed no conjunto
+com `meta.py`/`meta_dataset.py`, 7/7 contratos do import-linter
+mantidos.
+
+**Achado, não corrigido nesta sessão**: tentativa de medir a validação
+do nulo contra `BTCUSDT/15m` real bloqueada por `B15` —
+`config_hash` dos labels legados (`9492d29c36b06cb1`) não bate com
+NENHUMA variante atual de `LabelConfig.from_constants`
+(`parkinson_w20`/`gk_yz_w20`/default). Grade 15m já era "provisória"
+por desenho (`§2.6`, E0-piloto) — a medição real fica para quando essa
+reconciliação for feita, não presumida.
+
+**Escopo desta rodada**: só a primitiva + auto-validação estatística.
+A inventariação completa de FP/TP sobre `predictions.parquet` real
+(universo `side_hat != 0 ∧ is_oof`, diagnósticos do `§2.6`) é P3/
+E0-piloto, ainda não construída.

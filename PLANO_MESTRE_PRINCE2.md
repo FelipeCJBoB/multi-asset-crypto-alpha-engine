@@ -860,7 +860,7 @@ proposta a confirmar, não como verdade estabelecida:
 | V41-7 — Pesos + Features | ≤3 | ⬜ não iniciado — depende de V41-6 | `PRD_V4_1.md` §4.2 |
 | V41-8 — Controle 19 (risco agregado) + sizing por ativo | 0 | 🟡 **parcial** — Controle 19 (`control_19_risco_agregado`, `src/risk/limits.py`) IMPLEMENTADO 2026-08-17, desacoplado da sequência (`AG-081`, autorizado pelo Manager): risco já quantificado (§5.3, ρ≈0,91 = 4,82x, cap efetivo 2 posições), não precisava esperar V41-5/6/7. `NOT_COMPUTABLE` em produção até existir rastreador de posições live + série de correlação (Sprint 12+). `aggregate_risk_max` (classe A, `ASSUMED`) e "sizing por ativo" (§5.4) seguem não iniciados. **[CORRIGIDO 2026-08-22, `AG-144`]**: `ρ≈0,91` nunca teve janela/proveniência declarada — remedido sobre dado real (5 símbolos, log-retornos 15m, 4 janelas): média entre pares fica em 0,70 (histórica completa) a 0,83 (180d), nunca 0,91; instável (range até 0,23/par). Multiplicador de 5 posições recalculado: 4,36x-4,65x, não 4,82x — mas **o cap efetivo de 2 posições é ROBUSTO à correção** (precisaria ρ≤0,167 pra N=3 caber no limite de 1,00%, nenhuma janela medida chega perto). Achado colateral: a mesma correlação mais baixa/instável enfraquece a leitura de que os 5 ativos "seriam ~1 aposta só" (§2.8) — converge com `M6` (Fator Comum, H0 rejeitada, I²=96-98%, componente idiossincrático real). Detalhe completo: `audit/evidence_ledger.yaml::ag144-correlacao-cross-asset-15m-4-janelas`, `audit/architecture_gaps_log.yaml::AG-144` | `PRD_V4_1.md` §5.3, `AG-081`, `AG-144` |
 | V41-9 — Calibração + `confidence_rank` | 0 | ⬜ não iniciado — `confidence_rank` existe (§5.12 do V3.2) mas nunca foi avaliado | `PRD_V4_1.md` §4.4 |
-| V41-10 — Meta-Model + Grupo J | ≤2 ⚠️ | 🟢 **F0-F5 implementados** (2026-08-30, `§15.30`/`§15.31`); desenho travado v3 em 2026-08-22 (`§15.19`) — ADR-001 §3.7/§2.7 revogado pelo Manager; regime entra como feature, fonte **HMM k=4** por decisão do Manager (2026-08-30); **Grupo J desacoplado e movido para DEPOIS**. O gate "retreino do Alpha" CAIU (feito 2× em 08-23/08-28). `P1`/`AG-151` (purge cross-símbolo) **fechado** 2026-08-31 (`§15.34`, commit `cc83208`). Restam: Gate E0 não executado, `P0` (validação do nulo) aberto. ⚠️ **o orçamento `≤2` é inconsistente** com a contabilidade do §11 do próprio design doc (E0 + 2 braços de doador + F6 + F6b + sweep + ablação) por 1-2 ordens de grandeza — não reconciliado; `N_lifetime` deixou de ser gate vinculante em `AG-077` | `docs/meta_model_design_doc_2026-08-22.md`, `§15.19`, `§15.30`, `§15.34` |
+| V41-10 — Meta-Model + Grupo J | ≤2 ⚠️ | 🟢 **F0-F5 implementados** (2026-08-30, `§15.30`/`§15.31`); desenho travado v3 em 2026-08-22 (`§15.19`) — ADR-001 §3.7/§2.7 revogado pelo Manager; regime entra como feature, fonte **HMM k=4** por decisão do Manager (2026-08-30); **Grupo J desacoplado e movido para DEPOIS**. O gate "retreino do Alpha" CAIU (feito 2× em 08-23/08-28). `P1`/`AG-151` (purge cross-símbolo) **fechado** 2026-08-31 (`§15.34`, commit `cc83208`). `P0` (esquema de permutação + validação do nulo) **primitiva pronta e testada** 2026-08-31 (`§15.35`, commit `df5e9cf`) — medição contra dado real ainda pendente (labels legados de 15m com config_hash desatualizado, B15). Restam: Gate E0 não executado, P2/P3 não iniciados. ⚠️ **o orçamento `≤2` é inconsistente** com a contabilidade do §11 do próprio design doc (E0 + 2 braços de doador + F6 + F6b + sweep + ablação) por 1-2 ordens de grandeza — não reconciliado; `N_lifetime` deixou de ser gate vinculante em `AG-077` | `docs/meta_model_design_doc_2026-08-22.md`, `§15.19`, `§15.30`, `§15.34`, `§15.35` |
 | — (novo, sem V41-N formal — item de arquitetura, não medição M-style) | Alpha multi-ativo × multi-resolução (LightGBM + GPU) | 🟢 **IMPLEMENTADO E TREINADO DE VERDADE (2026-08-23, `§15.20.2`)** — D-01 a D-18 codificados (`§15.20.1`), D-06 integrado (escopo estreito, fecha `AG-154`), 4 bugs reais achados e fechados rodando pela primeira vez contra dado de produção (`AG-199`/`AG-200`/`AG-202` fechados; `AG-201` aberto — GPU/CUDA inviável no Windows nativo, treino real rodou em CPU). Primeiro sweep completo (5 símbolos × R1/R2/R3 = 15 combinações): **3/15 (20%) passam o gate de permanência** (ETHUSDT/R1, SOLUSDT/R2, SOLUSDT/R3) — achado misto real, registrado em `audit/evidence_ledger.yaml::alpha-lightgbm-sweep-15-combinacoes-2026-08-23`, não decisão de promoção pra produção ainda. **Atualização 2026-08-27/28 (`AG-207`→`AG-362`→`AG-371`, ver `§15.29`)**: o sweep de 3/15 acima ficou obsoleto em 3 camadas — override T2→T1 (`AG-207`), reversão do gate marginal de `ADR-005 §2.2` (`AG-362`, `T1_FEATURE_IDS` 7→22), retreino canônico real sob 22 features (**0/15 `permanence_pass`**, sinal misto). `AG-371` corrigiu um viés estrutural real de Camada 0, mas a validação ficou CONFUNDIDA por uma sessão paralela mudando `T1_FEATURE_IDS` no meio do teste (22→29→36, últimos 2 não commitados) — decisão pendente do Manager sobre qual vetor é autoritativo. **Não citar "3/15 (20%)" nem "0/15" como veredito definitivo sem ler `§15.29`**. **[CORREÇÃO 2026-08-29, Changelog v3.57]** `AG-201` ("GPU/CUDA inviável no Windows nativo") **corrigido** — GPU real funciona via WSL2, ver §15.20 alínea D; `AG-371` **FECHADO** por reformulação (Optuna real substitui o YAML estático de hiperparâmetro por combo, não recalibração). **[CORREÇÃO 2026-08-30/31, ADR-007/ADR-008 — Governança item 2, 40 commits desde `022b0bd`]** `AG-371` (Optuna real) executado em produção pela primeira vez: campanha completa 1.800 trials (6 combos × 2 camadas × 150, `ADR-007` Item 1) → confirmação profunda 720 trials/10 seeds (Item 2) → **ZERO dos 6 combos passa o gate duplo** (`median_n_better`: `BTCUSDT/R3`=2,5, `BTCUSDT/R2`=3,0, `SOLUSDT/R2`=2,5, `SOLUSDT/R3`=3,0, `XRPUSDT/R2`=2,0, `XRPUSDT/R3`=2,5 — nenhum atinge o piso). `SOLUSDT/R2` confirma viés de seleção **+8,356, recorde do projeto** (Item 2). Calibração do FPR do gate duplo sob ruído puro (Item 3, `AG-220`): 8,0%/0,0%/0,0% — o gate não é impossível de passar por acaso, a ausência de sinal é real. Correção FDR aplicada à taxa-base H0-H7 (Item 4): 7/15 → 4/15 (BH) → 3/15 (BY). **Apesar da reprovação formal, o Manager autorizou override manual promovendo 5 candidatos a produção canônica** (`BTCUSDT/R2`, `SOLUSDT/R2`, `SOLUSDT/R3`, `XRPUSDT/R2`, `XRPUSDT/R3` — `BTCUSDT/R3` excluído deliberadamente; `config/constants.yaml::alpha_production_hyperparam_override`, `N_lifetime` id=38-40). **Auditoria institucional independente em seguida (`ADR-008`, 9 fases + correção de thresholds + auditoria de engenharia adversarial, `n_lifetime` id=42): walk-forward real refuta os 5 — AUC out-of-time≈0,50 na maioria dos combos/lados, `0 de 20` combo×variant×lado passa os 3 gates codificados (Data/Model/Alpha) mesmo após sweep de sensibilidade ±50%+ confirmar robustez do limiar.** Nenhum dos 5 candidatos promovidos sobrevive à avaliação fora-da-amostra no tempo — achado consolidado, decisão de produção sobre os 5 candidatos segue com o Manager. Detalhe completo: `docs/ADR-007_medicao_producao_hiperparametro_optuna_15_combos_2026-08-30.md`, `docs/ADR-008_auditoria_ml_alpha_institucional_score_quality_walkforward_2026-08-31.md`, `audit/architecture_gaps_log.yaml::AG-389`-`AG-392` | `docs/alpha_model_design_doc_2026-08-22.md`, `§15.20`, `§15.20.2`, `§15.29`, `§15.32`, `§15.33` |
 | V41-11 — Walk-forward + PBO + Lo | 0 | ⬜ não iniciado — `src/validation/walk_forward.py` não existe ainda | `PRD_V4_1.md` §4.6/§4.7 |
 | V41-12 — ~~DSR final, `N_lifetime`=60~~ — **REDEFINIDO 2026-08-28** | 0 | 🟡 Gate 6 = lucro entregue em Live Demo (`AG-077`, fechado). Definição operacional: "lucro" = PnL positivo E distinguível de ruído (mesmo framework de `economic_gate.py::is_distinguishable`); "Live Demo" = capital real reduzido (não testnet/paper), dentro de `capital_inicial_brl` (R$ 1.000, §0); janela mínima 1 mês. **N mínimo de trades e semântica AND/OR entre janela e N seguem TBD** (`AG-374`, parcial) | `PRD_V4_1.md` §6.1, `audit/architecture_gaps_log.yaml::AG-077`, `AG-374` |
@@ -1505,7 +1505,7 @@ LIVE TRADING LAYER
 | `09_LEARNER` | sem equivalente ativo | `AG-079` fechado — gatilho de reabertura declarado em §4.3, não decisão sem critério. **[ATUALIZADO 2026-08-23]** deixou de ser hipotético: LightGBM treinado de verdade em 15 combinações reais (`§15.20.2`), resultado 3/15 gate de permanência — ver `evidence_ledger.yaml::alpha-lightgbm-sweep-15-combinacoes-2026-08-23`. **[NOVO 2026-08-24]** `AG-204` corrige `tp_atr_mult`/`sl_atr_mult` de produção pós-S1, retreino redisparado; ablação T2→T1 (H7) refuta promoção na Fase 1 — ver linha `09_LEARNER` da tabela ASCII acima. **[NOVO 2026-08-30/31]** Optuna real (`ADR-007`) + auditoria walk-forward (`ADR-008`) — 0/20 combo×variant×lado passa os 3 gates codificados, nenhum dos 5 candidatos promovidos sobrevive; ver linha `09_LEARNER` da tabela ASCII acima e `§15.32`/`§15.33` |
 | `09b_CALIBRACAO` | V41-9 (Calibração+`confidence_rank`) | ⬜ não iniciado |
 | `10_VALIDACAO` | V41-11 (Walk-forward+PBO+Lo) | ⬜ não iniciado, `walk_forward.py` não existe. **Nota de leitura (`stage_readiness_audit`, 2026-08-22): esta linha e a linha `10_VALIDACAO` da tabela ASCII acima não se contradizem** — CPCV (`cpcv.py`) está completo e wired em produção real (`pipeline.py`); DSR/leakage (`dsr.py`/`leakage.py`) existem e são maduros mas não são gate de nada; PBO/CSCV e `walk_forward.py` (medição de decaimento do Alpha treinado, diferente de `volatility_walkforward.py`/`regime_utility.py`, que são seleção de componente M1/M4) simplesmente não existem — as duas linhas, juntas, dão o quadro completo |
-| `11_META_MODEL` | V41-10 (Meta-Model) — **Grupo J desacoplado, movido para depois** (`§15.19`) | 🟢 **F0-F5 implementados** (2026-08-30, `§15.30`/`§15.31`): `src/models/meta_dataset.py` (`build_meta_signal_table`, regra de doador `path_matched`, 4 asserções §10.1, `UniquenessDivergenceDiagnostic`, controle positivo de vazamento), `src/regime/artifact_hmm.py` (regime HMM k=4 persistido), `src/models/meta.py` (`LogitL2Meta`/`BlockedGBMMeta`, `resolve_tau_meta` §8.3, `apply_meta_filter` veto-em-zero D-05, `write_meta_fold_bundle` D-17), `src/validation/cpcv.py` (`compute_pooled_edges_ms`, `AG-151` fechado, `§15.34`). F6-F8 pendentes. O gate do retreino do Alpha CAIU (retreino feito 2× em 08-23/08-28); o Gate E0 segue não executado e depende de `P0` (validação do nulo) — `P1`/`AG-151` fechado 2026-08-31 |
+| `11_META_MODEL` | V41-10 (Meta-Model) — **Grupo J desacoplado, movido para depois** (`§15.19`) | 🟢 **F0-F5 implementados** (2026-08-30, `§15.30`/`§15.31`): `src/models/meta_dataset.py` (`build_meta_signal_table`, regra de doador `path_matched`, 4 asserções §10.1, `UniquenessDivergenceDiagnostic`, controle positivo de vazamento), `src/regime/artifact_hmm.py` (regime HMM k=4 persistido), `src/models/meta.py` (`LogitL2Meta`/`BlockedGBMMeta`, `resolve_tau_meta` §8.3, `apply_meta_filter` veto-em-zero D-05, `write_meta_fold_bundle` D-17), `src/validation/cpcv.py` (`compute_pooled_edges_ms`, `AG-151` fechado, `§15.34`), `src/analysis/meta_fp_inventory.py` (esquema de permutação P0 + validação do nulo, `§15.35`). F6-F8 pendentes. O gate do retreino do Alpha CAIU (retreino feito 2× em 08-23/08-28); o Gate E0 segue não executado — `P1`/`AG-151` fechado 2026-08-31, `P0` primitiva pronta 2026-08-31 (medição real pendente, B15 em labels legados de 15m), P2/P3 não iniciados |
 | `11b_DECISION_ENGINE` | sem equivalente de medição | ⬜ não iniciado — `AG-095` (2026-08-19): estágio adicionado à tabela nesta data, existia no PRD_V3_2 (Parte VII) desde sempre mas nunca tinha entrado neste modelo; consome `regime.tradeable` (gate 01, §7.3) — consumidor real de Regime. **[DESATUALIZADO, `AG-123`]** lista original citava "Alpha" como um dos consumidores de Regime — caiu na Fase A de `§15.13` (2026-08-21): regime SAIU do vetor de treino do Alpha (`DESIGN_COLUMNS` só as 10 features T1), ADR-001 §2.7 ratificado (regime = gate, não feature). Consumidores reais hoje: Risk (`§15.13` Fase C, hoje desligado — ver `12_RISK_ENGINE`), Decision Engine (esta linha, não implementado — `AG-143`), Meta/Execução (não implementados) |
 | `12_RISK_ENGINE` | V41-8 (Controle 19+sizing) | 🟡 parcial — Controle 19 implementado (`AG-081`), sizing por ativo não. **[DESATUALIZADO, 3ª ocorrência confirmada `AG-123`]** "Regime wired" foi DESLIGADO de `evaluate_all()` em 2026-08-22 (`AG-114`/`AG-118`, commit `3c0d83d`) — função mantida definida/testada/exportada, não chamada |
 | `13_EXECUCAO` | sem equivalente de medição hoje | RPI vs. post-only (`§9.5.1`, `AG-078`) é Sprint 16, ainda distante |
@@ -6132,6 +6132,82 @@ quando o pooling for exercitado`.
 by-block) — módulo novo `src/analysis/meta_fp_inventory.py`, ainda não
 iniciado; exige rodar validação empírica contra dado real (§2.6 do
 design doc).
+
+### 15.35 Meta-model — P0: esquema de permutação do Gate E0 travado + validação obrigatória do nulo (D-14) (2026-08-31)
+
+`src/analysis/meta_fp_inventory.py` (novo, commit `df5e9cf`) — as duas
+peças bloqueantes de P0 (`docs/meta_model_design_doc_2026-08-22.md`
+§2.6, §15.1/§15.2). Zero treino, camada `analysis/` (mesmo precedente
+de `gate_efficiency.py`).
+
+**`circular_shift_by_time`** — a primitiva "circular-shift por bloco"
+travada na v3. **Decisão de interpretação documentada** (o texto do
+design doc não fecha 100% a granularidade do deslocamento): rotação
+circular em TEMPO CONTÍNUO da série inteira, via busca binária contra
+a função em degrau original — preserva estrutura de blocos contíguos
+por construção (nenhuma reordenação interna), sem quantizar o
+deslocamento em múltiplos de largura de grupo. Justificativa: `alpha_
+b1_n_seeds = 1000` (a constante que o próprio §2.6 aponta para `n_
+seeds`) é ordens de grandeza maior que `n_groups = 6` — um esquema
+quantizado só teria 6 deslocamentos distintos possíveis. "Comprimento
+de bloco... largura de grupo do CPCV" entra como diagnóstico reportado
+(`effective_block_count`), não como granularidade do sorteio. **Se
+essa leitura divergir da intenção original do design doc, sinalizar
+antes de tratar P0 como fechado** — mesma classe de gap que motivou
+`AG-114`/`AG-118`/`AG-122`.
+
+**`weighted_state_auc`** — a estatística agregada do gate: AUC
+ponderada por `uniqueness` entre `y_fp` (`SL`→FP duro, `TP`→acerto,
+`TIME`→`1[ret_net>0]`, `NOFILL` excluído do numerador/denominador) e
+`P̂(y=1|estado)` do próprio regime — REAJUSTADA a cada chamada, nunca
+cacheada entre permutações (texto literal do §2.6: "o estimador é
+reajustado dentro de cada permutação").
+
+**`validate_null_calibration`** — a validação OBRIGATÓRIA e
+BLOQUEANTE do próprio nulo (§2.6: "se o nulo não rejeita ruído
+estruturado, E0 não roda"). Roda o procedimento completo (observado +
+nulo + p95 + PASS/FAIL) `n_trials` vezes sobre uma feature sabidamente
+sem sinal, mede a taxa de PASS empírica. "Materialmente acima de 5%"
+operacionalizado via intervalo de confiança binomial de 95% (Wilson,
+`scipy.stats.binomtest`), não uma banda de tolerância inventada.
+Desenho deliberadamente NÃO tautológico — documentado em detalhe no
+docstring do módulo ("por que a validação não é tautológica"): o
+"observado" de cada trial usa uma família de amostragem diferente dos
+deslocamentos do nulo interno daquele mesmo trial.
+
+**3 constantes novas**: `meta_e0_null_percentile` (0,95, LITERATURE,
+texto literal do §2.6 — "PASS sse... exceder o p95 do nulo"), `meta_
+e0_null_calibration_target` (0,05, DERIVED de `meta_e0_null_
+percentile`), `meta_e0_null_calibration_confidence_level` (0,95,
+LITERATURE, convenção de IC — constante DIAGNÓSTICA, distinta do
+critério do gate em si).
+
+**Verificação**: 21 testes novos, 100% sintéticos/determinísticos (sem
+dependência de dado real) — propriedades da rotação (identidade em
+shift=0, preserva multiset, preserva blocos contíguos, wraparound
+correto), AUC ponderada (estado perfeitamente discriminativo → 1,0;
+sem relação → ~0,5; guardas de <2 classes/<2 estados → `NaN`),
+`evaluate_path_null`/`validate_null_calibration` (sinal forte tende a
+passar, sem relação real fica com taxa de PASS plausível perto de 5%).
+117 passed no conjunto com `meta.py`/`meta_dataset.py`, 7/7 contratos
+do `importlinter` mantidos.
+
+**Achado, não corrigido nesta sessão**: tentativa de medir a validação
+do nulo contra `BTCUSDT/15m` REAL bloqueada por B15 — `config_hash`
+dos labels legados (`9492d29c36b06cb1`) não bate com NENHUMA variante
+atual de `LabelConfig.from_constants` testada (`parkinson_w20`/`gk_
+yz_w20`/default). Grade 15m já era "provisória" por desenho (§2.6,
+E0-piloto) — a medição real fica para quando essa reconciliação de
+config for feita, não presumida como já calibrada.
+
+**Escopo desta rodada**: só a primitiva de permutação + sua
+auto-validação estatística. A inventariação completa de FP/TP sobre
+`predictions.parquet` real (universo `side_hat != 0 ∧ is_oof`,
+diagnósticos completos do §2.6: `n_distinct(p_alpha)`, V de Cramér,
+estabilidade cross-fold) é P3/E0-piloto — **ainda não construída**,
+próximo passo real depois de reconciliar a config dos labels legados
+(ou decidir pular direto para dado R1/5-símbolos, e assim descartar
+E0-piloto como "provisório" mesmo).
 
 ---
 ## Fontes desta pesquisa
