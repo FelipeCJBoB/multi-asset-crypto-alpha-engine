@@ -408,6 +408,49 @@ acionável não respondida aqui: a mecânica de barreira/stop se comporta
 como esperado nos trades de maior perda, ou é risco de cauda inerente ao
 ativo?
 
+### 6.3 Item 12 — resposta causal definitiva: `t0_end` ou seed corrigido? (`AG-419`)
+
+A campanha completa (`AG-411`/`AG-416`) tinha mostrado 8/10 células
+melhorando sob os hiperparâmetros achados com corte de data, mas
+**confundido**: essa campanha também corrigiu o bug de seed compartilhado
+(`AG-399`) na mesma rodada. Campanha de **CONTROLE** — mesma escala (150
+trials × 10 studies), MESMO seed corrigido, mas **sem** corte de data
+(`t0_end=None`) — isola as duas variáveis.
+
+| Combo | Camada | Canônico (bps) | Controle (bps) | `t0_end` (bps) | Δ controle vs. canônico | Δ controle vs. `t0_end` |
+|---|---|---:|---:|---:|---:|---:|
+| `BTCUSDT/R2` | C1 | +7,90 | +6,90 | −4,59 | −1,00 | +11,50 |
+| `BTCUSDT/R2` | C0 | +1,35 | +8,61 | +3,07 | +7,26 | +5,54 |
+| `SOLUSDT/R2` | C1 | −57,66 | −26,35 | +20,78 | +31,30 | −47,13 |
+| `SOLUSDT/R2` | C0 | −57,66 | *0 folds usáveis* | −66,14 | — | — |
+| `SOLUSDT/R3` | C1 | −17,00 | +48,58 | −2,38 | +65,57 | +50,95 |
+| `SOLUSDT/R3` | C0 | −32,82 | −43,16 | −20,57 | −10,34 | −22,59 |
+| `XRPUSDT/R2` | C1 | −28,25 | −15,78 | −16,60 | +12,47 | +0,82 |
+| `XRPUSDT/R2` | C0 | −17,55 | −16,21 | +24,44 | +1,34 | −40,65 |
+| `XRPUSDT/R3` | C1 | −34,54 | +4,33 | +0,36 | +38,87 | +3,97 |
+| `XRPUSDT/R3` | C0 | +26,34 | +55,33 | +139,17 | +28,99 | −83,85 |
+
+**Resultado: a melhora vem majoritariamente do seed corrigido, não do
+corte de data.** O controle SOZINHO já melhora 7 de 10 células vs.
+produção (mediana +12,47bps, média +19,38bps) — quase idêntico ao
+`t0_end` (8/10, mediana +13,44bps, média +28,74bps). Comparando
+DIRETAMENTE controle vs. `t0_end` (seed já igual nos dois, isolando só o
+corte de data): 5 de 9 células computáveis favorecem NÃO ter corte, 4
+favorecem TER corte — sem direção consistente, magnitudes grandes nos
+dois sentidos (+50,95bps a −83,85bps). `SOLUSDT/R2` C0 sob controle
+produz 0 folds utilizáveis (100% degenerado) — mesma fragilidade
+estrutural já documentada (`n=1` no artefato canônico).
+
+**Veredito:** item 12 fechado com resposta causal limpa. O corte de data
+por si só **não tem efeito consistente detectável** — a melhora
+observada nas campanhas anteriores é majoritariamente efeito colateral
+da correção do bug de seed compartilhado (`AG-399`). Nenhuma das 2
+campanhas (nem `t0_end` nem controle) justifica promover hiperparâmetro
+novo pra produção com base neste teste — ambas são buscas de 150 trials
+sobre um espaço já conhecido como instável/sensível a seed
+(`R11`/`AG-410`); melhorar sobre o canônico BUGADO (`AG-399`) não é
+evidência de generalização real.
+
 ---
 
 ## 7. Proveniência

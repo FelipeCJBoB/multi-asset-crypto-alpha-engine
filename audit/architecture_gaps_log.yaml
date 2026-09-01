@@ -27339,6 +27339,54 @@ entries:
     resolution: "medido -- fecha item 16 do Exhibit VIII na granularidade ideal."
     status: "concluido -- item 16 do roadmap 'Caso 0/20' fechado, resultado nao refuta '0/20'."
 
+  - id: AG-419
+    date: "2026-09-01"
+    file: "scripts/run_t0_cutoff_full_campaign.py::--control; scripts/compare_t0_cutoff_full_campaign.py::--control"
+    related_file: "AG-411; AG-416 (confound identificado); AG-399 (bug de seed); item 12 do roadmap 'Caso 0/20'"
+    numeracao: "AG-419."
+    found_by: "Campanha de controle autorizada pelo Manager (2026-09-01, 'Seguir sua recomendacao campanha de controle... n_lifetime nao e impeditivo'), resposta definitiva ao confound identificado em AG-416."
+    gap: >
+      AG-416 mediu 8/10 celulas melhorando sob os hiperparametros da
+      campanha com corte de data (`t0_end`), mas identificou um confound
+      real: essa campanha TAMBEM corrigiu o bug do seed compartilhado
+      (`AG-399`) na mesma rodada, entao a melhora nao podia ser atribuida
+      ao corte de data isoladamente. Campanha de CONTROLE (mesma escala,
+      150 trials x 10 studies, MESMO seed corrigido, mas SEM corte de
+      data -- `t0_end=None`) roda o experimento isolado: se a melhora vem
+      so do seed corrigido, o controle deveria mostrar melhora
+      SEMELHANTE ao t0cutoff; se o corte de data adiciona algo, o
+      t0cutoff deveria superar o controle consistentemente.
+
+      **Resultado -- confirma que a melhora vem majoritariamente do seed
+      corrigido, nao do corte de data**: controle sozinho ja melhora
+      7/10 celulas vs. producao (mediana +12,47bps, media +19,38bps) --
+      quase identico ao t0cutoff (8/10, mediana +13,44bps, media
+      +28,74bps, `AG-416`). Comparando DIRETAMENTE controle vs. t0cutoff
+      (isolando so o efeito do corte, seed ja igual nos dois): 5 de 9
+      celulas computaveis favorecem NAO ter corte, 4 favorecem TER corte
+      -- sem direcao consistente, magnitudes grandes nos dois sentidos
+      (+50,95bps a -83,85bps). `SOLUSDT/R2` C0 sob controle produz 0
+      folds usaveis (100% degenerado) -- mesma fragilidade estrutural ja
+      documentada (n=1 no canonico).
+    severity: "media -- resolve definitivamente a pergunta causal original do item 12, mas o achado e um NAO-achado: o corte de data por si so nao tem efeito consistente detectavel"
+    layer: "models (HPO/walk-forward) -- INSUMO pra decisao, nenhum hiperparametro de producao trocado por este achado"
+    consequence: >
+      Item 12 do roadmap "Caso 0/20" FECHADO com resposta causal limpa:
+      a melhora observada em AG-411/AG-416 e majoritariamente (senao
+      inteiramente) efeito colateral da correcao do bug de seed
+      compartilhado (AG-399), nao do corte de data em si -- o corte de
+      data, isolado, nao mostra direcao consistente. Nao ha base pra
+      promover os hiperparametros de nenhuma das 2 campanhas pra
+      producao com base neste teste -- ambas sao buscas de 150 trials
+      sobre um espaco ja conhecido como instavel/sensivel a seed
+      (R11/AG-410), a melhora sobre o canonico bugado (AG-399) nao e
+      evidencia de generalizacao real. Decisao de re-promover hiperparametro
+      de producao (corrigindo pelo menos o bug do seed) fica com o
+      Manager, fora do escopo desta auditoria.
+    resolved_by_commit: null
+    resolution: "medido -- fecha item 12 do Exhibit VIII com resposta causal definitiva (nao-achado sobre t0_end especificamente)."
+    status: "concluido -- item 12 do roadmap 'Caso 0/20' fechado. Ultimo item pendente do Exhibit VIII."
+
   - id: AG-416
     date: "2026-09-01"
     file: "scripts/run_t0_cutoff_full_campaign.py; scripts/compare_t0_cutoff_full_campaign.py; experiments/t0_cutoff_full_campaign_results.json; experiments/alpha_walk_forward_*_t0cutoff.json"
