@@ -228,6 +228,21 @@ def _validate_predictions_columns(predictions: pl.DataFrame, fn_name: str) -> No
         )
 
 
+def _validate_predictions_columns_full_population(predictions: pl.DataFrame, fn_name: str) -> None:
+    """AG-394 — colunas exigidas por `compute_score_quality_full_
+    population`: diferente de `_validate_predictions_columns`, não exige
+    `side_hat`/`confidence` (construídos sinteticamente aqui a partir de
+    `p_long`/`p_short`, que existem por barra independente de qual lado
+    o modelo decidiu operar)."""
+    required_pred = ("t0", "is_oof", "fold_id", "p_long", "p_short")
+    ausentes_pred = tuple(c for c in required_pred if c not in predictions.columns)
+    if ausentes_pred:
+        raise ValueError(
+            f"{fn_name}: predictions sem {ausentes_pred} -- "
+            f"colunas disponíveis: {sorted(predictions.columns)}"
+        )
+
+
 def _validate_labels_columns(labels: pl.DataFrame, fn_name: str) -> None:
     required_labels = ("t0", "side", _BARRIER_HIT_COL, _RET_NET_COL)
     ausentes_labels = tuple(c for c in required_labels if c not in labels.columns)
@@ -357,6 +372,137 @@ def compute_score_quality(
             roc_auc=result.roc_auc,
             spearman_ic_pooled=result.spearman_ic_pooled,
             ic_ir=result.ic_ir,
+        )
+
+    return tuple(results)
+
+
+def _join_full_population_to_labels(
+    predictions: pl.DataFrame, labels_small: pl.DataFrame, side_value: int
+) -> pl.DataFrame:
+    """AG-394 — mesmo núcleo de `_join_oof_predictions_to_labels`, mas SEM
+    o filtro `side_hat == side_value`: junta TODA barra de teste
+    (`is_oof`), não só as que o modelo decidiu operar (`confidence > tau`
+    E venceu a competição long-vs-short, `alpha.py:625-629`). Usa
+    `p_long`/`p_short` — o score calibrado CONTÍNUO, sempre presente por
+    barra (`alpha.py:2304-2305`) — em vez de `confidence`, que já colapsa
+    pro lado vencedor via `np.maximum(p_long, p_short)` (`alpha.py:2224`)
+    e por isso não existe fora da população selecionada.
+
+    `barrier_hit != NOFILL` continua descartado — precisa de outcome
+    realizado pra existir `y_true`, mesmo requisito de `_join_oof_
+    predictions_to_labels`. Resultado: mesma pergunta estatística
+    (`ret_net > 0` como rótulo), população MAIOR e sem o corte por
+    `tau`/competição de lado — mede poder discriminativo POPULACIONAL,
+    não informação marginal dentro da cauda já selecionada (ver docstring
+    do módulo e `docs/adendo_angulos_7_8_..._2026-08-31.md`)."""
+    score_col = "p_long" if side_value == 1 else "p_short"
+    preds_side = (
+        predictions.filter(pl.col("is_oof"))
+        .select(["t0", "fold_id", score_col])
+        .rename({score_col: _CONFIDENCE_COL})
+        .with_columns(
+            pl.col("t0").cast(_T0_DTYPE),
+            pl.lit(side_value, dtype=pl.Int8).alias("side_hat"),
+        )
+    )
+    return (
+        preds_side.join(
+            labels_small, left_on=["t0", "side_hat"], right_on=["t0", "side"], how="inner"
+        )
+        .filter(pl.col(_BARRIER_HIT_COL).cast(pl.Utf8) != _NOFILL)
+        .sort([_CONFIDENCE_COL, "t0"])
+    )
+
+
+def compute_score_quality_full_population(
+    predictions: pl.DataFrame, labels: pl.DataFrame
+) -> tuple[ScoreQualityResult, ...]:
+    """AG-394 (auditoria adversarial externa, prova D1;
+    docs/prompts/REFUTACAO_CONSOLIDADA_0de20_20260831.md) — MESMA forma
+    de `compute_score_quality`, população DIFERENTE: aqui é toda barra de
+    teste com outcome realizado, não só as que cruzaram `tau` e venceram
+    a competição long-vs-short. `compute_score_quality` mede informação
+    marginal residual DENTRO da cauda que o modelo já selecionou (útil
+    pra saber se o corte foi bem colocado); esta função mede poder
+    discriminativo do score sobre a população de teste inteira (a
+    pergunta que o gate Model da ADR-008 tentava responder e, por medir
+    a população errada, não respondia — ver `AG-394`).
+
+    As duas funções NUNCA devem ser confundidas por nome: mantidas
+    deliberadamente com prefixos distintos (`compute_score_quality` vs
+    `compute_score_quality_full_population`) e campos de report distintos
+    (`score_quality_by_side` vs `score_quality_full_population_by_side`
+    em `WalkForwardFoldMetrics`), não uma flag booleana no mesmo
+    caminho — a diferença é a PERGUNTA respondida, não uma variação de
+    implementação da mesma pergunta."""
+    _validate_predictions_columns_full_population(
+        predictions, "compute_score_quality_full_population"
+    )
+    if predictions.height == 0:
+        return ()
+    _validate_labels_columns(labels, "compute_score_quality_full_population")
+
+    labels_small = labels.select(["t0", "side", _BARRIER_HIT_COL, _RET_NET_COL]).with_columns(
+        pl.col("t0").cast(_T0_DTYPE)
+    )
+
+    results: list[ScoreQualityResult] = []
+    for side_value, side_label in _SIDE_LABEL_BY_HAT.items():
+        joined = _join_full_population_to_labels(predictions, labels_small, side_value)
+
+        if joined.height == 0:
+            logger.warning(
+                "analysis.score_quality.full_population_sem_trades_no_lado", side=side_label
+            )
+            continue
+
+        ret_net = joined[_RET_NET_COL].to_numpy().astype(np.float64)
+        confidence = joined[_CONFIDENCE_COL].to_numpy().astype(np.float64)
+        y_true = (ret_net > 0.0).astype(np.int64)
+
+        auc, pr_auc, ll, brier = _classification_metrics(y_true, confidence)
+        pearson_ic = _pearson_ic(confidence, ret_net)
+        spearman_pooled = _spearman_ic(confidence, ret_net)
+        q_spread = _q10_minus_q1_bps(confidence, ret_net)
+
+        fold_ics: list[float] = []
+        for fold_id in sorted(joined["fold_id"].unique().to_list()):
+            sub = joined.filter(pl.col("fold_id") == fold_id)
+            ic = _spearman_ic(
+                sub[_CONFIDENCE_COL].to_numpy().astype(np.float64),
+                sub[_RET_NET_COL].to_numpy().astype(np.float64),
+            )
+            if not np.isnan(ic):
+                fold_ics.append(ic)
+
+        ic_mean, ic_median, ic_std, ic_ir, pct_positive, ic_tstat = _ic_dispersion_stats(fold_ics)
+
+        result = ScoreQualityResult(
+            side=side_label,
+            n_trades=joined.height,
+            n_folds_com_ic=len(fold_ics),
+            roc_auc=auc,
+            pr_auc=pr_auc,
+            log_loss=ll,
+            brier_score=brier,
+            pearson_ic=pearson_ic,
+            spearman_ic_pooled=spearman_pooled,
+            spearman_ic_mean_por_fold=ic_mean,
+            spearman_ic_median_por_fold=ic_median,
+            spearman_ic_std_por_fold=ic_std,
+            ic_ir=ic_ir,
+            pct_ic_positive=pct_positive,
+            ic_tstat=ic_tstat,
+            q10_minus_q1_bps=q_spread,
+        )
+        results.append(result)
+        logger.info(
+            "analysis.score_quality.full_population_computed",
+            side=side_label,
+            n_trades=result.n_trades,
+            roc_auc=result.roc_auc,
+            spearman_ic_pooled=result.spearman_ic_pooled,
         )
 
     return tuple(results)

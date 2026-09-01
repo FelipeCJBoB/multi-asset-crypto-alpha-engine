@@ -239,6 +239,22 @@ class WalkForwardFoldMetrics:
     win_rate: float
     n_signals: int
     n_filled_trades: int
+    # AG-395 -- `tau` é fixado in-fold sobre o treino do lado (`alpha.
+    # SideModelResult.tau`, já existente, nunca escolhido por métrica OOS
+    # -- ver alpha.py:29-35). Antes calculado e descartado neste módulo
+    # (achado de auditoria adversarial externa, docs/prompts/
+    # REFUTACAO_CONSOLIDADA_0de20_20260831.md achado N6/roadmap ação 1) --
+    # persistido aqui pra permitir medir o gap entre a taxa de sinal
+    # ORÇADA (`target_signal_rate`, constante) e a REALIZADA por fold sem
+    # precisar re-rodar a campanha. `NaN` quando o fold é degenerado por 0
+    # barras de teste válidas (run_fold nunca chamado, nenhum tau existe
+    # pra reportar).
+    tau_long: float
+    tau_short: float
+    # `n_signals / n_test_bars` -- taxa de sinal REALIZADA no teste deste
+    # fold, pra comparar direto contra `target_signal_rate` (AG-395). NaN
+    # se `n_test_bars == 0` (mesmo caso degenerado acima).
+    signal_rate_realized: float
     # População REAL de treino por lado, pós-filtro (`ds.side_subset`,
     # R2/warmup/NOFILL já aplicados) -- `alpha.FoldResult.n_train_long`/
     # `n_train_short`, calculados por `run_fold` e antes DESCARTADOS
@@ -250,8 +266,17 @@ class WalkForwardFoldMetrics:
     n_train_short: int
     # 1 entrada por lado com trade válido (mesmo contrato de
     # `score_quality.compute_score_quality`) -- lado sem trade fica
-    # ausente do dict, não aparece com `NaN`.
+    # ausente do dict, não aparece com `NaN`. Mede informação marginal
+    # DENTRO da cauda que o modelo já selecionou (confidence>tau E venceu
+    # a competição de lado) -- não poder discriminativo populacional, ver
+    # `score_quality_full_population_by_side` abaixo (AG-394).
     score_quality_by_side: dict[str, dict[str, Any]]
+    # AG-394 (auditoria adversarial externa, prova D1) -- MESMA forma,
+    # população DIFERENTE: toda barra de teste com outcome realizado, sem
+    # o filtro por `tau`/competição de lado (`score_quality.
+    # compute_score_quality_full_population`). As duas colunas nunca
+    # devem ser lidas como a mesma pergunta -- ver docstring da função.
+    score_quality_full_population_by_side: dict[str, dict[str, Any]]
     # ADR-008 Fase 5 (stability matrix, eixo "decile returns") -- mesmo
     # contrato de ausência: lado com <10 trades fica fora do dict.
     decile_profile_by_side: dict[str, dict[str, Any]]
@@ -386,9 +411,13 @@ def run_walk_forward_for_combo(
                     win_rate=float("nan"),
                     n_signals=0,
                     n_filled_trades=0,
+                    tau_long=float("nan"),
+                    tau_short=float("nan"),
+                    signal_rate_realized=float("nan"),
                     n_train_long=0,
                     n_train_short=0,
                     score_quality_by_side={},
+                    score_quality_full_population_by_side={},
                     decile_profile_by_side={},
                     # `run_fold` nunca chamado -- nenhum `SideModelResult`
                     # existe pra este fold, gain/SHAP ficam vazios
@@ -436,6 +465,14 @@ def run_walk_forward_for_combo(
         path_result = by_path.get(cpcv_split.path_id)
         sq = score_quality.compute_score_quality(fold_result.predictions, mf_data)
         sq_by_side = {r.side: asdict(r) for r in sq}
+        # AG-394 -- mesma forma, população completa de teste (sem o
+        # filtro por tau/competição de lado que `compute_score_quality`
+        # aplica). Métrica NOVA, nome distinto por design -- ver
+        # docstring de `compute_score_quality_full_population`.
+        sq_full = score_quality.compute_score_quality_full_population(
+            fold_result.predictions, mf_data
+        )
+        sq_full_by_side = {r.side: asdict(r) for r in sq_full}
         # ADR-008 Fase 5 -- eixos "decile returns" (mesma população de
         # `sq`, join compartilhado por baixo) e "feature gain" (já
         # calculado por `fit_side_model`, zero custo adicional aqui).
@@ -470,6 +507,7 @@ def run_walk_forward_for_combo(
         train_start_iso, train_end_iso, test_start_iso, test_end_iso = _fold_boundaries_iso(
             wf_split
         )
+        n_signals_fold = path_result.n_signals if path_result else 0
         fold_metrics.append(
             WalkForwardFoldMetrics(
                 fold_id=wf_split.fold_id,
@@ -486,11 +524,19 @@ def run_walk_forward_for_combo(
                     path_result.mean_trade_ret * _BPS_PER_UNIT if path_result else float("nan")
                 ),
                 win_rate=path_result.win_rate if path_result else float("nan"),
-                n_signals=path_result.n_signals if path_result else 0,
+                n_signals=n_signals_fold,
                 n_filled_trades=n_filled_trades,
+                tau_long=fold_result.long_result.tau,
+                tau_short=fold_result.short_result.tau,
+                signal_rate_realized=(
+                    n_signals_fold / fold_result.n_test_bars  # noqa: unguarded-ratio -- guardado pelo ternario: só divide quando n_test_bars>0
+                    if fold_result.n_test_bars > 0
+                    else float("nan")
+                ),
                 n_train_long=fold_result.n_train_long,
                 n_train_short=fold_result.n_train_short,
                 score_quality_by_side=sq_by_side,
+                score_quality_full_population_by_side=sq_full_by_side,
                 decile_profile_by_side=decile_by_side,
                 gain_by_column_by_side=gain_by_side,
                 shap_mean_abs_by_side=shap_by_side,

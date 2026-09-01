@@ -26161,6 +26161,288 @@ entries:
       um bug de calibracao que pode reincidir em combos futuros com
       populacao de treino minuscula por lado).
 
+  - id: AG-394
+    date: "2026-08-31"
+    file: "src/analysis/walk_forward_gates.py; src/models/score_quality.py"
+    related_file: "src/models/alpha.py::decide_side (:625-629); AG-391; AG-393; docs/AUDITORIA_EXTERNA_run_canonico_e_adr008_fases_0-8_2026-08-31.md; docs/prompts/REFUTACAO_CONSOLIDADA_0de20_20260831.md"
+    found_by: "Auditoria adversarial externa (docs/prompts/REFUTACAO_CONSOLIDADA_0de20_20260831.md, ~50 perguntas pre-registradas respondidas com citacao arquivo:linha, prova D1) -- mecanismo reverificado nesta sessao direto contra o codigo real por Claude antes do registro (alpha.py:625-629 + score_quality.py::_join_oof_predictions_to_labels)."
+    gap: >
+      O AUC/IC que o gate Model da ADR-008 (AG-391) usa como criterio de
+      promocao nunca foi medido sobre a populacao de teste inteira --
+      `compute_score_quality` filtra por `side_hat == side_value`
+      (`score_quality.py`), e `side_hat` so existe onde `confidence > tau`
+      **e** venceu a competicao long-vs-short (`alpha.py:625-629`,
+      `is_long = (p_long > tau_long) & (p_long > p_short)`). E restricao
+      de amplitude classica (range restriction): medir AUC dentro de um
+      subconjunto ja selecionado pelo proprio score comprime o numero
+      rumo a 0,5 mesmo quando o AUC POPULACIONAL e real. Simulacao
+      binormal (4M obs., taxa-base 0,35, `target_signal_rate=0,0189`) do
+      documento externo: AUC populacional 0,55 aparece medido como 0,516;
+      0,60 aparece como 0,529; 0,80 aparece como 0,598.
+
+      Invertendo contra o erro-padrao entre-fold real (`SE(AUC|H0)`
+      medido em 0,13-0,19 na Secao 10 da ADR-008): a barra mais favoravel
+      das 20 linhas (`n=8` folds) exige AUC POPULACIONAL >=0,82 pra
+      passar o teste-t com significancia real; 15 das 20 linhas exigem
+      >=0,95 ou sao matematicamente impassaveis (`n<=2`). **O resultado
+      "0/20" do gate Model estava determinado pelo desenho do
+      instrumento antes de qualquer dado real entrar no pipeline** --
+      independente da qualidade do modelo.
+    resolved_by_commit: null
+    status: >
+      ABERTO -- mecanismo (o filtro por `side_hat`) confirmado nesta
+      sessao direto no codigo, nao so na citacao do documento externo.
+      A magnitude exata (qual e o AUC populacional real dos 5
+      candidatos) nao foi medida -- exige medir AUC/IC sobre a populacao
+      de teste COMPLETA, mantendo o nome da metrica atual distinto da
+      nova (uma mede informacao marginal na cauda ja selecionada, a
+      outra poder discriminativo populacional -- as duas tem uso, nao
+      sao a mesma pergunta). Acao registrada no roadmap consolidado
+      (artefato "Caso 0/20", Exhibit VI, item 3, prioridade P0). Invalida
+      retroativamente a interpretacao (nao a aritmetica) do "AUC pooled
+      ~0,50" que a propria auditoria interna mediu depois da ADR-008
+      (Angulo 7, ver docs/adendo_angulos_7_8_..._2026-08-31.md Secao 1) --
+      esse teste, mais potente que o teste-t original, ainda mediu a
+      MESMA populacao restrita, entao nao descarta AUC populacional real
+      de ate ~0,55-0,58.
+
+  - id: AG-395
+    date: "2026-08-31"
+    file: "src/models/alpha.py"
+    related_file: "AG-394; experiments/alpha_walk_forward_SOLUSDT_R2.json; docs/prompts/REFUTACAO_CONSOLIDADA_0de20_20260831.md"
+    found_by: "Auditoria adversarial externa (prova D2) -- mecanismo reverificado nesta sessao direto contra o codigo real por Claude antes do registro (alpha.py:1362, :1683-1685)."
+    gap: >
+      `tau` (o limiar de confianca que decide se o modelo abre posicao) e
+      calculado como quantil de scores CALIBRADOS **in-sample**, nao
+      out-of-fit. `X_all = build_design_matrix(train_side_df, ...)`
+      (`alpha.py:1362`) usa `train_side_df` INTEIRO (fit+calib
+      combinados -- o mesmo dado em que o modelo GBM foi ajustado), nao
+      so o bloco `calib`. `raw_train_all = model.predict_proba(X_all)`
+      seguido de `tau = quantile(calibrated_train_all, 1 - target_signal_
+      rate)` (`alpha.py:1683-1685`) herda a inflacao de separacao que um
+      modelo naturalmente produz sobre o proprio dado de treino.
+
+      Scores in-sample sistematicamente mais separados => o quantil de
+      98,11% calculado sobre eles fica mais alto que o quantil
+      equivalente out-of-sample. No teste real, a taxa de sinal
+      realizada cai abaixo do alvo de 1,89% -- simulacao de deslocamento
+      in/out de 1 desvio-padrao produz taxa de sinal de ~0,10% (~2 sinais
+      em 2.200 barras, degenerado). `SOLUSDT/R2` tem 8 de 12 folds com
+      `n_signals=0` -- `P(8 folds simultaneamente com zero sinais sob
+      transferencia correta de 1,89%) ~= 1,5x10^-136`. Nenhuma
+      quantidade de "sinal fraco" produz esse numero: e um fato sobre o
+      LIMIAR, nao sobre o alpha do modelo.
+    resolved_by_commit: null
+    status: >
+      ABERTO -- mecanismo confirmado em codigo nesta sessao
+      (alpha.py:1362 + :1683-1685, bate exatamente com a citacao do
+      documento externo). Magnitude real do deslocamento in/out NAO
+      medida -- `compute_train_val_test_gap` (ADR-008 Fase 3) existe
+      pronta pra isso e nunca rodou contra os 5 candidatos (F3 do
+      documento externo). Acao registrada no roadmap consolidado ("Caso
+      0/20", Exhibit VI, itens 1-2, prioridade P0): (1) persistir
+      `confidence`/`tau`/`n_signals` por fold no artefato (hoje descartado
+      apos uso, `alpha.py:2316`), (2) recalcular `tau` sobre o bloco
+      `calib` puro (out-of-fit) e re-rodar a campanha. Se a taxa de sinal
+      realizada subir para perto de 1,89% sob a correcao, a Secao 5.5 da
+      ADR-008 e toda a Fase 4 (AG-391) precisam ser refeitas -- efeito
+      NAO decidido unilateralmente, aguarda re-execucao (Claude nao
+      executa .py, ver CLAUDE.md).
+
+      ADENDO 2026-08-31 (mesmo dia, sessao de implementacao do roadmap
+      "Caso 0/20") -- CORRECAO DE ESCOPO relevante pra Acao 2: `AG-210`
+      (2026-08-25, 6 dias antes da campanha ADR-007/008) ja tinha
+      diagnosticado MECANISMO ESSENCIALMENTE IGUAL ao D2 ("quantil e
+      tirado de calibrated_train_all, que inclui o conjunto de FIT, onde
+      o modelo e otimista") e ja tinha IMPLEMENTADO a infraestrutura de
+      correcao: `alpha.py::_resolve_tau_on_common_bars` +
+      `tau_policy=TAU_POLICY_TOTAL_COMMON_OOF` (resolve tau sobre
+      `unique_test_bars(train_bars)`, MESMA populacao/filtro que a
+      inferencia ve, excluindo explicitamente as barras vistas no fit de
+      qualquer um dos 2 lados -- vai ALEM do que a Acao 2 do roadmap
+      externo propunha, que so pedia trocar pro bloco `calib`). Nunca foi
+      promovido a default (`TAU_POLICY_LEGACY_PER_SIDE` continua
+      bit-exato) e a campanha walk-forward da ADR-008 usou o default --
+      **a correcao para D2 nao precisa de codigo novo, so re-rodar a
+      campanha com `tau_policy=alpha.TAU_POLICY_TOTAL_COMMON_OOF`**.
+
+      Evidencia PRE-EXISTENTE relevante, encontrada nesta sessao (NAO
+      nova, NAO gerada agora): `experiments/alpha_layer1_report_ag210_
+      tau_total.json` (tau_policy=TOTAL_COMMON_OOF) vs `experiments/
+      alpha_layer1_report_ag209_210_calib_tau.json` (variante baseada em
+      calib) -- ambos BTCUSDT, CPCV (nao walk-forward), datados de
+      2026-08-25, PRE-existem aos 5 candidatos do ADR-007/008. O `alpha_
+      sharpe` da comparacao b1_random_entry e -3,08 sob tau_total contra
+      -5,11 sob calib_tau -- pioro, nao melhorou, sob a variante mais
+      proxima da proposta externa. NAO decide D2 pros 5 candidatos reais
+      (simbolo unico, mecanismo de validacao diferente, hiperparametro
+      /vetor de features quase certamente diferente do promovido) -- mas
+      e evidencia prevía real que nao deve ser ignorada antes de gastar
+      orcamento numa campanha nova. AG-210 ja avisava: "VERIFICAR
+      PRIMEIRO... ler o output existente antes de reprocessar qualquer
+      coisa" -- este adendo e exatamente essa verificacao, feita agora.
+
+  - id: AG-396
+    date: "2026-08-31"
+    file: "experiments/alpha_walk_forward_BTCUSDT_R2.json; experiments/alpha_walk_forward_SOLUSDT_R2.json; experiments/alpha_walk_forward_SOLUSDT_R3.json; experiments/alpha_walk_forward_XRPUSDT_R2.json; experiments/alpha_walk_forward_XRPUSDT_R3.json"
+    related_file: "src/models/walk_forward.py::run_walk_forward_for_combo; tests/unit/test_models_walk_forward_driver.py; commit e812ab1"
+    found_by: "Auditoria adversarial externa (achado N6) -- reverificado nesta sessao: grep por 'seed' nos 5 artefatos = 0 ocorrencias; grep por chamadores reais de run_walk_forward_for_combo fora de tests/ e scripts/ = nenhum encontrado (so docstrings/comentarios em alpha.py e stability_matrix.py referenciam a funcao, nao chamam)."
+    gap: >
+      A campanha real que gerou os 5 artefatos de walk-forward (Fase 4 da
+      ADR-008, base de "0/20") nao e reproduzivel: (1) nenhum script
+      chamador de `run_walk_forward_for_combo` esta commitado fora de
+      `tests/unit/test_models_walk_forward_driver.py` -- a invocacao real
+      nao esta sob controle de versao; (2) os 5 JSONs nao gravam a seed
+      usada (0 ocorrencias de "seed" nos artefatos); (3) `rodar_gates_v2.
+      py` e `montar_model_cards_v2.py`, citados na mensagem do commit
+      `e812ab1` como scripts que re-rodaram os gates apos a correcao da
+      Secao 12 da ADR-008, nao existem no repositorio em nenhum commit do
+      historico -- a frase "re-rodado contra os 10 combo x variant" nao
+      tem artefato que a sustente.
+    resolved_by_commit: null
+    status: >
+      ABERTO -- os 3 itens confirmados nesta sessao por grep/leitura
+      direta, nao so aceitos da citacao externa. Um veredito de producao
+      sobre 5 candidatos hoje repousa numa execucao que nao pode ser
+      repetida nem auditada por terceiros. Acao registrada no roadmap
+      ("Caso 0/20", Exhibit VI, item 7, prioridade P1): commitar o script
+      chamador da campanha e gravar a seed no artefato.
+
+  - id: AG-397
+    date: "2026-08-31"
+    file: "config/constants.yaml::alpha_production_hyperparam_override; docs/ADR-007_medicao_producao_hiperparametro_optuna_15_combos_2026-08-30.md"
+    related_file: "AG-391; docs/AUDITORIA_EXTERNA_run_canonico_e_adr008_fases_0-8_2026-08-31.md Secao 1.4"
+    found_by: "Auditoria adversarial externa (achado N3/D2 da refutacao), nao reverificado linha a linha nesta sessao -- aceito pela tabela de hiperparametros citada (leaves/min_child_samples/n_estimators/lambda_l2 por combo x camada)."
+    gap: >
+      O glossario da ADR-008 afirma que a diferenca entre Camada1 (C1) e
+      Camada0 (C0) e "uma ablacao de restricao monotonica, nao de
+      conjunto de features". Os hiperparametros de C1 e C0 diferem em 4
+      dos 5 combos promovidos (nao so a flag de restricao monotonica) --
+      caso mais extremo, `XRPUSDT/R3`: C0 tem 7,5x mais arvores e ~95x
+      mais regularizacao L2 que C1. A diferenca de edge medida entre as
+      duas camadas nesse combo (+26,34bps C0 vs -34,54bps C1, 60bps de
+      gap) mede a distancia entre dois modelos independentemente
+      sintonizados sob uma seed, nao o valor isolado da restricao
+      monotonica.
+    resolved_by_commit: null
+    status: >
+      ABERTO, NAO REVERIFICADO EM CODIGO nesta sessao (aceito da tabela
+      do documento externo). Consequencia retroativa se confirmado:
+      `n_better` (C1>C0 em Sharpe por caminho CPCV) foi metade do gate
+      duplo do ADR-007 e base do criterio de promocao da Secao 1.4 --
+      se a metrica mede diferenca de hiperparametro em vez de ablacao,
+      a promocao original dos 5 candidatos perde parte da sua
+      justificativa medida. Verificacao pendente: comparar
+      `alpha_optuna_confirmation_*.json` de C1 e C0 por combo antes de
+      qualquer decisao.
+
+  - id: AG-398
+    date: "2026-08-31"
+    file: "src/models/hyperparams_optuna.py; src/models/dataset.py; src/validation/cpcv.py; src/models/walk_forward.py"
+    related_file: "AG-391; docs/AUDITORIA_EXTERNA_run_canonico_e_adr008_fases_0-8_2026-08-31.md Parte V (E1, H3)"
+    found_by: "Auditoria adversarial externa (achados E1, H3) -- aceito pela citacao (hyperparams_optuna.py:299-307, dataset.py:285-286, walk_forward.py:130), nao reverificado linha a linha nesta sessao."
+    gap: >
+      Dois vieses OTIMISTAS potenciais na campanha de walk-forward: (1) a
+      busca Optuna que escolheu os hiperparametros dos 5 candidatos usa
+      `t0_start=None, t0_end=None` -- sem corte de data -- e `cpcv.py`
+      nao tem nenhum corte por data (`t0_start|t0_end|cutoff_date`: 0
+      ocorrencias). Os anos 2022-2026, que o walk-forward trata como
+      fora-da-amostra, estavam DENTRO do dado que escolheu os
+      hiperparametros -- o walk-forward e enviesado a favor do HPO. (2)
+      `n_embargoed = 0` hardcoded em `walk_forward.py:130`, deliberado --
+      so ha purge por `t1`, sem embargo. Features com janela de 48-96
+      barras atravessam a fronteira treino/teste na borda de cada fold.
+    resolved_by_commit: null
+    status: >
+      ABERTO, NAO REVERIFICADO EM CODIGO nesta sessao. Se confirmado, o
+      efeito e SOMAR vies otimista aos numeros ja negativos da Secao 5.4
+      da ADR-008 -- os edges negativos reportados seriam um TETO, nao
+      uma estimativa neutra, o que reforca "0/20" na direcao (nao
+      enfraquece), mas invalida qualquer leitura de "quanto pior" sem
+      corrigir primeiro. Acao registrada no roadmap ("Caso 0/20", Exhibit
+      VI, item 12, prioridade P1): cortar a busca Optuna por data
+      (`t0_end` = inicio do walk-forward) e refazer a campanha -- mais
+      cara, por isso sequenciada depois do cluster P0.
+
+  - id: AG-399
+    date: "2026-08-31"
+    file: "src/models/hyperparams_optuna.py (sampler Optuna, arquivo/mecanismo exato nao identificado)"
+    related_file: "docs/AUDITORIA_EXTERNA_run_canonico_e_adr008_fases_0-8_2026-08-31.md achado N2; audit/n_lifetime.yaml"
+    found_by: "Auditoria adversarial externa (achado N2), o proprio documento marca como especulativo -- NAO verificado em codigo nem por mim nem pelo autor externo."
+    gap: >
+      Coincidencia numerica entre buscas Optuna de combos/camadas
+      diferentes: `learning_rate` identico ate a 16a casa significativa
+      entre `BTCUSDT/R2 C1` e `XRPUSDT/R3 C0` (diferenca relativa
+      3,6x10^-16); `min_child_samples=77` em 4 dos 10 vencedores
+      (`sweep_range=[10,100]`, P(>=4/10 em um valor especifico, sorteio
+      uniforme) ~= 2,9x10^-6). Compativel com o sampler TPE compartilhando
+      seed ou estado entre studies distintas, nao com 10 buscas
+      independentes -- mas a causa NAO foi verificada no codigo do
+      sampler.
+    resolved_by_commit: null
+    status: >
+      ABERTO -- A VERIFICAR, especulativo por design (o proprio autor
+      externo classifica como "achado de alta prioridade para
+      verificacao, nao como fato estabelecido"; nao reverificado nesta
+      sessao). Se confirmado, o impacto e retroativo e sistemico: `audit/
+      n_lifetime.yaml` conta trials como independentes para efeito de
+      correcao de multiplas comparacoes (DSR) -- trials correlacionados
+      contados como independentes inflam a confianca de QUALQUER
+      promocao ja feita no projeto sob esse orcamento, nao so os 5
+      candidatos desta ADR. Acao registrada no roadmap ("Caso 0/20",
+      Exhibit VI, item 6, prioridade P1): ler o codigo do sampler/config
+      do `optuna.create_study` e confirmar se seed/estado e
+      compartilhado entre studies.
+
+  - id: AG-400
+    date: "2026-08-31"
+    file: "src/analysis/walk_forward_gates.py::alpha_gate_passes"
+    related_file: "AG-391; docs/adendo_angulos_7_8_pooled_meta_analise_gate_model_alpha_2026-08-31.md; docs/AUDITORIA_EXTERNA_run_canonico_e_adr008_fases_0-8_2026-08-31.md achado N1"
+    found_by: "Auditoria adversarial externa (achado N1) + auditoria interna (Angulo 8, docs/adendo_angulos_7_8_..._2026-08-31.md) -- confirmado nesta sessao por leitura direta de walk_forward_gates.py::alpha_gate_passes (so `edge_bps_mean > min_edge_bps`, sem SE/teste)."
+    gap: >
+      Nenhum agregado da ADR-008 (Secoes 5, 7, 9) tem erro-padrao. O gate
+      Alpha decide por comparacao estrita de ponto estimado contra zero
+      (`alpha_gate_passes: edge_bps_mean > min_edge_bps`), sem `t`, sem
+      `p`, sem dispersao. O unico caso "passa" do painel inteiro
+      (`BTCUSDT/R2` Camada0, +1,348bps de media) tem mediana de
+      -1,739bps, t=0,35, p=0,371 (IC95% [-8,18; +10,88] segundo o
+      documento externo). Extensao propria desta sessao (Angulo 8 +
+      Exhibit V do "Caso 0/20"): recomputado para as 10 celulas
+      combo x camada -- 3 de 10 trocam de sinal entre media e mediana,
+      incluindo `BTCUSDT/R2` Camada1 (o UNICO combo com edge positivo
+      nas duas camadas na Secao 5.4 original): media +7,90bps, mediana
+      -0,20bps.
+    resolved_by_commit: null
+    status: >
+      ABERTO -- mecanismo confirmado em codigo nesta sessao
+      (walk_forward_gates.py::alpha_gate_passes). Extensao as 10 celulas
+      calculada e publicada em docs/adendo_angulos_7_8_..._2026-08-31.md
+      e no artefato "Caso 0/20" (Exhibit V) -- preenche a pendencia P1
+      que o proprio documento externo deixou aberta (so 1 de 10
+      agregados tinha sido transcrito). Acao registrada no roadmap
+      ("Caso 0/20", Exhibit VI, item 5, prioridade P1): erro-padrao em
+      todos os agregados, teste real no gate Alpha.
+
+  - id: AG-401
+    date: "2026-08-31"
+    file: "src/models/walk_forward.py"
+    related_file: "AG-391; src/models/backtest_lite.py; src/models/score_quality.py (correcao analoga ja aplicada la, commit e812ab1)"
+    found_by: "Auditoria adversarial externa (achado N4) -- confirmado nesta sessao por leitura direta: walk_forward.py, `n_filled_trades = path_result.n_filled_trades if path_result else 0` seguido de `degenerado = n_filled_trades < min_trades`, um valor por FOLD, nao por lado."
+    gap: >
+      O piso de trades que decide se um fold e "degenerado" (`walk_
+      forward.py:463-469`, aprox.) e aplicado ao fold INTEIRO (long+short
+      somados), nao por lado. Um fold com 10 trades pode ter 8 long e 2
+      short -- o lado short entra no agregado (AUC/IC/edge daquele lado)
+      com n=2, sem passar por nenhum piso proprio. E exatamente a mesma
+      classe de defeito que a Secao 12 da ADR-008 (AG-392) ja corrigiu em
+      `score_quality.py` (piso `n>=5` por lado) -- sobreviveu intacto no
+      gate de degeneracao de fold, um modulo irmao.
+    resolved_by_commit: null
+    status: >
+      ABERTO -- mecanismo confirmado em codigo nesta sessao. Acao
+      registrada no roadmap ("Caso 0/20", Exhibit VI, item 8, prioridade
+      P2): aplicar `min_trades` por LADO, nao por fold combinado.
+
   - id: AG-402
     date: "2026-08-31"
     file: "src/analysis/meta_fp_inventory.py::validate_null_calibration; tools/diagnostics/measure_meta_e0_null_calibration.py"
@@ -26201,3 +26483,101 @@ entries:
     resolved_by_commit: null
     resolution: null
     status: "aberto -- nao bloqueante pra fechar P0 (9/10 e evidencia forte de que o esquema funciona), mas bloqueante pra tratar a calibracao como UNIFORMEMENTE valida entre TODOS os pares de simbolo antes de rodar E0-vinculante de verdade. Proximo passo recomendado, nao decidido unilateralmente: (a) medir se o mesmo padrao aparece com um proxy alternativo pra XRPUSDT/R3 (ex. SOLUSDT em vez de BTCUSDT, historico mais proximo) -- se sumir, confirma a hipotese de assimetria de historico; (b) se persistir, aprofundar em persistencia/autocorrelacao do regime real medida (nao suposta)."
+
+  - id: AG-403
+    date: "2026-08-31"
+    file: "experiments/alpha_walk_forward_{symbol}_{resolution_id}_total_common_oof.json (5 arquivos novos, nao os canonicos); scripts/run_walk_forward_campaign.py"
+    related_file: "AG-391; AG-394; AG-395; AG-210; docs/prompts/REFUTACAO_CONSOLIDADA_0de20_20260831.md; docs/adendo_angulos_7_8_pooled_meta_analise_gate_model_alpha_2026-08-31.md"
+    numeracao: "AG-403."
+    found_by: "Claude, autorizacao explicita do Manager na sessao (2026-08-31, 'Manager autoriza voce executar uv e py, pode rodar') pra rodar a campanha real de walk-forward sob tau_policy=TAU_POLICY_TOTAL_COMMON_OOF (AG-210) nos 5 candidatos reais do ADR-007/008 -- primeira vez que essa politica roda sobre eles (a campanha original, canonica, usou o default TAU_POLICY_LEGACY_PER_SIDE)."
+    gap: >
+      Execucao real (nao simulacao) via `scripts/run_walk_forward_campaign.py`
+      (novo, fecha AG-396) dos 5 candidatos x 2 camadas sob a correcao de
+      `tau` ja implementada em `AG-210`/`_resolve_tau_on_common_bars`.
+      Resultado escrito em arquivos SEPARADOS (`_total_common_oof.json`),
+      nunca sobrescrevendo os artefatos canonicos que sustentam a ADR-008.
+
+      **Economia (edge_bps medio) muda de forma real e nao-trivial,
+      combo a combo:**
+
+      | Combo/camada | legacy_per_side | total_common_oof |
+      |---|---:|---:|
+      | BTCUSDT/R2 C1 | +7,90bps | **-2,26bps** |
+      | BTCUSDT/R2 C0 | +1,35bps | **-2,18bps** |
+      | SOLUSDT/R2 C1/C0 | -57,66bps | **-0,05bps** |
+      | SOLUSDT/R3 C1 | -17,00bps | **+12,84bps** |
+      | SOLUSDT/R3 C0 | -32,82bps | -17,25bps |
+      | XRPUSDT/R2 C1 | -28,25bps | -8,69bps |
+      | XRPUSDT/R2 C0 | -17,55bps | **+2,64bps** |
+      | XRPUSDT/R3 C1 | -34,54bps | **+33,51bps** |
+      | XRPUSDT/R3 C0 | +26,34bps | +8,41bps |
+
+      Edge medio de portfolio (Camada1, 5 combos): de -25,91bps
+      (legacy) pra +7,07bps (total_common_oof) -- reversao de sinal em
+      nivel agregado. `BTCUSDT/R2` (unico combo positivo nas 2 camadas
+      sob legacy, a melhor evidencia a favor de qualquer candidato) vira
+      negativo nas 2. 3 dos 5 combos melhoram substancialmente ou
+      invertem pra positivo; 1 (`BTCUSDT/R2`) inverte pra negativo.
+
+      **`n_folds_usados` melhora mas segue majoritariamente abaixo do
+      piso de 10** (`BTCUSDT/R2` C1=14 e `SOLUSDT/R3` C0=10 sao os unicos
+      que atingem/superam -- os outros 8 continuam abaixo).
+
+      **Rodando os 3 gates reais (`walk_forward_gates.evaluate_gates`,
+      thresholds travados da ADR-008) contra os 5 artefatos novos:
+      0/20 continua 0/20** -- o gate Model reprova em toda celula (AUC
+      restrito por lado nunca significativo, mesmo mecanismo de `AG-394`,
+      que `total_common_oof` sozinho nao corrige -- D1 e D2 sao defeitos
+      INDEPENDENTES). Duas celulas chegam perto do limiar
+      (`BTCUSDT/R2` short, `p=0,0503` C1 e `p=0,0511` C0 -- ambas
+      tecnicamente reprovam a 0,05).
+
+      **Combinando D1+D2 (AUC sobre populacao COMPLETA, `score_quality_
+      full_population_by_side` de `AG-394`, MAS sob o `tau` corrigido
+      destes artefatos novos), pooled por variancia inversa (mesmo
+      metodo do adendo Angulos 7-8) em nivel de portfolio: AUC pooled
+      fica estatisticamente significante nas 4 combinacoes camada x lado
+      (Camada1 long: AUC=0,5076, n=62.618, p=0,0005; Camada1 short:
+      AUC=0,5096, n=62.617, p<0,0001; Camada0 long: AUC=0,5081, p=0,0003;
+      Camada0 short: AUC=0,5075, p=0,0007)** -- primeira vez nesta
+      investigacao inteira (auditoria interna Angulos 1-8, auditoria
+      externa Partes I-IX) que um teste de poder discriminativo cruza
+      p<0,05 sob qualquer configuracao testada.
+    severity: "alta -- muda a leitura de 'sem evidencia de sinal' pra 'sinal populacional fraco mas estatisticamente presente, ainda sem se traduzir em edge operacional que passe os gates'; NAO decide a questao de producao"
+    layer: "models (tau_policy, ja existente) / analysis (score_quality_full_population, AG-394) -- primeiro teste real combinando as duas correcoes"
+    consequence: >
+      NAO refuta "0/20" no sentido operacional -- os 3 gates codificados
+      continuam reprovando as 20 celulas mesmo sob o tau corrigido
+      (o gate Model usa a populacao RESTRITA, nao a completa -- corrigir
+      SO o tau, sem tambem trocar a populacao do gate Model, nao basta).
+      MAS a populacao AUC=0,507-0,510 pooled com n~62 mil e p<0,001 e um
+      resultado que nenhum dos 8 angulos anteriores (internos ou
+      externos) tinha produzido -- todos ficaram em "indistinguivel de
+      0,50" ou "nao decide". Ressalva CRITICA, nao resolvida: o pooling
+      trata cada barra do teste como observacao independente, mas barras
+      adjacentes sao fortemente autocorrelacionadas (mesmo regime de
+      volatilidade, rotulos de barreira tripla se sobrepondo no tempo) --
+      o `n` efetivo real e quase certamente MUITO menor que 62 mil, e o
+      p-valor acima esta provavelmente inflado (anticonservador) na MESMA
+      direcao que `AG-392` item 1 ja preocupava (i.i.d. violado), so que
+      aqui no eixo intra-fold/bar-a-bar, mais severo que o eixo entre-fold
+      que `AG-392` mediu. NAO deve ser lido como "0,507 e um numero
+      confiavel" sem essa correcao.
+    resolved_by_commit: null
+    status: >
+      ABERTO -- achado real, gerado nesta sessao com autorizacao explicita
+      do Manager pra executar `uv run`/scripts `.py`. Proximo passo
+      concreto, nao decidido unilateralmente: (a) reajustar o gate Model
+      pra usar `score_quality_full_population_by_side` em vez da metrica
+      restrita (Acao 3 do roadmap "Caso 0/20" ja implementa o campo,
+      falta religar o gate); (b) testar a significancia do AUC populacional
+      pooled com ESS/uniqueness real (`src.labels.weights.compute_
+      concurrency_and_uniqueness`, ja existe pra outro proposito) ou
+      bootstrap em bloco, nao a aproximacao i.i.d. usada aqui; (c) decidir
+      se `tau_policy=total_common_oof` deveria virar o default de producao
+      dado que muda a economia de forma nao-trivial (ainda ASSUMED-nao-
+      decidido, ver `alpha.py:29-35`). **Nota de higiene de sessao:** esta
+      entrada foi registrada apos detectar `AG-402` (Meta P0/E0, sessao
+      paralela concorrente no mesmo arquivo, commits `df5e9cf`/`288fbc1`)
+      ja ocupando o proximo ID -- numerada AG-403 pra evitar colisao,
+      nenhum conteudo de outra sessao foi tocado ou sobrescrito."

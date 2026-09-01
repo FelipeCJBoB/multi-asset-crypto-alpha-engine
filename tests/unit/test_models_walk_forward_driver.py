@@ -133,11 +133,20 @@ class _FakeSideModelResult:
     """Duck-type mínimo pro contrato que `run_walk_forward_for_combo` lê
     de `SideModelResult` (`.gain_by_column_raw` da Fase 5, `.model` da
     Fase 7 -- precisa ser um booster REAL pra `shap.TreeExplainer`
-    funcionar, não dá pra fingir)."""
+    funcionar, não dá pra fingir; `.tau` -- AG-395, persistido por fold
+    no artefato -- default arbitrário, testes que precisam de um valor
+    específico sobrescrevem depois de construído)."""
 
-    def __init__(self, gain_by_column_raw: dict[str, float], model: lgb.LGBMClassifier) -> None:
+    def __init__(
+        self,
+        gain_by_column_raw: dict[str, float],
+        model: lgb.LGBMClassifier,
+        *,
+        tau: float = 0.5,  # noqa: magic-number -- default de teste, sem significado de produção
+    ) -> None:
         self.gain_by_column_raw = gain_by_column_raw
         self.model = model
+        self.tau = tau
 
 
 class _FakeFoldResult:
@@ -201,13 +210,25 @@ def _make_fake_run_fold(
         train_bars = mf_data_arg[split.train_idx]
         n_train_long = train_bars.filter(pl.col("side") == 1).height
         n_train_short = train_bars.filter(pl.col("side") == -1).height
+        confidence = pl.Series(np.linspace(0.5, 0.9, n) if n else [], dtype=pl.Float64)  # noqa: magic-number
         predictions = pl.DataFrame(
             {
                 "t0": test_bars["t0"],
                 "side_hat": pl.Series([1] * n, dtype=pl.Int8),
                 "is_oof": pl.Series([True] * n, dtype=pl.Boolean),
                 "fold_id": pl.Series([split.split_id] * n, dtype=pl.Int16),
-                "confidence": pl.Series(np.linspace(0.5, 0.9, n) if n else [], dtype=pl.Float64),  # noqa: magic-number
+                "confidence": confidence,
+                # AG-394 -- `p_long`/`p_short` (score contínuo por lado,
+                # sempre presente, mesmo schema real de `alpha.py:2304-
+                # 2305`) exigido por `score_quality.compute_score_
+                # quality_full_population`. Fake sempre decide `side_hat=
+                # 1` (long) -- `p_short` só precisa ser < `p_long` pra
+                # manter esse contrato, valor exato irrelevante (este
+                # arquivo testa orquestração, não estatística).
+                "p_long": confidence,
+                "p_short": pl.Series(
+                    (1.0 - np.linspace(0.5, 0.9, n)) if n else [], dtype=pl.Float64
+                ),
             }
         )
         return _FakeFoldResult(
@@ -388,6 +409,99 @@ def test_run_walk_forward_popula_gain_e_decile_por_lado_de_fold_treinado(
     assert "long" in fold0.decile_profile_by_side
     assert "short" not in fold0.decile_profile_by_side
     assert len(fold0.decile_profile_by_side["long"]["buckets"]) == 10  # noqa: magic-number
+
+
+def test_run_walk_forward_persiste_tau_e_taxa_de_sinal_por_fold(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """AG-395 -- `tau_long`/`tau_short` (antes calculados por `alpha.
+    run_fold` e descartados aqui) e `signal_rate_realized` (`n_signals/
+    n_test_bars`) agora persistidos por fold. `_FakeSideModelResult` não
+    tem `.tau` -- monkeypatch adiciona pra este teste especificamente,
+    sem exigir mudar o duck-type nos outros testes deste arquivo."""
+    mf_data = _synthetic_mf_data()
+    fake = _make_fake_run_fold()
+
+    def _fake_com_tau(*args: Any, **kwargs: Any) -> _FakeFoldResult:
+        result = fake(*args, **kwargs)
+        result.long_result.tau = 0.62  # noqa: magic-number -- valor arbitrário, só testa passthrough
+        result.short_result.tau = 0.58  # noqa: magic-number
+        return result
+
+    monkeypatch.setattr(alpha, "run_fold", _fake_com_tau)
+
+    result = wf.run_walk_forward_for_combo(mf_data, **_base_kwargs())
+
+    fold0 = next(fm for fm in result.fold_results if fm.fold_id == 0)
+    assert fold0.degenerado is False
+    assert fold0.tau_long == pytest.approx(0.62)  # noqa: magic-number
+    assert fold0.tau_short == pytest.approx(0.58)  # noqa: magic-number
+    assert fold0.signal_rate_realized == pytest.approx(
+        fold0.n_signals / fold0.n_test_bars
+    )
+    assert 0.0 < fold0.signal_rate_realized <= 1.0
+
+
+def test_run_walk_forward_fold_sem_barra_valida_tem_tau_nan(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Mesmo cenário de `test_run_walk_forward_pula_run_fold_quando_
+    teste_tem_zero_barras_validas` -- `run_fold` nunca chamado, nenhum
+    `SideModelResult` existe, `tau_long`/`tau_short`/`signal_rate_
+    realized` ficam `NaN` (honesto, não `0.0` inventado)."""
+    mf_data = _synthetic_mf_data()
+    primeiro_feature = T1_FEATURE_IDS[0]
+    from src.validation.volatility_walkforward import generate_anchored_walk_forward_splits
+
+    t0_ms_all = mf_data["t0"].dt.epoch(time_unit="ms").to_numpy().astype(np.int64)
+    unique_t0_ms_all = np.unique(t0_ms_all)
+    fold0_split = generate_anchored_walk_forward_splits(unique_t0_ms_all, initial_train_years=2)[0]
+    janela_nula_ini = datetime.fromtimestamp(
+        int(unique_t0_ms_all[fold0_split.test_start_idx]) / 1000, tz=UTC
+    )
+    janela_nula_fim = datetime.fromtimestamp(
+        int(unique_t0_ms_all[fold0_split.test_end_idx - 1]) / 1000, tz=UTC
+    ) + timedelta(seconds=1)
+    mf_data = mf_data.with_columns(
+        pl.when((pl.col("t0") >= janela_nula_ini) & (pl.col("t0") < janela_nula_fim))
+        .then(None)
+        .otherwise(pl.col(primeiro_feature))
+        .alias(primeiro_feature)
+    )
+    monkeypatch.setattr(alpha, "run_fold", _make_fake_run_fold())
+
+    result = wf.run_walk_forward_for_combo(mf_data, **_base_kwargs())
+
+    fold0 = next(fm for fm in result.fold_results if fm.fold_id == 0)
+    assert fold0.n_test_bars == 0
+    assert np.isnan(fold0.tau_long)
+    assert np.isnan(fold0.tau_short)
+    assert np.isnan(fold0.signal_rate_realized)
+    assert fold0.score_quality_full_population_by_side == {}
+
+
+def test_run_walk_forward_score_quality_full_population_cobre_os_2_lados(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """AG-394 -- diferente de `score_quality_by_side` (só "long", já que
+    o fake nunca sinaliza `side_hat=-1`), a métrica de população completa
+    usa `p_short` sobre TODA barra (não filtra por side_hat) -- os 2
+    lados aparecem, mesmo o que o modelo "nunca escolheu"."""
+    mf_data = _synthetic_mf_data()
+    monkeypatch.setattr(alpha, "run_fold", _make_fake_run_fold())
+
+    result = wf.run_walk_forward_for_combo(mf_data, **_base_kwargs())
+
+    fold0 = next(fm for fm in result.fold_results if fm.fold_id == 0)
+    assert set(fold0.score_quality_by_side.keys()) == {"long"}
+    assert set(fold0.score_quality_full_population_by_side.keys()) == {"long", "short"}
+    # população maior (sem o filtro side_hat==side_value): n_trades da
+    # métrica populacional >= n_trades da métrica restrita, no lado que
+    # as duas cobrem.
+    assert (
+        fold0.score_quality_full_population_by_side["long"]["n_trades"]
+        >= fold0.score_quality_by_side["long"]["n_trades"]
+    )
 
 
 def test_run_walk_forward_popula_shap_por_lado_de_fold_treinado(
