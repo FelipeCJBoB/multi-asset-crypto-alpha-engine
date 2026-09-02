@@ -4578,3 +4578,41 @@ entries:
     producao -- polars trata NaN>=2.0 como True (ordena NaN como "maior que
     tudo"), inflando a contagem inicial pra 1135/2040 antes de excluir NaN
     explicitamente. Ver audit/architecture_gaps_log.yaml::AG-424.
+- id_curto: caso0de20-item5-post-fill-drift-a11-2026-09-02
+  data: '2026-09-02'
+  fase: '"Caso 0/20" item 5 -- deslocamento de preco pos-fill (5min) condicionado
+    por decil de A11_true_range_pct, fill de entrada corrigido via agg_trades
+    (src.analysis.post_fill_drift, AG-425), proxy MEDIDO de selecao adversa'
+  symbol: BTCUSDT/R2, SOLUSDT/R2, SOLUSDT/R3, XRPUSDT/R2, XRPUSDT/R3
+  tf: dollar-bar R2/R3, Camada1 (principal) e Camada0 (baseline)
+  lado: long e short SEPARADOS (nunca pooled)
+  regime: nao segmentado
+  feature_ou_filtro: A11_true_range_pct, decil por rank dentro do lado, drift_bps
+    (mark price 5min apos fill corrigido via agg_trades vs. fill_price), teste-t
+    com piso n>=5
+  metrica_tipo: contagem de celulas (side x decil x combo) com |t_stat|>=2, comparada
+    ao esperado por acaso puro
+  metrica_valor: 'Camada1: 4 de 68 celulas significativas (5,88% vs 5% esperado,
+    z=0,33, p=0,74). Camada0: 4/59 (6,78%, z=0,63, p=0,53). Pooled: 8/127 (p=0,50)
+    -- sem excesso detectavel, ao contrario do achado difuso-mas-real de AG-424
+    (8,58% vs 5%, p=1,2e-13) pro census geral de ret_net. Achado direcional NAO
+    significativo: perfil pooled por decil (long, C1) mostra deriva negativa pequena
+    nos decis baixos (-3,25 a -0,72bps) e positiva crescente nos altos (+12,6 a
+    +33,6bps, decil10=+56,3bps) -- direcao OPOSTA da tese original da A11 (preveria
+    deriva negativa crescendo com o decil).'
+  n: 127
+  status: cinza
+  fonte_arquivo: 'experiments/alpha_walk_forward_post_fill_drift_{symbol}_{resolution}_{camada}.parquet
+    (10 artefatos)'
+  fonte_secao: src/analysis/post_fill_drift.py; scripts/measure_post_fill_drift_5_candidatos.py
+  nota: >
+    CINZA -- nao decide nada (p=0,50, ruido), mas fecha o item 5 do roadmap
+    com resultado real, nao especulacao. Verificacao previa evitou um erro
+    metodologico real: usar o t_entry nao corrigido (mark_1m) condicionado
+    por A11 confundiria com o vies de latencia sintetica ja documentado em
+    AG-221 (escala com volatilidade, mesma direcao de A11) -- corrigido via
+    simulate_fill_from_trades (AG-221-ADDENDUM, ja validado) antes de medir.
+    adverse_selection_bps continua ASSUMED -- sweep formal via Testnet
+    (Sprint 16) segue sendo o unico caminho pra medir de verdade; este item
+    era proxy historico, nao substituto. Ver
+    audit/architecture_gaps_log.yaml::AG-425.

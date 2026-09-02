@@ -27812,3 +27812,70 @@ entries:
     resolved_by_commit: null
     resolution: "aplicado -- feature_deciles_by_side em producao, testado (9 testes novos), 2 bugs reais corrigidos antes do numero final ser reportado."
     status: "concluido -- capacidade de medicao integrada ao pipeline. Achado real (8,58% vs 5% esperado, p=1,2e-13) documentado, decisao de engenharia (companion feature/monotone_constraints) explicitamente NAO tomada aqui -- exige olhar celula a celula, fora do escopo desta entrada."
+
+  - id: AG-425
+    date: "2026-09-02"
+    file: "src/analysis/post_fill_drift.py (novo); scripts/measure_post_fill_drift_5_candidatos.py (novo); experiments/alpha_walk_forward_post_fill_drift_*.parquet (10 artefatos)"
+    related_file: "src/labels/fill_model.py::simulate_fill_from_trades (reusado, AG-221-ADDENDUM); tests/unit/test_analysis_post_fill_drift.py; item 5 do roadmap desta sessao"
+    numeracao: "AG-425."
+    found_by: >-
+      Pedido do Manager (item 5 do roadmap): medir deslocamento de preco
+      pos-fill condicionado por decil de `A11_true_range_pct`, proxy
+      MEDIDO de selecao adversa ja que `adverse_selection_bps` e um
+      placeholder `ASSUMED` nunca medido. Antes de implementar, o Manager
+      perguntou "mark_1m nao foi dado como incorreto e substituido?" --
+      verificacao (nao assumida) contra `AG-221`/`AG-221-ADDENDUM` achou
+      que `mark_1m` continua correto pra avaliacao de BARREIRA
+      (`working_type=MARK_PRICE`, comportamento real do exchange), mas o
+      `t_entry` atual (fill de ENTRADA) carrega um vies de latencia
+      sintetica JA MEDIDO que ESCALA com volatilidade -- exatamente o
+      que `A11_true_range_pct` mede. Usar o `t_entry` nao corrigido
+      condicionado por `A11` confundiria o artefato ja documentado
+      (AG-221) com selecao adversa genuina.
+    gap: >
+      Nao existia capacidade de medir deslocamento de preco pos-fill
+      condicionado por feature, com fill de entrada CORRIGIDO (`agg_
+      trades`, nao `mark_1m`). `src.analysis.post_fill_drift` (novo)
+      reusa `simulate_fill_from_trades` (ja validado em AG-221-ADDENDUM,
+      +3,09bps medido numa amostra real) pra recalcular o instante/preco
+      de fill de cada trade REALIZADO (`barrier_hit != NOFILL` no
+      `labels.parquet` atual -- nao muda quais trades entram na amostra,
+      so corrige a precisao do instante de referencia), depois mede
+      `drift_bps` (sinal positivo = favoravel a posicao) no mark price
+      `horizon_minutes` depois, condicionado por decil de qualquer
+      feature (rank dentro do lado, nunca pooled long+short -- mesma
+      disciplina de `feature_deciles_by_side`/AG-424). Mesmo piso
+      `n>=5` no teste-t (`_MIN_OBS_T_STAT`, duplicado por design do
+      modulo irmao, nao compartilhado).
+    severity: "media -- nova capacidade de medicao pos-hoc, integrada como script de producao (le artefatos ja regenerados, nao retreina)"
+    layer: "analysis (modulo novo) + scripts (novo script de medicao, reusa infraestrutura AG-424)"
+    consequence: >
+      Medido nos 5 candidatos, `A11_true_range_pct`, janela de 5min
+      pos-fill (`_HORIZON_MINUTES`, dimensionamento de janela de medicao
+      exploratoria, nao constante de dominio economico): **Camada1: 4 de
+      68 celulas com t_stat computavel saem significativas (5,88% vs 5%
+      esperado, z=0,33, p=0,74). Camada0: 4/59 (6,78%, z=0,63, p=0,53).
+      Pooled: 8/127 (z=0,67, p=0,50).** Nenhum excesso detectavel --
+      totalmente consistente com ruido, ao contrario do achado difuso-
+      mas-real de AG-424 (8,58% vs 5%, p=1,2e-13) pro census geral de
+      `ret_net`. Ou seja: a estrutura real que AG-424 achou nao parece
+      vir de selecao adversa imediata (5min) condicionada por impacto --
+      se existe, esta em outro mecanismo (horizonte mais longo, outra
+      feature, ou o proprio `ret_net` completo do trade em vez do
+      deslocamento de curto prazo).
+
+      **Achado direcional, NAO significativo mas digno de registro**: o
+      perfil pooled por decil (long, Camada1) mostra deriva NEGATIVA
+      pequena nos decis baixos de A11 (-3,25 a -0,72bps, decis 1-3) e
+      deriva POSITIVA crescente nos decis altos (+12,6 a +33,6bps, decis
+      4-8; decil 10=+56,3bps; decil 9=-49,2bps, outlier isolado) -- **na
+      direcao OPOSTA da tese original da propria A11** ("quem fornece
+      liquidez em alto impacto sofre selecao adversa" preveria deriva
+      NEGATIVA crescendo com o decil, nao positiva). Sob p=0,50 pooled,
+      isso e consistente com ruido -- mas se for real, contraria a tese
+      qualitativa, nao so a magnitude. NAO decide nada sozinho -- fica
+      registrado pra quando houver mais trades realizados (mais folds/
+      mais historico) permitirem reavaliar com poder estatistico maior.
+    resolved_by_commit: null
+    resolution: "aplicado -- capacidade de medicao integrada, testada (11 testes novos), rodada nos 5 candidatos. Achado: sem excesso detectavel (p=0,50 pooled), direcao pontual OPOSTA a tese original, nenhum dos dois suficientemente forte pra decisao."
+    status: "concluido -- item 5 do roadmap fechado com resultado real (nao positivo, nao decisivo). adverse_selection_bps continua ASSUMED, sweep formal via Testnet (Sprint 16) segue sendo o unico caminho pra medir de verdade -- este item era proxy historico, nao substituto."
