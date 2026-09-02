@@ -27636,3 +27636,103 @@ entries:
     resolved_by_commit: null
     resolution: "aplicado -- filtro anti-degeneracao ativo por default em toda busca Optuna NOVA a partir deste commit, sem flag/opt-in (mesma regra do CLAUDE.md sobre correcao pedida pelo Manager)."
     status: "concluido -- fix + testes verdes. Nao retreina nada sozinho; entra em vigor na proxima campanha Optuna disparada (pendente, ver AG-421 -- retreino dos 5 candidatos sob o vetor de 30 features)."
+
+  - id: AG-423
+    date: "2026-09-02"
+    file: "config/constants.yaml::alpha_production_hyperparam_override; experiments/alpha_walk_forward_{BTCUSDT,SOLUSDT,XRPUSDT}_{R2,R3}.json e alpha_layer1_report_* (10 artefatos canonicos regenerados)"
+    related_file: "AG-421 (vetor T1 36->30); AG-422 (filtro anti-degeneracao); AG-420 (promocao anterior, comparada aqui); scripts/promote_control_campaign_to_production.py (ganhou --results-path); scripts/recover_missing_trial_trajectories.py (novo)"
+    numeracao: "AG-423."
+    found_by: >-
+      Decisao de negocio explicita do Manager (2026-09-02): "pode
+      promover esse resultado a producao e regenere os artefatos
+      canonicos" -- apos a campanha Optuna completa (--tag post_ag421_
+      ag422, 150 trials x 10 studies) rodar sob o vetor de 30 features
+      (AG-421) e o objective com filtro anti-degeneracao (AG-422).
+    gap: >
+      Os 5 hiperparametros de producao ainda apontavam pro run_stamp de
+      `AG-420` (achado sob o vetor de 36 features, ANTES do filtro
+      anti-degeneracao existir no objective da busca). Promovidos agora
+      pra campanha `post_ag421_ag422` (mesmo desenho de campanha do
+      AG-419/AG-420 -- 1 seed x 150 trials, controle, sem corte de
+      data -- mas rodada sob as 2 correcoes desta sessao).
+
+      **Confirmado ao vivo que o filtro AG-422 estava genuinamente
+      ativo** (nao decorativo): inspecionando `user_attrs_n_paths_
+      degenerados` nos parquets de trajetoria de trial, `SOLUSDT/R2`
+      Camada0 teve 106 de 150 trials com pelo menos 1 path degenerado
+      filtrado do pooled Sharpe antes de decidir o vencedor.
+      `best_value` de screening (1 seed) subiu de ~0,3-0,5 (campanha
+      AG-420) pra 0,80-1,32 em todos os 10 studies desta campanha --
+      vies otimista de 1 seed esperado (ADR-002), nao prova de edge
+      por si so.
+
+      **Walk-forward canonico REGENERADO** (`scripts/run_walk_forward_
+      campaign.py --overwrite`). `edge_bps` medio por celula, AG-420
+      (36 features, sem filtro) -> AG-423 (30 features, com filtro):
+
+      `BTCUSDT/R2` C1: +6,90 -> -0,24bps (folds usados 7->8/19). C0:
+      +8,61 -> +3,43bps (3->4/19).
+      `SOLUSDT/R2` C1: -26,35 -> +2,22bps (2->2/12). C0: **0 folds
+      usaveis em AMBAS as campanhas** (100% degenerado mesmo apos o
+      corte de feature E o filtro anti-degeneracao -- confirma que e
+      um problema real de ausencia de sinal deste combo/variant, nao
+      um artefato de busca corrigivel por engenharia adicional).
+      `SOLUSDT/R3` C1: +48,58 -> +22,83bps (2->5/12). C0: -43,16 ->
+      +60,32bps (3->3/12).
+      `XRPUSDT/R2` C1: -15,78 -> -8,34bps (7->3/12, PIOROU). C0: -16,21
+      -> +2,74bps (3->5/12).
+      `XRPUSDT/R3` C1: +4,33 -> +15,75bps (4->3/12, PIOROU). C0: +55,33
+      -> +29,54bps (5->3/12, PIOROU).
+
+      Padrao misto: `n_folds_usados` melhorou em 4 celulas, piorou em 3,
+      ficou igual em 2 (SOLUSDT/R2 ambas), zerado em 1. O filtro AG-422
+      impede que o objective da busca PREMIE um hiperparametro so por
+      causa de um caminho degenerado com Sharpe inflado -- mas nao
+      garante que o vencedor resultante generalize melhor no walk-
+      forward real (validacao temporal, diferente do CPCV usado na
+      busca). Reforca o achado ja registrado em AG-420: busca de 1 seed
+      produz variancia real de generalizacao, corrigivel so parcialmente
+      por engenharia do objective.
+
+      **Gates recalculados** (`scripts/evaluate_walk_forward_gates.py`):
+      **0 de 20 combo×variant×lado passam**, sob p bruto E sob correcao
+      BH -- MESMO veredito "0/20" de `AG-391`/`AG-420`, terceira vez
+      medido, agora sob vetor de features reduzido E objective corrigido.
+      `SOLUSDT/R3` Camada0 (long e short) passa o gate de EDGE
+      (`alpha_gate_pass=True`) pela primeira vez nesta serie de
+      promocoes -- mas reprova no gate de DADOS (`n_folds_usados=3`,
+      abaixo do piso) -- achado real: o edge aparece, a cobertura
+      estatistica nao sustenta ele ainda.
+
+      `experiments/alpha_layer1_report_*.json` (Run Canonico, CPCV)
+      tambem regenerado pros 5 candidatos -- mesmo mecanismo de
+      `load_production_override` automatico ja usado em AG-420,
+      confirmado via log `hyperparams_production_override_aplicado`.
+    severity: "alta -- terceira promocao real de hiperparametro de producao (apos AG-207 original e AG-420), mas reafirma '0/20' pela terceira vez -- consequencia pratica identica: nenhum dos 5 candidatos tem base pra deploy real"
+    layer: "models (producao) -- alpha_production_hyperparam_override, primeira promocao sob o vetor de 30 features (AG-421) e sob objective com filtro anti-degeneracao (AG-422)"
+    consequence: >
+      "0/20" confirmado pela TERCEIRA vez (AG-391 -> AG-420 -> AG-423),
+      agora sob 2 correcoes de engenharia aplicadas na mesma sessao
+      (corte de feature + filtro anti-degeneracao) -- nenhuma das 2
+      resolveu o problema de fundo. `SOLUSDT/R2` Camada0 fica
+      definitivamente inviavel: 0 folds usaveis sob TODOS os 4
+      hiperparametros ja testados neste projeto (canonico original,
+      controle AG-420, t0cutoff, controle AG-423). `SOLUSDT/R3`
+      Camada0 e o primeiro achado real de "edge passa, cobertura nao" --
+      candidato mais promissor pra um proximo ciclo de coleta de dado/
+      aumento de janela, nao pra retreino adicional de hiperparametro.
+
+      **Incidente registrado durante a execucao (recuperado sem custo)**:
+      um `git clean -fd experiments/` autorizado pelo Manager (limpeza
+      de 1.116 arquivos dirty pre-existentes) rodou enquanto esta
+      campanha Optuna ainda escrevia parquets de trajetoria novos na
+      mesma pasta, apagando 4 dos 10 (`BTCUSDT_R2`/`SOLUSDT_R2` ambas
+      camadas). As SQLite studies reais (fonte de verdade, em
+      `artifacts/scratch/`) nunca foram tocadas -- `scripts/recover_
+      missing_trial_trajectories.py` (novo) reabriu cada study e
+      reexportou o parquet, sem retreinar nada. Licao: checar jobs de
+      fundo ativos na MESMA pasta antes de rodar `git clean`, mesmo com
+      autorizacao explicita pro conteudo dirty pre-existente.
+    resolved_by_commit: null
+    resolution: "aplicado -- decisao de negocio do Manager executada. '0/20' reafirmado pela terceira vez, nao revertido."
+    status: "concluido -- producao promovida (run_stamp=20260902T213701Z), artefatos canonicos regenerados (walk-forward + layer1_sprint), gates reavaliados. Nenhum dos 5 candidatos passa mesmo apos AG-421+AG-422. SOLUSDT/R3 C0 e o primeiro achado de 'edge passa, dados nao' -- sinaliza onde investir a seguir."
