@@ -11,6 +11,7 @@ via `tmp_path`, mesmo padrão de `src.io.artifact` já usado no repo)."""
 
 from __future__ import annotations
 
+import dataclasses
 from typing import Any
 
 import optuna
@@ -151,8 +152,13 @@ def test_compute_search_config_hash_muda_se_sweep_range_mudar(
 _FAKE_MF = ds.ModelingFrame(data=pl.DataFrame(), t1_feature_ids=(), regime_labels_present=())
 _FAKE_PATH_RESULT = backtest_lite.PathBacktestResult(
     path_id=0,
-    n_signals=10,
-    n_filled_trades=8,
+    n_signals=15,
+    # AG-422 -- >= walk_forward.min_trades_for_non_degenerate_fold() (10),
+    # senão _objective/_split_non_degenerate_paths descarta este path
+    # inteiro como degenerado e o pooled fica NaN (achado real: era 8
+    # antes do AG-422, quebrava os testes deste módulo que dependiam do
+    # valor de sharpe_naive sobreviver ao pooling).
+    n_filled_trades=12,
     fill_rate=0.8,
     sharpe_naive=1.0,
     mean_trade_ret=0.01,
@@ -222,6 +228,98 @@ def test_objective_passa_politicas_de_producao_explicitas(monkeypatch: pytest.Mo
 def test_objective_usa_pooled_sharpe_como_metrica(monkeypatch: pytest.MonkeyPatch) -> None:
     _captured, study = _run_objective_once(monkeypatch)
     assert study.best_value == pytest.approx(_FAKE_PATH_RESULT.sharpe_naive)
+
+
+# --- AG-422: filtro anti-degeneração no objective/confirmação -------------
+
+
+def test_objective_exclui_path_degenerado_do_pooled_sharpe(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Path com `n_filled_trades < walk_forward.min_trades_for_non_
+    degenerate_fold()` (10) NÃO entra no pooled Sharpe -- só o path
+    saudável conta. Sem o filtro do AG-422, `pooled` seria a média dos 2
+    (incluindo o Sharpe patológico do path degenerado), não o valor do
+    path saudável sozinho."""
+    saudavel = dataclasses.replace(_FAKE_PATH_RESULT, path_id=0, sharpe_naive=1.0)
+    degenerado = dataclasses.replace(
+        _FAKE_PATH_RESULT, path_id=1, n_filled_trades=3, sharpe_naive=999.0
+    )
+
+    def fake_run_all_folds(df: pl.DataFrame, splits: tuple[Any, ...], **kwargs: Any) -> list[Any]:
+        return []
+
+    def fake_backtest_by_path(folds: list[Any], df: pl.DataFrame) -> dict[int, Any]:
+        return {0: saudavel, 1: degenerado}
+
+    monkeypatch.setattr(alpha, "run_all_folds", fake_run_all_folds)
+    monkeypatch.setattr(backtest_lite, "backtest_by_path", fake_backtest_by_path)
+
+    study = optuna.create_study(direction="maximize", sampler=optuna.samplers.TPESampler(seed=1))
+    base_hyper = alpha.LGBMHyperparams.from_constants()
+    captured_trial: dict[str, optuna.Trial] = {}
+
+    def objective(trial: optuna.Trial) -> float:
+        captured_trial["trial"] = trial
+        return mod._objective(
+            trial,
+            mf=_FAKE_MF,
+            splits=(),
+            symbol="BTCUSDT",
+            resolution_id="R1",
+            variant=alpha.VARIANT_CAMADA1,
+            feature_ids_effective=("A01",),
+            base_hyper=base_hyper,
+            seed=7,
+            device_type="cpu",
+            search_space=_SMALL_SEARCH_SPACE,
+            monotone_screen_cache={},
+        )
+
+    study.optimize(objective, n_trials=1)
+
+    assert study.best_value == pytest.approx(1.0)  # só o path saudável, nunca 500.0 (média ingênua)
+    assert study.best_trial.user_attrs["n_paths_degenerados"] == 1
+
+
+def test_objective_devolve_nan_quando_todos_os_paths_sao_degenerados(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Todo path abaixo do piso -> `pooled`=NaN -> Optuna marca o trial
+    como FAIL nativamente (contrato já exercitado antes do AG-422 pro
+    caso 'sem path nenhum'; aqui é o caso 'só paths degenerados', mesmo
+    desfecho por construção)."""
+    degenerado = dataclasses.replace(_FAKE_PATH_RESULT, n_filled_trades=2)
+
+    def fake_run_all_folds(df: pl.DataFrame, splits: tuple[Any, ...], **kwargs: Any) -> list[Any]:
+        return []
+
+    def fake_backtest_by_path(folds: list[Any], df: pl.DataFrame) -> dict[int, Any]:
+        return {0: degenerado}
+
+    monkeypatch.setattr(alpha, "run_all_folds", fake_run_all_folds)
+    monkeypatch.setattr(backtest_lite, "backtest_by_path", fake_backtest_by_path)
+
+    study = optuna.create_study(direction="maximize", sampler=optuna.samplers.TPESampler(seed=1))
+    base_hyper = alpha.LGBMHyperparams.from_constants()
+
+    def objective(trial: optuna.Trial) -> float:
+        return mod._objective(
+            trial,
+            mf=_FAKE_MF,
+            splits=(),
+            symbol="BTCUSDT",
+            resolution_id="R1",
+            variant=alpha.VARIANT_CAMADA1,
+            feature_ids_effective=("A01",),
+            base_hyper=base_hyper,
+            seed=7,
+            device_type="cpu",
+            search_space=_SMALL_SEARCH_SPACE,
+            monotone_screen_cache={},
+        )
+
+    study.optimize(objective, n_trials=1, catch=())
+
+    assert study.trials[0].state == optuna.trial.TrialState.FAIL
 
 
 def test_seed_fixo_em_todos_os_trials(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -332,10 +430,15 @@ def test_write_search_artifact_scratch_permite_sobrescrita(tmp_path: Any) -> Non
 
 
 def _fake_path_result(path_id: int, sharpe: float) -> Any:
+    # AG-422 -- n_filled_trades=12 (>= piso de 10, ver comentário em
+    # _FAKE_PATH_RESULT acima) pra sobreviver ao filtro de degeneração de
+    # _split_non_degenerate_paths; total de 24 (2 paths x 12) continua <
+    # alpha_layer1_permanence_min_trades=30 real, preserva o cenário do
+    # teste "falha por cobertura, não por sinal" que consome este fixture.
     return backtest_lite.PathBacktestResult(
         path_id=path_id,
-        n_signals=10,
-        n_filled_trades=8,
+        n_signals=15,
+        n_filled_trades=12,
         fill_rate=0.8,
         sharpe_naive=sharpe,
         mean_trade_ret=0.01,
@@ -545,15 +648,17 @@ def test_confirm_combo_paired_gate_pass_quando_c1_supera_c0_nos_2_paths(
     assert result.permanence_pass is False  # median_n_better(2) < permanence_min_paths(4)
 
     # Gate de edge bruto (AG-383-ADDENDUM) -- _fake_path_result fixa
-    # mean_trade_ret=0.01 (positivo, > edge_min_bps=0.0) e n_filled_trades=8
-    # por path; pooled entre os 2 paths falsos = 8+8=16 < edge_min_trades=30
-    # real -- falha por COBERTURA, não por sinal, prova que os dois testes
-    # do gate de edge são independentes.
+    # mean_trade_ret=0.01 (positivo, > edge_min_bps=0.0) e
+    # n_filled_trades=12 por path (AG-422: >= piso de degeneração de 10,
+    # senão o path inteiro seria descartado antes de chegar neste gate);
+    # pooled entre os 2 paths falsos = 12+12=24 < edge_min_trades=30 real
+    # -- falha por COBERTURA, não por sinal, prova que os dois testes do
+    # gate de edge são independentes.
     assert result.edge_min_bps == pytest.approx(0.0)
     assert result.edge_min_trades == 30  # noqa: magic-number -- alpha_layer1_permanence_min_trades real
     assert result.winner_median_pooled_edge_bps == pytest.approx(100.0)  # noqa: magic-number -- 0,01 fração * _BPS_PER_UNIT
-    assert result.winner_median_trade_count == pytest.approx(16.0)  # noqa: magic-number -- 8+8, 2 paths
-    assert result.edge_gate_pass is False  # cobertura (16) < piso (30)
+    assert result.winner_median_trade_count == pytest.approx(24.0)  # noqa: magic-number -- 12+12, 2 paths
+    assert result.edge_gate_pass is False  # cobertura (24) < piso (30)
     assert result.dual_gate_pass is False  # nem permanence nem edge passam aqui
 
 

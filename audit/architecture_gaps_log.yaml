@@ -27574,3 +27574,65 @@ entries:
     resolved_by_commit: null
     resolution: "aplicado -- override explicito do Manager sobre o PRINCIPIO DE GATE do proprio registry.yaml, documentado nesta entrada e nas notas das 6 features. Nao e uma correcao de bug, e uma decisao de negocio deliberada e informada."
     status: "concluido -- vetor T1 reduzido a 30, registry/build.py sincronizados, testes mecanicos verdes. Retreino dos 5 candidatos sob o vetor novo E o ablation 30 vs. 36 seguem pendentes -- nao executados nesta entrada."
+
+  - id: AG-422
+    date: "2026-09-02"
+    file: "src/models/hyperparams_optuna.py::_objective, confirm_top_k_multi_seed"
+    related_file: "src/models/walk_forward.py::min_trades_for_non_degenerate_fold (piso reaproveitado); AG-420 (padrao de degeneracao observado apos promocao de hiperparametro); tests/unit/test_models_hyperparams_optuna.py"
+    numeracao: "AG-422."
+    found_by: >-
+      Pedido direto do Manager (2026-09-01): "Implementa o filtro
+      anti-degeneracao antes de rodar o Optuna" -- resposta a achado
+      proprio de Claude na mesma sessao (proposta item 3 de otimizacao):
+      o objective da busca Optuna pooleia `sharpe_naive` entre os 5
+      caminhos do CPCV sem excluir paths com poucos trades, a MESMA
+      classe de bug que `walk_forward.min_trades_for_non_degenerate_
+      fold` ja fecha no walk-forward real (Sharpe explode sobre poucos
+      trades quase-identicos -- `std` perto de zero sem zerar).
+    gap: >
+      `hyperparams_optuna._objective` (o objective ao vivo da busca TPE)
+      e `confirm_top_k_multi_seed` (a confirmacao multi-seed do
+      vencedor) pooleavam `sharpe_naive`/`mean_trade_ret` de TODOS os
+      `PathBacktestResult` com valor finito, sem checar `n_filled_
+      trades`. Isso deixava a busca livre pra aprender a favorecer
+      hiperparametros seletivos-demais (poucos trades, Sharpe inflado
+      por variancia pequena de um path degenerado) -- exatamente o
+      padrao observado em `AG-420`: a campanha de controle (1 seed/150
+      trials) promovida a producao derrubou `n_folds_usados` em quase
+      toda celula do walk-forward subsequente e zerou `SOLUSDT/R2` C0
+      por completo. `walk_forward.py` ja tinha fechado esta classe de
+      bug pro walk-forward de producao (`min_trades_for_non_degenerate_
+      fold`, piso=10, ADR-008 Fase 4) -- a busca Optuna nunca herdou a
+      mesma protecao, apesar de ser o processo que DECIDE o
+      hiperparametro que o walk-forward depois avalia.
+    severity: "media -- nao e um bug que já contaminou um artefato de producao (a campanha do AG-420 rodou ANTES deste fix), mas deixava a proxima campanha exposta ao mesmo padrao de degeneracao just medido"
+    layer: "models (busca de hiperparametro) -- primeira mudanca no objective de `hyperparams_optuna.py` desde a introducao do modulo"
+    consequence: >
+      `_split_non_degenerate_paths` (novo, reusa `walk_forward.min_
+      trades_for_non_degenerate_fold()`, nunca reimplementa o piso)
+      filtra paths degenerados ANTES de qualquer pooling -- aplicado em
+      `_objective` (Sharpe pooled, o proprio alvo da otimizacao) e em
+      `confirm_top_k_multi_seed` (Sharpe pooled, edge_bps pooled, E
+      `seed_trade_count` -- os 3 usavam o mesmo padrao vulneravel).
+      `trial.user_attr["n_paths_degenerados"]`/`"n_filled_trades_by_
+      path"` gravados pra auditoria (sinalizar, nao esconder). Se TODOS
+      os paths de um trial forem degenerados, `pooled`=NaN e Optuna
+      marca o trial FAIL nativamente -- um hiperparametro que so
+      "vence" via caminho degenerado nunca ganha.
+
+      Quebrou 4 testes existentes cujos fixtures usavam
+      `n_filled_trades=8` (abaixo do piso de 10) por escolha arbitraria,
+      nao proposital -- corrigido pra 12 (`test_models_hyperparams_
+      optuna.py::_FAKE_PATH_RESULT`/`_fake_path_result`), preservando a
+      intencao original de cada teste (recalculado o total esperado no
+      teste de cobertura, 8+8=16 -> 12+12=24, ainda < piso de cobertura
+      real de 30 -- gate de edge continua reprovando por cobertura, nao
+      por sinal, como o teste sempre pretendeu). 2 testes novos cobrem
+      o filtro diretamente (path degenerado excluido do pooled; todos
+      degenerados -> trial FAIL). `uv run pytest tests/unit/test_models_
+      hyperparams_optuna.py -m "not slow and not integration"`: 30
+      passed (28 antigos + 2 novos). `ruff`/`mypy`/`banned_patterns`/
+      `check_constants_referenced` limpos.
+    resolved_by_commit: null
+    resolution: "aplicado -- filtro anti-degeneracao ativo por default em toda busca Optuna NOVA a partir deste commit, sem flag/opt-in (mesma regra do CLAUDE.md sobre correcao pedida pelo Manager)."
+    status: "concluido -- fix + testes verdes. Nao retreina nada sozinho; entra em vigor na proxima campanha Optuna disparada (pendente, ver AG-421 -- retreino dos 5 candidatos sob o vetor de 30 features)."

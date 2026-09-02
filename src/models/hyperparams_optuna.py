@@ -62,7 +62,7 @@ from src.io.schema import ArtifactSchema, ColumnSpec
 from src.validation import cpcv
 from src.validation import dsr as dsr_mod
 
-from . import alpha, backtest_lite, monotonic
+from . import alpha, backtest_lite, monotonic, walk_forward
 from . import dataset as ds
 from ._constants import load_constant, load_constant_entry
 from ._paths import ARTIFACT_ROOT, EXPERIMENTS_DIR, OPTUNA_STUDIES_DIR
@@ -369,6 +369,56 @@ def _precompute_monotone_screens(
     return cache
 
 
+def _split_non_degenerate_paths(
+    by_path: dict[int, backtest_lite.PathBacktestResult],
+) -> tuple[list[backtest_lite.PathBacktestResult], int]:
+    """AG-422 (2026-09-02) -- filtra `PathBacktestResult` degenerados
+    (`n_filled_trades < walk_forward.min_trades_for_non_degenerate_fold()`,
+    piso=10, MESMA função que já fecha essa classe de bug no walk-forward
+    real, ADR-008 Fase 4) ANTES de qualquer agregação (`sharpe_naive`,
+    `mean_trade_ret`) -- sem isso, a busca Optuna (`_objective` abaixo) e
+    a confirmação multi-seed (`confirm_top_k_multi_seed`) ficam expostas
+    ao MESMO defeito que `min_trades_for_non_degenerate_fold` já
+    documenta: `sharpe_naive` sobre poucos trades quase-idênticos explode
+    (`std` perto de zero sem zerar, `mean/std` diverge -- caso medido
+    real: Sharpe=10.033,9 sobre 3 trades, `SOLUSDT/R2` path 0, achado
+    desta sessão via `gain_by_side`/`run_layer1_sprint`, mesma família do
+    Sharpe=47.163,5/2 trades que motivou o piso original). Sem este
+    filtro, o SAMPLER TPE pode aprender a favorecer hiperparâmetros
+    seletivos-demais (poucos trades, Sharpe inflado por variância
+    pequena) -- exatamente o padrão observado em `AG-420` (busca de 1
+    seed, `n_folds_usados` caiu em quase toda célula do walk-forward
+    subsequente, `SOLUSDT/R2` C0 ficou 100% degenerado).
+
+    Retorna `(non_degenerate, n_paths_degenerados)` -- o 2º valor é
+    gravado como `user_attr`/campo auxiliar pra auditoria (nunca
+    descartado em silêncio, mesma disciplina de `sinalizar, não esconder`
+    já aplicada ao filtro `n_filled_trades<10` do Run Canônico/ADR-007
+    nesta sessão)."""
+    min_trades = walk_forward.min_trades_for_non_degenerate_fold()
+    non_degenerate = [r for r in by_path.values() if r.n_filled_trades >= min_trades]
+    n_paths_degenerados = len(by_path) - len(non_degenerate)
+    return non_degenerate, n_paths_degenerados
+
+
+def _pool_sharpe_non_degenerate(
+    by_path: dict[int, backtest_lite.PathBacktestResult],
+) -> tuple[float, int]:
+    """Wrapper de `_split_non_degenerate_paths` pro caso comum (só Sharpe
+    pooled) -- `pooled` é NaN se `by_path` ficar vazio depois do filtro
+    (Optuna já marca o trial como FAIL nativamente sobre NaN, comportamento
+    pretendido: um trial que só "vence" via caminho degenerado não deve
+    ganhar)."""
+    non_degenerate, n_paths_degenerados = _split_non_degenerate_paths(by_path)
+    sharpes = [r.sharpe_naive for r in non_degenerate if math.isfinite(r.sharpe_naive)]
+    pooled = (
+        sum(sharpes) / len(sharpes)  # noqa: unguarded-ratio -- guardado pelo `if sharpes` abaixo
+        if sharpes
+        else float("nan")
+    )
+    return pooled, n_paths_degenerados
+
+
 def _objective(
     trial: optuna.Trial,
     *,
@@ -426,17 +476,18 @@ def _objective(
         monotone_screen_override_by_split_side=monotone_screen_cache,
     )
     by_path = backtest_lite.backtest_by_path(folds, mf.data)
-    sharpes = [r.sharpe_naive for r in by_path.values() if math.isfinite(r.sharpe_naive)]
-    pooled = (
-        sum(sharpes) / len(sharpes)  # noqa: unguarded-ratio -- guardado pelo `if sharpes` abaixo
-        if sharpes
-        else float("nan")
-    )
+    pooled, n_paths_degenerados = _pool_sharpe_non_degenerate(by_path)
     trial.set_user_attr("sharpe_by_path", {str(pid): r.sharpe_naive for pid, r in by_path.items()})
     trial.set_user_attr("n_signals_total", sum(r.n_signals for r in by_path.values()))
-    # `pooled` pode ser NaN (todos os paths sem trade preenchido) -- Optuna
-    # já marca o trial como FAIL automaticamente quando o objective devolve
-    # NaN (comportamento nativo da lib desde 2.x), não reinventado aqui.
+    trial.set_user_attr("n_paths_degenerados", n_paths_degenerados)
+    trial.set_user_attr(
+        "n_filled_trades_by_path", {str(pid): r.n_filled_trades for pid, r in by_path.items()}
+    )
+    # `pooled` pode ser NaN (todos os paths sem trade preenchido, ou todos
+    # degenerados -- AG-422, filtrado por `_pool_sharpe_non_degenerate`)
+    # -- Optuna já marca o trial como FAIL automaticamente quando o
+    # objective devolve NaN (comportamento nativo da lib desde 2.x), não
+    # reinventado aqui.
     return pooled
 
 
@@ -1070,7 +1121,8 @@ def confirm_top_k_multi_seed(
                 monotone_screen_override_by_split_side=monotone_screen_cache,
             )
             by_path = backtest_lite.backtest_by_path(folds, mf.data)
-            sharpes = [r.sharpe_naive for r in by_path.values() if math.isfinite(r.sharpe_naive)]
+            non_degenerate, _n_paths_degenerados = _split_non_degenerate_paths(by_path)
+            sharpes = [r.sharpe_naive for r in non_degenerate if math.isfinite(r.sharpe_naive)]
             pooled = (
                 sum(sharpes) / len(sharpes)  # noqa: unguarded-ratio -- guardado pelo `if sharpes`
                 if sharpes
@@ -1078,9 +1130,12 @@ def confirm_top_k_multi_seed(
             )
             seed_pooled[seed] = pooled
             seed_paths[seed] = {pid: r.sharpe_naive for pid, r in by_path.items()}
+            # AG-422 -- mesmo filtro de degeneração do Sharpe pooled acima,
+            # aplicado ao edge_bps: um path com poucos trades distorce a
+            # média tanto quanto o Sharpe, só sem a explosão por std~0.
             edges = [
                 r.mean_trade_ret * _BPS_PER_UNIT
-                for r in by_path.values()
+                for r in non_degenerate
                 if math.isfinite(r.mean_trade_ret)
             ]
             pooled_edge = (
@@ -1089,7 +1144,11 @@ def confirm_top_k_multi_seed(
                 else float("nan")
             )
             seed_pooled_edge[seed] = pooled_edge
-            seed_trade_count[seed] = sum(r.n_filled_trades for r in by_path.values())
+            # AG-422 -- soma só dos paths NÃO-degenerados, pra bater com a
+            # população que `seed_pooled`/`seed_pooled_edge` de fato
+            # agregaram (contar os degenerados aqui infla a contagem sem
+            # eles terem contribuído pra nenhuma das 2 médias acima).
+            seed_trade_count[seed] = sum(r.n_filled_trades for r in non_degenerate)
         finite_pooled = [v for v in seed_pooled.values() if math.isfinite(v)]
         median_pooled = float(np.median(finite_pooled)) if finite_pooled else float("nan")
         finite_edge = [v for v in seed_pooled_edge.values() if math.isfinite(v)]
