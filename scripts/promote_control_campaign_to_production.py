@@ -21,10 +21,13 @@ honestos da campanha real (`best_value`, `n_trials`, `source_campaign`).
 Uso:
 
     uv run python -m scripts.promote_control_campaign_to_production
+    uv run python -m scripts.promote_control_campaign_to_production \
+        --results-path experiments/t0_cutoff_control_campaign_results_post_ag421_ag422.json
 """
 
 from __future__ import annotations
 
+import argparse
 import json
 import sys
 from datetime import UTC, datetime
@@ -41,12 +44,22 @@ logger = structlog.get_logger(__name__)
 _CONTROL_RESULTS_PATH = Path("experiments/t0_cutoff_control_campaign_results.json")
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     configure_logging(json_output=False)
+
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--results-path",
+        type=Path,
+        default=_CONTROL_RESULTS_PATH,
+        help="AG-422 -- resultados de uma campanha --tag (ex. post_ag421_ag422), "
+        "em vez do arquivo de controle original (AG-419/AG-420).",
+    )
+    args = parser.parse_args(argv)
 
     run_stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     campaign_results: list[dict[str, Any]] = json.loads(
-        _CONTROL_RESULTS_PATH.read_text(encoding="utf-8")
+        args.results_path.read_text(encoding="utf-8")
     )
 
     by_combo: dict[tuple[str, str], dict[str, dict[str, Any]]] = {}
@@ -62,13 +75,21 @@ def main() -> int:
         }
 
     overrides_novos: dict[str, str] = {}
+    source_campaign = (
+        f"{args.results_path.stem} -- seed corrigido (AG-399), SEM corte de data, "
+        "vetor T1 de 30 features (AG-421), objective com filtro anti-degeneracao "
+        "(AG-422), 1 seed, 150 trials -- NAO e confirmacao multi-seed como o "
+        "processo ADR-007 anterior"
+        if args.results_path != _CONTROL_RESULTS_PATH
+        else "t0_cutoff_control_campaign (AG-419) -- seed corrigido (AG-399), SEM "
+        "corte de data, 1 seed, 150 trials -- NAO e confirmacao multi-seed como o "
+        "processo ADR-007 anterior"
+    )
     for (symbol, resolution_id), variants in by_combo.items():
         payload: dict[str, Any] = {
             "symbol": symbol,
             "resolution_id": resolution_id,
-            "source_campaign": "t0_cutoff_control_campaign (AG-419) -- seed corrigido "
-            "(AG-399), SEM corte de data, 1 seed, 150 trials -- NAO e confirmacao "
-            "multi-seed como o processo ADR-007 anterior",
+            "source_campaign": source_campaign,
             "run_stamp": run_stamp,
             **variants,
         }

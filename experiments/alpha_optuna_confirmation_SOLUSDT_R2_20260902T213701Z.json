@@ -1,0 +1,56 @@
+{
+  "symbol": "SOLUSDT",
+  "resolution_id": "R2",
+  "source_campaign": "t0_cutoff_control_campaign_results_post_ag421_ag422 -- seed corrigido (AG-399), SEM corte de data, vetor T1 de 30 features (AG-421), objective com filtro anti-degeneracao (AG-422), 1 seed, 150 trials -- NAO e confirmacao multi-seed como o processo ADR-007 anterior",
+  "run_stamp": "20260902T213701Z",
+  "camada1": {
+    "winner": {
+      "hyper": {
+        "max_depth": 3,
+        "n_estimators": 140,
+        "learning_rate": 0.06370405460126306,
+        "subsample": 0.937346807053766,
+        "subsample_freq": 7,
+        "feature_fraction": 0.7484687094462198,
+        "lambda_l2": 12.389889755402018,
+        "min_child_samples": 27,
+        "num_leaves": 32,
+        "min_sum_hessian_in_leaf": 0.006721895369651718,
+        "max_bin": 80,
+        "ess_regularization_n_obs_independentes_alvo": 44.85364351706859,
+        "ess_regularization_fator_conservador": 0.627938603388854,
+        "regularization_basis": "ess_derived",
+        "early_stopping_mode": "three_way",
+        "ic_magnitude_floor_k": 2.0
+      },
+      "best_value": 1.116919844621596
+    },
+    "n_trials": 150,
+    "study_name": "alpha_hyperparams_SOLUSDT_R2_camada1_cpu_e25bce51"
+  },
+  "camada0": {
+    "winner": {
+      "hyper": {
+        "max_depth": 3,
+        "n_estimators": 172,
+        "learning_rate": 0.08019589355162948,
+        "subsample": 0.9388488543988981,
+        "subsample_freq": 10,
+        "feature_fraction": 0.9166932043472007,
+        "lambda_l2": 43.579048777350586,
+        "min_child_samples": 26,
+        "num_leaves": 19,
+        "min_sum_hessian_in_leaf": 0.02841204753720674,
+        "max_bin": 378,
+        "ess_regularization_n_obs_independentes_alvo": 38.295578745146,
+        "ess_regularization_fator_conservador": 0.7700298724419268,
+        "regularization_basis": "ess_derived",
+        "early_stopping_mode": "three_way",
+        "ic_magnitude_floor_k": 2.0
+      },
+      "best_value": 1.018002820477644
+    },
+    "n_trials": 150,
+    "study_name": "alpha_hyperparams_SOLUSDT_R2_camada0_cpu_6a03ac37"
+  }
+}

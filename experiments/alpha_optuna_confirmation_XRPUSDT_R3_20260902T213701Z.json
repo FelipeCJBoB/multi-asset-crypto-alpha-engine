@@ -1,0 +1,56 @@
+{
+  "symbol": "XRPUSDT",
+  "resolution_id": "R3",
+  "source_campaign": "t0_cutoff_control_campaign_results_post_ag421_ag422 -- seed corrigido (AG-399), SEM corte de data, vetor T1 de 30 features (AG-421), objective com filtro anti-degeneracao (AG-422), 1 seed, 150 trials -- NAO e confirmacao multi-seed como o processo ADR-007 anterior",
+  "run_stamp": "20260902T213701Z",
+  "camada1": {
+    "winner": {
+      "hyper": {
+        "max_depth": 3,
+        "n_estimators": 698,
+        "learning_rate": 0.012638119184249999,
+        "subsample": 0.5004940822782795,
+        "subsample_freq": 9,
+        "feature_fraction": 0.3001080443924875,
+        "lambda_l2": 0.11204333640543757,
+        "min_child_samples": 35,
+        "num_leaves": 48,
+        "min_sum_hessian_in_leaf": 0.15442625986084338,
+        "max_bin": 177,
+        "ess_regularization_n_obs_independentes_alvo": 47.37060744677784,
+        "ess_regularization_fator_conservador": 0.4765262947208271,
+        "regularization_basis": "ess_derived",
+        "early_stopping_mode": "three_way",
+        "ic_magnitude_floor_k": 2.0
+      },
+      "best_value": 1.00871159732783
+    },
+    "n_trials": 150,
+    "study_name": "alpha_hyperparams_XRPUSDT_R3_camada1_cpu_2ee8a8b3"
+  },
+  "camada0": {
+    "winner": {
+      "hyper": {
+        "max_depth": 3,
+        "n_estimators": 166,
+        "learning_rate": 0.03704743800400217,
+        "subsample": 0.5527615624930557,
+        "subsample_freq": 5,
+        "feature_fraction": 0.6322078122323123,
+        "lambda_l2": 0.41849633408114784,
+        "min_child_samples": 33,
+        "num_leaves": 30,
+        "min_sum_hessian_in_leaf": 0.5062223757706324,
+        "max_bin": 442,
+        "ess_regularization_n_obs_independentes_alvo": 54.88401792304361,
+        "ess_regularization_fator_conservador": 0.4193034410627431,
+        "regularization_basis": "ess_derived",
+        "early_stopping_mode": "three_way",
+        "ic_magnitude_floor_k": 2.0
+      },
+      "best_value": 0.8004123920283958
+    },
+    "n_trials": 150,
+    "study_name": "alpha_hyperparams_XRPUSDT_R3_camada0_cpu_cef055c4"
+  }
+}

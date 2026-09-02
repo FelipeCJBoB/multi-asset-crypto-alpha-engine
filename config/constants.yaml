@@ -2705,14 +2705,38 @@ alpha_prune_max_gate_fpr:
 
 alpha_production_hyperparam_override:
   value:
-    SOLUSDT_R3: "20260901T224634Z"
-    XRPUSDT_R2: "20260901T224634Z"
-    XRPUSDT_R3: "20260901T224634Z"
-    BTCUSDT_R2: "20260901T224634Z"
-    SOLUSDT_R2: "20260901T224634Z"
+    SOLUSDT_R3: "20260902T213701Z"
+    XRPUSDT_R2: "20260902T213701Z"
+    XRPUSDT_R3: "20260902T213701Z"
+    BTCUSDT_R2: "20260902T213701Z"
+    SOLUSDT_R2: "20260902T213701Z"
   provenance: ASSUMED
   source: >
-    **[ATUALIZADO 2026-09-01]** Decisão explícita do Manager, override
+    **[ATUALIZADO 2026-09-02]** Decisão explícita do Manager — promove a
+    campanha de controle (`--tag post_ag421_ag422`, seed corrigido
+    `AG-399`, SEM corte de data, 1 seed × 150 trials) rodada sob 2
+    correções aplicadas nesta sessão: `AG-421` (vetor T1 de 36 → 30
+    features, 6 cortadas por override explícito sobre gain/SHAP baixo) e
+    `AG-422` (filtro anti-degeneração no objective Optuna — paths com
+    `n_filled_trades` abaixo do piso de 10 excluídos do pooled Sharpe
+    ANTES de decidir o vencedor, corrigindo o mesmo padrão que produziu
+    hiperparâmetros seletivos-demais em `AG-420`). Confirmado ao vivo
+    nesta campanha: `SOLUSDT/R2` Camada0 teve 106 de 150 trials com pelo
+    menos 1 path degenerado filtrado — o filtro estava genuinamente
+    ativo, não decorativo. `best_value` de screening (1 seed) subiu de
+    ~0,3-0,5 (campanha `AG-420`) para 0,80-1,32 em todos os 10 studies —
+    ainda sujeito ao mesmo viés otimista de 1 seed que motivou a
+    confirmação multi-seed do `ADR-002` (não é, por si só, prova de
+    edge real; walk-forward e gates decidem isso, não o `best_value` de
+    screening). **Schema honesto**: os 5 JSONs novos
+    (`run_stamp=20260902T213701Z`) seguem NÃO replicando os campos de
+    confirmação multi-seed do processo `ADR-007` original — 1 seed, não
+    10. Números novos do walk-forward canônico e dos gates:
+    `audit/architecture_gaps_log.yaml::AG-423`.
+
+    **Histórico — promoção anterior (2026-09-01, campanha AG-419/AG-420,
+    achada sob o vetor de 36 features E sem o filtro anti-degeneração,
+    valores substituídos acima):** Decisão explícita do Manager, override
     de negócio ("aplica no código real os fix que estão prontos,
     promovendo os itens achados no diagnóstico pro run canônico") —
     promove a campanha de CONTROLE (`AG-419`, seed corrigido `AG-399`,
