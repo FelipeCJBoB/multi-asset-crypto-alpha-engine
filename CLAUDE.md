@@ -24,6 +24,7 @@ documentação, não de arquitetura.
 | Blueprint histórico — **obsoleto**, não decidir por ele | `PRD_V3_2_UNIFICADO.md` / `PRD_V4_1.md` |
 | Proveniência/classe de toda constante | `config/constants.yaml` |
 | Furos de arquitetura/integração (AG-NNN) | `audit/architecture_gaps_log.yaml` |
+| Explorador visual dos AGs / protocolo "Atualiza ag" | skill `atualiza_ag` |
 | Orçamento de trials (multiple-testing) | `audit/n_lifetime.yaml` |
 | Achados estatísticos medidos | `audit/evidence_ledger.yaml` |
 | Roadmap visual (M1-M6/V41-N + 15 estágios) | Road Map Vivo v2 — link em `PLANO_MESTRE_PRINCE2.md` §14 |
@@ -43,7 +44,9 @@ documentação, não de arquitetura.
 ## Projeto
 
 - Motor quant multi-timeframe (R1, R2, R3), multi-par (BTC/ETH/SOL/BNB/XRP),
-  bidirecional (long/short), Binance USDⓈ-M, capital R$ 1.000, execução
+  bidirecional (long/short), Binance USDⓈ-M, capital de referência R$ 1.000
+  (parâmetro de design usado em todo o dimensionamento/sizing do projeto,
+  não o saldo ao vivo de uma conta — ver nota no README), execução
   maker post-only. Definição completa: `PLANO_MESTRE_PRINCE2.md` §15.
   "M15/M30/H1" é identidade de MISSÃO, não o tipo de barra em produção:
   `canonical_bar_type: dollar`; `resolution_id` (R1/R2/R3) substitui os

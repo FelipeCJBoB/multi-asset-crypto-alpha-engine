@@ -14299,7 +14299,7 @@ entries:
     date: "2026-08-24"
     file: "config/constants.yaml::tp_atr_mult/sl_atr_mult"
     related_file: "experiments/s1_tp_sl_sensitivity_report.json, docs/s1_design_doc_sweep_tp_sl_reward_risk_2026-08-22.md, audit/evidence_ledger.yaml::s1-tp-sl-sensitivity-2026-08-24, audit/n_lifetime.yaml id=19"
-    found_by: "Manager (Felipe) -- decisao explicita apos varios turnos pedindo a mudanca ('muda a porra do tp_atr_mult'), Claude tinha ficado so registrando o achado sem agir"
+    found_by: "Manager (Felipe) -- decisao explicita apos varios turnos pedindo a mudanca de forma direta e enfatica, Claude tinha ficado so registrando o achado sem agir"
     gap: >
       tp_atr_mult=2,0/sl_atr_mult=1,5 (herdados do PRD V2, nunca
       questionados) eram class A/ASSUMED havia muito tempo, com o sweep

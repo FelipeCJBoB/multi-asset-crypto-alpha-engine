@@ -1,145 +1,169 @@
-# BTCUSDT Quant Engine
+# Multi-Asset Crypto Alpha Engine
 
-Motor quantitativo local para **BTCUSDT perpétuo na Binance USDⓈ-M**, decisão a
-15 minutos, execução maker post-only, capital de **US$ 196,85**.
+Motor de pesquisa de alpha para futuros perpétuos cripto (Binance USDⓈ-M) —
+multi-ativo (BTC/ETH/SOL/BNB/XRP), bidirecional (long/short), barras de
+**dólar** (event-driven, não relógio), validação por **CPCV purgado**,
+classificadores LightGBM sob restrição monotônica, calibração isotônica,
+busca de hiperparâmetro via Optuna, e uma camada de **governança de
+proveniência** que obriga toda constante numérica do pipeline a declarar
+de onde veio antes de poder ser usada.
 
-A V1 não existe pra provar que BTCUSDT pode ser previsto — existe pra construir a
-infraestrutura em que uma hipótese quantitativa possa ser formulada, testada,
-invalidada ou aprovada, simulada, monitorada, executada e auditada, com o
-capital tratado como restrição física do desenho, não como parâmetro livre.
+Projeto de pesquisa individual (não produto, não fundo, não sinal à venda).
+Existe pra construir — e documentar honestamente — a infraestrutura
+hipótese → feature → label → validação → modelo → auditoria de um motor
+quant real, não pra provar que cripto é previsível.
 
-## Status
+## Por que este repositório é diferente de um "bot de trading" no GitHub
 
-**Sprint 8 (rodada 1) de 18 concluído + fatia adiantada do Sprint 10 + sprint
-de engenharia pós-auditoria (8 fases) + 6 tarefas quant pós-auditoria +
-skill de auditoria de engenharia** — Sprints 1-9 e 12 feitos (12 adiantado)
-· 729 testes passando · 0 violações de lint · 6/6 contratos de import-linter.
+A maioria dos projetos públicos de ML aplicado a trading mostra uma curva
+de equity subindo e para por aí. Este repositório mostra o oposto por
+design: **cada resultado, incluindo os negativos, é medido, registrado e
+rastreável até o commit e o experimento que o gerou.**
 
-🔍 **Cobertura de auditoria ainda desigual**: a mesma classe de bug (divisão
-sem guarda de sinal) apareceu de forma independente em `models/` e `risk/` —
-subsistemas diferentes, construídos em momentos diferentes. `.claude/skills/
-audit_engineering/` (metodologia de 4 lentes, fundamentada em Sculley et al.
-2015 e Breck et al. 2017) mais `tools/lint/check_unguarded_ratios.py`
-existem pra cobrir sistematicamente o que ainda não passou por esse
-checklist: `exchange/`, `data/`, `labels/`, `execution/`, `risk/sizing.py`.
+- **439 entradas em `audit/architecture_gaps_log.yaml`** — todo furo de
+  arquitetura encontrado (por mim ou por auditoria externa) fica registrado
+  com achado, severidade, resolução e commit — nunca corrigido em silêncio.
+- **208 entradas em `audit/evidence_ledger.yaml`** — todo achado
+  estatístico medido (edge, Sharpe, IC, gates) com proveniência.
+- **`audit/n_lifetime.yaml`** rastreia o orçamento de múltiplos testes
+  (`N_lifetime`, usado no cálculo de Deflated Sharpe Ratio) — nunca
+  decrementa, mesmo entre sessões, pra que o DSR final não seja inflado por
+  amnésia de quantas buscas já foram tentadas.
+- **Veredito atual, honesto**: os 5 candidatos mais promissores do motor
+  (`ADR-007`/`ADR-008`, walk-forward real fora-da-amostra) passam **0 de 20**
+  combinações símbolo×camada×lado nos 3 gates de produção — mesmo depois de
+  corrigir um bug de seed compartilhado (`AG-399`) e promover o
+  hiperparâmetro re-medido (`AG-420`). Isso não é o projeto "não
+  funcionando" — é o gate fazendo exatamente o que existe pra fazer: barrar
+  a promoção de um modelo sem edge estatisticamente defensável, em vez de
+  reportar um Sharpe otimista de um teste que não sobreviveria a dado novo.
 
-📈 **Melhora real medida no Alpha**: uma restrição monotônica grátis
-(identidade contábil de funding, sem custo de busca estatística) elevou o
-`directional_sharpe` pooled de 0,194 para **0,879** e a permanência de 4/5
-para **5/5 caminhos** — a primeira melhora real e gratuita desde o Sprint 8.
-Mas o modelo **não sabe se auto-avaliar**: os decis de confiança não ordenam
-o retorno realizado (Spearman ≈0), e no lado comprado o decil de MAIOR
-confiança é o de PIOR desempenho. Duas capacidades diferentes — só uma
-está presente. Detalhes em `docs/SPRINT_LOG.md`, seção "Tarefas quant
-pós-auditoria".
+Se o objetivo fosse parecer bem-sucedido, esse veredito não estaria aqui.
 
-🔧 **Achado de engenharia (não de trading):** uma auditoria externa do
-Sprint 8 expôs que números DERIVADOS (Sharpe, decomposição de PnL,
-concentração de features) circulavam sem os metadados que os tornam
-interpretáveis — unidade, tamanho de amostra, denominador validado —
-enquanto toda CONSTANTE já era obrigada a isso. Corrigido com um tipo
-`Metric` novo (`src/core/metric.py`) aplicado nos módulos de decomposição,
-reconciliação e concentração. Mudança de comportamento real: um gate
-(`gate3_carry_share_ok`) que "passava" por acidente aritmético quando o
-resultado era negativo agora reprova corretamente. A mesma auditoria achou
-um controle real do Risk Engine (`control_10_risco_real`) com a mesma
-classe de bug — registrado, ainda não corrigido.
+## Capital como restrição de design, não parâmetro livre
 
-O sprint completo (8 fases — A/B/C persistem diagnóstico, tipo `Metric`,
-auditoria de divisões; D/E/F/H HHI efetivo, explicabilidade pós-hoc,
-ausência explícita, hooks de CI) achou que o HHI "saudável" (0,113) do
-Sprint 8 **subestima a concentração real em 67%** quando duas features
-correlacionadas (ρ=-0,913) são tratadas como fatores independentes — o
-HHI efetivo é 0,189, ainda abaixo do limiar de 0,25, mas não por tanta
-folga quanto parecia. Detalhes em `docs/SPRINT_LOG.md`, seção "Sprint de
-engenharia".
+O motor trata capital como constraint física do desenho (`R$ 1.000` de
+referência) — não um número decorativo: ele determina granularidade mínima
+de lote, orçamento de trades/mês, e se uma combinação de barreiras TP/SL é
+sequer viável para os 5 símbolos simultaneamente (`AG-204`). **É um
+parâmetro de design usado consistentemente em todo o dimensionamento do
+projeto, não o saldo ao vivo de uma conta hoje.** A decisão de tratar
+capital pequeno como restrição de primeira classe (em vez de assumir
+capital ilimitado, como a maioria dos backtests acadêmicos faz) é, em si,
+um dos achados de engenharia do projeto — ver `PLANO_MESTRE_PRINCE2.md` §0.
 
-⚠️ **O que sabemos agora sobre se existe edge:** o Alpha (Camada 1, restrições
-monotônicas) passa o critério arquitetural do PRD, mas **não tem edge
-operável ainda** — Sharpe negativo, e um simples buy-and-hold (+0,54) vence os
-dois. A decomposição de PnL mostra por quê: **direção e carry somados são
-positivos (+3,67)** — o custo de execução, sozinho (-17,71), é o que vira o
-resultado negativo. Uma auditoria externa do plano revisou este resultado e
-levantou 4 pontos (orçamento de fees, seletividade do fill, robustez do
-baseline aleatório, teto de features) — todos verificados contra código e
-dado real, não aceitos por plausibilidade (`docs/SPRINT_LOG.md`, seção
-"Auditoria externa"). Achados: o baseline aleatório (B1) resiste a uma
-comparação mais rigorosa (Alpha no percentil 100 de 1.000 sorteios, 4 dos 5
-caminhos); o fill rate baixo **não** esconde os trades vencedores (gap de
-seletividade pequeno, -1,72pp); e, na única janela onde dá pra medir fill
-real (bookTicker, ~10,5 meses de 6,5 anos), trocar a suposição otimista pelo
-fill real do Sprint 9 deixa o Sharpe **menos** negativo, não mais — mas essa
-janela específica não é representativa do regime médio do modelo, então a
-economia honesta sobre os 6,5 anos completos **continua em aberto**. Detalhes
-completos em `docs/SPRINT_LOG.md`.
+## Pipeline
 
-| Documento | O que é |
-|---|---|
-| [`PRD_V3_2_UNIFICADO.md`](PRD_V3_2_UNIFICADO.md) | Blueprint técnico completo (v3.3) — a especificação de tudo |
-| [`CLAUDE.md`](CLAUDE.md) | Regras operacionais do repo — proveniência de constantes, banned patterns, rotina de git |
-| [`docs/SPRINT_LOG.md`](docs/SPRINT_LOG.md) | **Comece aqui pra entender o progresso** — o que foi construído e medido em cada sprint, com os números reais |
+```
+ingestão (REST/WS assinado, rate limit, filtros versionados por data)
+  → Data Quality Engine (dedupe, gap detection, timestamp monotonicity)
+  → construção de barra de dólar (event-driven, não clock-time)
+  → Feature Engine (30 features T1 ativas, registry com tese econômica
+    declarada + prova de causalidade + teste de paridade lote/streaming)
+  → classificação de regime de mercado (HMM canonicalizado por fold,
+    Jump Model, histerese contra flapping)
+  → Label Engine (triple-barrier em mark price 1m, pesos por unicidade,
+    custo de execução e funding modelados por trade)
+  → CPCV purgado (Combinatorial Purged Cross-Validation, testes de
+    vazamento próprios) + orçamento de múltiplos testes (N_lifetime)
+  → Alpha: LightGBM binário por lado (long/short), monotone_constraints,
+    calibração isotônica, busca de hiperparâmetro via Optuna
+  → walk-forward fora-da-amostra vs. baselines nulos, DSR/PSR
+  → Risk Engine (sizing, 18 controles pré-trade, kill switch)
+  → simulação de fill maker-only + reconciliação backtest-vs-execução
+```
 
-## As cinco restrições que definem o desenho
+## O que este projeto demonstra tecnicamente
 
-O capital de US$ 196,85 não é um parâmetro — é a restrição estrutural. Lote
-mínimo de 0,001 BTC = US$ 64,94 = 33% do equity. Tudo no motor decorre disso:
-janela de stop viável entre 0,275% e 0,758%, orçamento de ~55 trades/mês,
-alavancagem tratada como liberação de margem, não como controle de risco.
-Detalhes em `PRD_V3_2_UNIFICADO.md` §0.
-
-## O que já está medido (não presumido)
-
-- **Distribuição real de desfecho de trade** (462 mil labels, 6,5 anos): TP
-  36,5% · SL 51,3% · TIME 6,5% · NOFILL 5,7% — substitui números que o próprio
-  PRD documentava como fabricados.
-- **Teto de features real**: ~32,4 mil observações efetivas por modelo — acima
-  do que o blueprint original especulava.
-- **CPCV sem vazamento**: purge testado contra os 462 mil labels reais — zero
-  `t1` de treino cruzando pro teste, em 15 de 15 splits.
-- **Fill rate maker real**: 37,3% (ver alerta acima) · seleção adversa real
-  ~0,6bps, menor que o placeholder assumido de 1,5bps.
-- **Distribuição real de regime de mercado**: 97,5% do tempo é tradeable; regime
-  de stress (R5) é raro (1,7%).
-- **Cobertura real de dado**: a Binance só publica dumps públicos desde
-  ~2019-12, não desde 2019-09 como presumido; alguns dumps (bookTicker) têm
-  janela de disponibilidade muito mais estreita que o documentado.
-
-Números completos e como cada um foi medido: [`docs/SPRINT_LOG.md`](docs/SPRINT_LOG.md).
+- **Metodologia de validação anti-overfitting real**: CPCV purgado (não
+  k-fold ingênuo, que vaza informação temporal), embargo entre splits,
+  gates de permanência estatística com correção de Benjamini-Hochberg para
+  teste múltiplo, Deflated Sharpe Ratio contra o orçamento real de trials
+  já gastos — não contra `N=1` da busca isolada.
+- **Governança de proveniência aplicada a código, não só a documento**:
+  `tools/lint/check_constants_provenance.py`/`check_unguarded_ratios.py`
+  rodam em CI e bloqueiam merge se uma constante classe A (a que invalida o
+  desenho se estiver errada) não tiver origem declarada — medido, derivado,
+  literatura ou assumido, cada um com tratamento e limiar diferentes.
+- **Engenharia de feature com tese, não só correlação**: cada feature em
+  `src/features/registry.yaml` declara mecanismo econômico ("quem está do
+  outro lado"), prova de causalidade testada, e passa por uma sequência de
+  5 gates (auditoria algébrica → mecanismo → alinhamento de horizonte →
+  redundância → valor incremental walk-forward) **antes** de qualquer
+  leitura de importância de modelo (SHAP/gain) — decisão deliberada para
+  evitar o mesmo erro estrutural que motivou abandonar um gate de correlação
+  marginal anterior (`AG-362`).
+  ([exemplo completo de auditoria de decisão registrada nesta sessão, incluindo override explícito sobre a própria regra do projeto: `AG-421`](audit/architecture_gaps_log.yaml))
+- **Auditoria adversarial real, não cosmética**: múltiplas rodadas de
+  auditoria externa (`docs/AUDITORIA_EXTERNA_*.md`,
+  `docs/brief_auditoria_externa_*.md`) confrontaram o desenho do motor —
+  achados aceitos quando o código confirma, refutados com evidência quando
+  não confirma (ex. `docs/m4_regime_auditoria_externa_2026-08-19_validacao_cruzada.md`,
+  que cruza duas auditorias externas divergentes contra leitura direta de
+  código e literatura acadêmica).
 
 ## Estrutura
 
 ```
 src/
-├── exchange/     REST/WS assinados, rate limit, filtros versionados por data
-├── data/         Data Quality Engine, resample causal, camada DuckDB
-├── features/     Feature Engine — 10 features T1, registry, paridade lote/streaming
-├── regime/       5 regimes por quantis, histerese, gatilhos de stress
-├── labels/       Triple barrier em mark price, pesos por unicidade
-├── validation/   CPCV com purge/embargo, 14 testes de vazamento
-├── execution/    Simulador de fila (pré-RPI); máquina de estados    (parcial)
-├── models/       Alpha Camada 1 + 5 baselines nulos                (Sprint 8, rodada 1)
-├── risk/         Sizing, 18 controles, kill switch                 (Sprint 12)
-└── backtest/     Reconciliação gate otimista vs fill real          (fatia do Sprint 10; engine completo ainda não)
+├── exchange/     REST/WS assinado, rate limit, filtros versionados por data
+├── data/         Data Quality Engine, resample causal, DuckDB
+├── features/     Feature Engine — registry com tese declarada, paridade lote/streaming
+├── regime/       Classificação de regime (HMM, Jump Model), histerese
+├── labels/       Triple-barrier em mark price, pesos por unicidade
+├── validation/   CPCV com purge/embargo, testes de vazamento, FDR
+├── models/       Alpha (LightGBM), busca Optuna, walk-forward, meta-labeling
+├── risk/         Sizing, 18 controles pré-trade, kill switch
+├── execution/    Simulador de fill maker-only
+├── backtest/     Reconciliação backtest-vs-execução real
+├── analysis/     Medição pós-hoc (nunca insumo de treino) — atribuição, concordância, decomposição
+└── core/         Tipos compartilhados (ex. `Metric`, com unidade/n/proveniência sempre explícitos)
+
+audit/      Log de furos de arquitetura, ledger de achados estatísticos, orçamento de trials
+config/     Constantes com proveniência declarada (measured/derived/literature/assumed)
+docs/       ADRs numerados, sprint log, auditorias externas, design docs
+scripts/    Campanhas de retreino/busca/análise, executadas sob autorização explícita
+tests/      pytest — 2.983 testes coletados (unit + property + golden + integration)
+tools/lint/ Verificadores mecânicos de governança (proveniência, padrões banidos, contratos de import)
 ```
 
-Hierarquia de import verificada estaticamente (`import-linter`, config em
-`pyproject.toml`) — `features/` não pode importar `labels/`, `models/` não pode
-importar `execution/`, entre outras regras de `CLAUDE.md`.
+Hierarquia de import verificada estaticamente (`import-linter`,
+`pyproject.toml`) — `features/` não importa `labels/`, `models/` não
+importa `execution/`, entre outras regras documentadas em `CLAUDE.md`.
+
+## Stack
+
+Python 3.12+ · `uv` · Polars (lazy, Arrow) · DuckDB · Parquet+zstd ·
+LightGBM · scikit-learn (calibração isotônica) · Optuna · SHAP ·
+structlog+orjson · Pydantic+YAML · pytest+hypothesis · ruff · mypy strict
 
 ## Rodando localmente
 
 ```bash
 uv sync --all-groups
-uv run pytest
+uv run pytest -m "not slow and not integration"   # ciclo rápido
 uv run ruff check .
-uv run mypy src
+uv run mypy src   # strict=true já configurado em pyproject.toml
 uv run python tools/lint/banned_patterns.py --path src --strict
+uv run python tools/lint/check_constants_provenance.py
 ```
 
-## Proveniência de constantes
+Dados de mercado não são versionados (`data/*` no `.gitignore`) —
+reconstruíveis por download determinístico da API pública da Binance. Ver
+`CLAUDE.md` para a rotina completa de bootstrap e as regras de governança
+que todo código deste repositório segue.
 
-Nenhuma constante numérica entra em código de pipeline sem uma entrada em
-`config/constants.yaml`, com origem declarada (medido / derivado / literatura /
-assumido) e classe de risco. `tools/lint/check_constants_provenance.py` verifica
-isso. É o mecanismo central que impede um número inventado se passar por
-resultado medido — ver `CLAUDE.md` § "Regra zero: proveniência".
+## Onde ler mais
+
+| Documento | Conteúdo |
+|---|---|
+| [`CLAUDE.md`](CLAUDE.md) | Regras de engenharia do projeto — proveniência, banned patterns, rotina de git, diretrizes de comportamento |
+| [`PLANO_MESTRE_PRINCE2.md`](PLANO_MESTRE_PRINCE2.md) | Governança, decisões, roadmap — documento canônico |
+| [`docs/ADR-001_arquitetura_artefatos_e_contratos_2026-08-19_base.md`](docs/ADR-001_arquitetura_artefatos_e_contratos_2026-08-19_base.md) | Arquitetura de artefatos e contratos (canônico) |
+| [`docs/SPRINT_LOG.md`](docs/SPRINT_LOG.md) | Estado atual, sprint a sprint, com números reais |
+| [`audit/architecture_gaps_log.yaml`](audit/architecture_gaps_log.yaml) | Todo furo de arquitetura encontrado e como foi resolvido |
+
+---
+
+Projeto individual, código aberto para fins de portfólio técnico. Não é
+recomendação de investimento, produto financeiro, nem sinal de trading.

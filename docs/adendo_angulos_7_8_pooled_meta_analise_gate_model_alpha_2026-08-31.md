@@ -18,11 +18,10 @@ adicionais, genuinamente novos**, que aquela rodada não tinha coberto.
 **Método de execução:** só leitura dos artefatos JSON reais já materializados
 em disco, via PowerShell (`ConvertFrom-Json` + aritmética) — nenhum código de
 pipeline foi executado, nenhum retreino, nenhum trial novo gasto de
-`n_lifetime`. Scripts completos em
-`C:\Users\FELIPE~1\AppData\Local\Temp\claude\C--Robo-MT5-Forex-Cryptex-Binance-Futures\935703ce-0fc6-40e0-b511-b2984b6c2462\scratchpad\pooled_meta_analysis.ps1`
-e `...\pooled_alpha_meta_analysis.ps1` (fora do repo, diretório de
-scratchpad da sessão — não versionados; reproduzíveis a partir das fórmulas
-documentadas abaixo).
+`n_lifetime`. Scripts completos em `pooled_meta_analysis.ps1` e
+`pooled_alpha_meta_analysis.ps1` (fora do repo, diretório de scratchpad da
+sessão — não versionados; reproduzíveis a partir das fórmulas documentadas
+abaixo).
 
 ---
 

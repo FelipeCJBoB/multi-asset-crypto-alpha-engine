@@ -1,9 +1,9 @@
 [project]
-name = "btcusdt-quant"
+name = "multi-asset-crypto-alpha-engine"
 version = "0.1.0"
-description = "Motor quantitativo BTCUSDT perpétuo — Binance USDⓈ-M. PRD V3.2/V3.3."
+description = "Motor de pesquisa de alpha multi-ativo para futuros perpétuos cripto (Binance USDⓈ-M) — dollar bars, CPCV, LightGBM, Optuna, governança de proveniência."
 requires-python = ">=3.12"
-readme = "CLAUDE.md"
+readme = "README.md"
 
 dependencies = [
     "polars>=1.9",

@@ -3253,7 +3253,7 @@ comunicação futura sobre "k=4 venceu o M4" precisa carregar a ressalva
 do Gate 1 — este override não fecha essa pergunta.
 
 **Escopo entregue** (plano completo, sessão 2026-08-21,
-`C:\Users\Felipe_a_Lenda\.claude\plans\wise-exploring-panda.md`):
+arquivo de plano local `wise-exploring-panda.md`):
 
 - **Fase A** — regime SAIU do vetor de treino do Alpha
   (`src/models/alpha.py`): `DESIGN_COLUMNS` deixa de incluir o one-hot

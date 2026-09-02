@@ -84,3 +84,13 @@ models/*.json
 .DS_Store
 Thumbs.db
 *.swp
+
+# Pré-publicação (2026-09-02) -- conteúdo não verificado ou fora de escopo
+# do repositório público (case de ML/quant), nunca deve entrar via `git add`
+# genérico. PDF: sem ferramenta de renderização neste ambiente pra
+# confirmar que não carrega dado pessoal antes de publicar (o .md irmão de
+# mesmo título é conteúdo técnico puro, mas o PDF em si não foi verificado).
+/Validação cruzada final.pdf
+/Como_fazer.docx.pdf
+/No motor quant.pdf
+/top3_candidates.json
