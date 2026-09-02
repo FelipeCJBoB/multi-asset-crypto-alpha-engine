@@ -24,7 +24,7 @@ from src.data._paths import CAPACITY_DIR
 from src.data.resample import step_ms
 from src.features import _sources, build
 from src.features import registry as features_registry
-from src.features.groups import group_e
+from src.features.groups import group_b, group_e
 
 _FIXTURE_START = "2024-01-01"
 _FIXTURE_END = "2024-02-10"  # 41 dias -> 3936 barras de 15m, >> 200 de warmup
@@ -108,7 +108,20 @@ def test_warmup_uniforme_maioria_valida_depois_do_corte(symbol: str) -> None:
     _skip_if_missing(symbol, _FIXTURE_START)
     out = build.build_t1_features(symbol, _FIXTURE_START, _FIXTURE_END)
     tail = out.tail(out.height - 200)  # min_warmup_bars real, ver AG-027
-    t1_cols = list(build.T1_FEATURE_IDS)
+    # `A17_log_tr_per_overshoot_ratio` (Lote D, 2026-08-28, AG-372/
+    # redesenhada no mesmo dia por AG-373) precisa de `quote_volume`/
+    # `threshold_quote` -- colunas que só existem sob bar_source
+    # dollar_r{1,2,3}, nunca sob time_15m (grade legada que este teste
+    # exercita por padrão, build_t1_features sem bar_source explícito).
+    # NaN 100% aqui não é defeito de dado, é limite estrutural do grid --
+    # feature T1 grid-específica (as outras 28 usam fontes disponíveis
+    # sob qualquer bar_source). Excluída só desta checagem de "maioria
+    # válida", não do vetor de treino real (produção roda sob dollar bar,
+    # onde A17/A21 são válidas). `A21_log_dollar_velocity` (Lote D2,
+    # mesmo achado, mesma dependência de quote_volume) entra na mesma
+    # exclusão.
+    _grid_specific = {"A17_log_tr_per_overshoot_ratio", "A21_log_dollar_velocity"}
+    t1_cols = [c for c in build.T1_FEATURE_IDS if c not in _grid_specific]
     n_fully_valid = tail.select(t1_cols).drop_nulls().height
     assert n_fully_valid / tail.height > 0.95
 
@@ -319,6 +332,14 @@ def test_compute_t1_features_vol_estimator_id_parkinson_muda_c01_preserva_resto(
         "B06_momentum_accel",
         # Lote B (H5, 2026-08-24) -- idem
         "A15_dist_vwap_d_atr",
+        # Lote D (2026-08-28, AG-372) -- B14 divide por atr_20_pct
+        # (-sign(ret_h_prior) * ret_1 / atr_20_pct); as outras 5 novas
+        # (A16/A17/B12/B13/B15) não consomem atr_20_abs/atr_20_pct.
+        "B14_rejection_after_extension",
+        # Lote D2 (2026-08-28, AG-372) -- B18 (engolfo) divide por
+        # atr_20_abs (body_atr = (C-O)/ATR_20); A18/A19/A20/A21/B16/B17
+        # não consomem atr_20_abs/atr_20_pct.
+        "B18_engulfing_atr",
     }
     for col in cols_afetadas:
         valid = ~out_wilder[col].is_nan() & ~out_parkinson[col].is_nan()
@@ -329,6 +350,37 @@ def test_compute_t1_features_vol_estimator_id_parkinson_muda_c01_preserva_resto(
     assert out_wilder.select(outros_cols).equals(
         out_parkinson.select(outros_cols), null_equal=True
     )
+
+
+def test_compute_t1_features_b14_usa_a16_deslocado_um_bar() -> None:
+    """Achado de auditoria independente (2026-08-28, `AG-372`): o núcleo
+    puro de B14 é bem testado, mas nenhum teste reconstruía o deslocamento
+    `ret_h_prior[t] = A16_return_3[t-1]` feito dentro de `compute_t1_
+    features` (`build.py` -- ver comentário perto de `ret_h_prior`) contra
+    a saída real. Reconstrói B14 a partir das próprias colunas T1 já
+    expostas (`A16_return_3`, `A01_log_return_1`, `C02_atr_20_pct`) e
+    compara com `B14_rejection_after_extension` -- um off-by-one futuro
+    nesse shift (ex. alguém remover o deslocamento) quebraria este teste,
+    mesmo que o núcleo puro de `group_b.b14_rejection_after_extension`
+    continuasse correto isoladamente."""
+    n = 300
+    bars = _make_synthetic_bars_for_cap_test(n)
+    rng = np.random.default_rng(94)
+    funding = pl.Series("f", rng.normal(0.0001, 0.0002, n), dtype=pl.Float64)
+    oi = pl.Series("oi", 90_000.0 + np.cumsum(rng.normal(0, 200, n)), dtype=pl.Float64)
+
+    out = build.compute_t1_features(bars, funding, oi, apply_warmup_mask=False)
+
+    a16 = out["A16_return_3"].to_numpy()
+    ret_1 = out["A01_log_return_1"].to_numpy()
+    atr_20_pct = out["C02_atr_20_pct"].to_numpy()
+
+    ret_h_prior_esperado = np.full(n, np.nan, dtype=np.float64)
+    ret_h_prior_esperado[1:] = a16[:-1]
+
+    esperado = group_b.b14_rejection_after_extension(ret_h_prior_esperado, ret_1, atr_20_pct)
+    got = out["B14_rejection_after_extension"].to_numpy()
+    np.testing.assert_allclose(got, esperado, equal_nan=True)
 
 
 def test_compute_t1_features_vol_estimator_id_invalido_levanta_valueerror() -> None:
@@ -572,7 +624,22 @@ def test_t1_ortogonalidade_spearman_2anos(symbol: str) -> None:
     aqui, só reportadas via print, mesma disciplina do caso BTCUSDT."""
     _skip_if_missing(symbol, _CORR_START)
     out = build.build_t1_features(symbol, _CORR_START, _CORR_END)
-    t1_cols = list(build.T1_FEATURE_IDS)
+    # `A17_log_tr_per_overshoot_ratio`/`A21_log_dollar_velocity` são NaN 100%
+    # sob time_15m -- ver mesmo comentário em test_warmup_uniforme_
+    # maioria_valida_depois_do_corte. `A20_log_duration` (achado NOVO,
+    # nesta rodada) não é NaN sob time_15m -- é CONSTANTE (grade de
+    # relógio tem duração fixa ~15min em toda barra, por definição), o
+    # que zera o desvio-padrão da coluna e quebra a matriz de correlação
+    # (RuntimeWarning "invalid value encountered in divide", corr deixa
+    # de ser simétrica por NaN != NaN). Excluídas só desta checagem de
+    # correlação, não do vetor real (produção roda sob dollar bar, onde
+    # as 3 têm variância real).
+    _corr_excluidas = {
+        "A17_log_tr_per_overshoot_ratio",
+        "A20_log_duration",
+        "A21_log_dollar_velocity",
+    }
+    t1_cols = [c for c in build.T1_FEATURE_IDS if c not in _corr_excluidas]
     clean = out.select(t1_cols).drop_nulls()
     assert clean.height > 10_000  # amostra grande o bastante pra correlação ser informativa
 

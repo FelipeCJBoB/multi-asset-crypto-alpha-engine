@@ -17,6 +17,7 @@ import polars as pl
 import pytest
 
 from src.labels.experiment_log import (
+    KNOWN_LEGACY_GRADE_LINEAGE_GAPS,
     find_unregistered_label_artifacts,
     label_artifact_config_hash,
 )
@@ -111,6 +112,64 @@ def test_raiz_de_labels_inexistente_devolve_vazio_em_vez_de_estourar(tmp_path: P
     assert (
         find_unregistered_label_artifacts(labels_root=tmp_path / "nao_existe", log_path=log) == ()
     )
+
+
+# ============================================================================
+# accepted_gap -- AG-309 addendum 2026-08-27 (Manager: "nao rodar grade de
+# 15m legada, e obsoleta e morta")
+# ============================================================================
+
+
+def test_grade_15m_conhecida_reporta_accepted_gap_true(tmp_path: Path) -> None:
+    """A divergência continua na lista (nunca fica invisível) — só ganha a
+    marca `accepted_gap=True`."""
+    root = tmp_path / "labels"
+    log = tmp_path / "log.parquet"
+    _labels(root / "BTCUSDT" / "15m" / "v1" / "labels.parquet", "hash_disco_novo")
+    _registro(
+        log,
+        [{"symbol": "BTCUSDT", "tf": "15m", "resolution_id": None, "config_hash": "hash_velho"}],
+    )
+    (achado,) = find_unregistered_label_artifacts(labels_root=root, log_path=log)
+    assert achado.accepted_gap is True
+    assert achado.symbol == "BTCUSDT"
+    assert achado.grade == "15m"
+
+
+def test_grade_dollar_bar_divergente_nao_e_accepted_gap(tmp_path: Path) -> None:
+    """Só (symbol, '15m') é aceito — R1/R2/R3 divergentes continuam
+    reportados como falha real, mesmo símbolo."""
+    root = tmp_path / "labels"
+    log = tmp_path / "log.parquet"
+    _labels(root / "BTCUSDT" / "R1" / "v1" / "labels.parquet", "novo")
+    _registro(
+        log, [{"symbol": "BTCUSDT", "tf": None, "resolution_id": "R1", "config_hash": "velho"}]
+    )
+    (achado,) = find_unregistered_label_artifacts(labels_root=root, log_path=log)
+    assert achado.accepted_gap is False
+
+
+def test_todos_os_5_simbolos_de_15m_estao_em_known_legacy_grade_lineage_gaps() -> None:
+    esperado = frozenset(
+        (sym, "15m") for sym in ("BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT")
+    )
+    assert esperado == KNOWN_LEGACY_GRADE_LINEAGE_GAPS
+
+
+def test_accepted_gaps_explicito_sobrepoe_o_default(tmp_path: Path) -> None:
+    """`accepted_gaps` é parâmetro, não hardcoded — quem chama pode passar
+    outro conjunto (ex. em teste, ou se o Manager aceitar um gap diferente
+    no futuro)."""
+    root = tmp_path / "labels"
+    log = tmp_path / "log.parquet"
+    _labels(root / "ETHUSDT" / "R2" / "v1" / "labels.parquet", "novo")
+    _registro(
+        log, [{"symbol": "ETHUSDT", "tf": None, "resolution_id": "R2", "config_hash": "velho"}]
+    )
+    (achado,) = find_unregistered_label_artifacts(
+        labels_root=root, log_path=log, accepted_gaps=frozenset({("ETHUSDT", "R2")})
+    )
+    assert achado.accepted_gap is True
 
 
 def test_artefato_com_mais_de_um_config_hash_falha_alto(tmp_path: Path) -> None:

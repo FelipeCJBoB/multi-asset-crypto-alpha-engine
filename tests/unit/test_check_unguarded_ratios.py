@@ -100,6 +100,32 @@ def test_guarda_com_try_except_zero_division_e_detectada(tmp_path: Path) -> None
     assert findings[0].guarded
 
 
+def test_guarda_com_np_where_na_mesma_expressao_e_detectada(tmp_path: Path) -> None:
+    # achado de /audit_engineering 2026-08-28 (group_a.py::
+    # a17_true_range_per_overshoot, renomeada no mesmo dia pra
+    # a17_log_tr_per_overshoot_ratio (AG-373) / group_b.py::
+    # b13_extension_h3) -- guarda e divisão na MESMA expressão (ternário
+    # vetorizado), não em if/assert separado antes dela.
+    code = "def f(a, b):\n    return np.where(b > 0, a / b, float('nan'))\n"
+    findings = _findings(tmp_path, code)
+    assert len(findings) == 1
+    assert findings[0].guarded
+
+
+def test_guarda_com_numpy_where_nome_completo_e_detectada(tmp_path: Path) -> None:
+    code = "def f(a, b):\n    return numpy.where(b > 0, a / b, float('nan'))\n"
+    findings = _findings(tmp_path, code)
+    assert findings[0].guarded
+
+
+def test_np_where_guardando_outra_variavel_nao_conta(tmp_path: Path) -> None:
+    # condição do np.where checa 'a', não o denominador 'b' -- mesmo
+    # espírito de test_sem_guarda_nenhuma_e_reportado_como_nao_guardado.
+    code = "def f(a, b):\n    return np.where(a > 0, a / b, float('nan'))\n"
+    findings = _findings(tmp_path, code)
+    assert not findings[0].guarded
+
+
 def test_sem_guarda_nenhuma_e_reportado_como_nao_guardado(tmp_path: Path) -> None:
     code = (
         "def f(a, b):\n"

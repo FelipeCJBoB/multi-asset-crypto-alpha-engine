@@ -209,6 +209,115 @@ def a11_true_range_pct(high: FloatArray, low: FloatArray, close: FloatArray) -> 
     return out
 
 
+def a16_return_3(close: FloatArray, lag_bars: int) -> FloatArray:
+    """`ln(C_t / C_{t-lag_bars})` — mesmo núcleo de A01-A04
+    (`_log_return_n`). **[NOVO, 2026-08-28, `AG-372`/ADR-006]** Preenche o
+    gap entre A02 (lag 2) e A03 (lag 4) na escala medida do horizonte de
+    holding real do motor (`n_bars_held` mediana=1, p75=3, `feature_a16_
+    return_lag_bars`) — não um lag arbitrário: é o lag onde o `h/H` de
+    A01-A04 já cruzava de "muito curto" pra "possivelmente longo demais"
+    sem nenhum candidato exatamente em cima do p75 medido."""
+    return _log_return_n(close, lag_bars)
+
+
+def a17_log_tr_per_overshoot_ratio(
+    high: FloatArray,
+    low: FloatArray,
+    close: FloatArray,
+    overshoot: FloatArray,
+    threshold_quote: FloatArray,
+) -> FloatArray:
+    """`ln1p( (TR_t/C_{t-1}) / (overshoot_t/threshold_quote_t) )` —
+    **[NOVO, 2026-08-28, `AG-372`/ADR-006; REDESENHADA no mesmo dia,
+    `AG-373`]**. Substitui a versão original (`TR_t/overshoot_t` cru),
+    que tinha um defeito dimensional real achado por auditoria
+    independente: `TR_t` tem unidade de PREÇO (`$/coin`) e `overshoot_t`
+    tem unidade de NOTIONAL em dólar (`quote_volume_t - threshold_
+    quote_t`, `price*quantity` somado) — a razão crua não cancela,
+    unidade residual `1/coin`, deriva sistemática com o nível de preço
+    do próprio ativo ao longo do calendário (mesma classe de defeito que
+    o cabeçalho deste módulo já trata como não-negociável pra A05 vs
+    A13). Corrigido normalizando os DOIS lados contra sua própria escala
+    de referência antes de dividir: `TR_t/C_{t-1}` (== `A11_true_range_
+    pct`, retorno relativo, adimensional) sobre `overshoot_t/threshold_
+    quote_t` (fração de quanto a barra passou do alvo, adimensional) —
+    razão de duas quantidades adimensionais, unidade final = nenhuma.
+    `ln1p` doma a cauda pesada à direita (overshoot pequeno relativo ao
+    threshold é o caso ECONOMICAMENTE esperado, não raro — `AG-321`: a
+    barra fecha quase exatamente no threshold — então o denominador da
+    razão interna é tipicamente pequeno, produzindo valores grandes;
+    mesmo tratamento que A18-A21/B16 já aplicam no lote, por
+    consistência, não estética). Tese econômica preservada: deslocamento
+    de preço por unidade de atividade monetária MARGINAL relativa ao
+    threshold-alvo — overshoot pequeno com TR grande é o sinal de
+    iliquidez/impacto alto. Deliberadamente NÃO chamada de "Amihud"/
+    "Kyle lambda" — a analogia é conceitual, não replicação da métrica.
+
+    `overshoot_t<=0` (guardado explicitamente — acontece de fato 1x por
+    símbolo×resolução na última barra de cada stream, subdimensionada
+    por construção, `AG-373`) ou `threshold_quote_t<=0` (nunca deveria
+    acontecer, guardado mesmo assim) produzem `NaN`."""
+    tr = support.true_range(high, low, close)
+    n = close.shape[0]
+    prev_close = np.full(n, np.nan, dtype=np.float64)
+    if n > 1:
+        prev_close[1:] = close[:-1]
+    with np.errstate(divide="ignore", invalid="ignore"):
+        valid = (overshoot > 0.0) & (threshold_quote > 0.0)
+        impact_ratio = np.where(valid, (tr * threshold_quote) / (prev_close * overshoot), np.nan)
+        out: FloatArray = np.log1p(impact_ratio)
+    return out
+
+
+def a18_body_log(open_: FloatArray, close: FloatArray) -> FloatArray:
+    """`ln(C_t / O_t)` — **[NOVO, 2026-08-28, `AG-372`/ADR-006, Lote D2]**
+    deslocamento open→close DENTRO da própria barra, em log — diferente
+    de A01 (`ln(C_t/C_{t-1})`, close-a-close ENTRE barras). Nenhuma
+    feature do vetor media isso hoje. `O_t>0` sempre (preço real) — mesma
+    classe de denominador "estruturalmente seguro" que A01-A04 já tratam
+    sem guarda explícita (`close[:-lag_bars]`)."""
+    with np.errstate(divide="ignore", invalid="ignore"):
+        out: FloatArray = np.log(close / open_)
+    return out
+
+
+def a19_log_range(high: FloatArray, low: FloatArray) -> FloatArray:
+    """`ln(H_t / L_t)` — **[NOVO, 2026-08-28, `AG-372`/ADR-006, Lote D2]**
+    range CRU de 1 barra, não suavizado — diferente de `atr_20_pct`
+    (média de Wilder, 20 barras). `H_t=L_t` (barra flat) dá `ln(1)=0`,
+    sem divisão nem caso degenerado a tratar."""
+    with np.errstate(divide="ignore", invalid="ignore"):
+        out: FloatArray = np.log(high / low)
+    return out
+
+
+def a20_log_duration(open_time_ms: FloatArray, close_time_ms: FloatArray) -> FloatArray:
+    """`ln(1 + duração_s)` — **[NOVO, 2026-08-28, `AG-372`/ADR-006, Lote
+    D2]** exclusivo de dollar bar: quanto tempo o mercado precisou pra
+    negociar aquele quantum de valor. Sob `time_15m` continua computável
+    (não vira NaN) mas degenera pra quase-constante (~15min sempre) —
+    baixa informação nesse grid, não um erro. `close_time_ms >=
+    open_time_ms` sempre (fecho nunca antes da abertura) — `log1p` é
+    seguro mesmo no caso-limite duração=0 (barra de 1 trade só)."""
+    duration_ms = close_time_ms - open_time_ms
+    duration_s = duration_ms / 1000.0  # noqa: magic-number -- ms->s, conversão de unidade, não hiperparâmetro
+    out: FloatArray = np.log1p(duration_s)
+    return out
+
+
+def a21_log_dollar_velocity(quote_volume: FloatArray, duration_s: FloatArray) -> FloatArray:
+    """`ln(1 + QV_t/duração_s)` — **[NOVO, 2026-08-28, `AG-372`/ADR-006,
+    Lote D2]** intensidade de atividade monetária por segundo, eixo
+    ORTOGONAL a A17 (A17 mede impacto de preço por overshoot; isto mede
+    velocidade de atividade sem olhar pro preço). `duração_s<=0` (barra
+    de 1 trade instantâneo — caso real, não hipotético) produz `NaN`,
+    nunca `inf` (mesma disciplina de A17/B13, achado de
+    `/audit_engineering`)."""
+    with np.errstate(divide="ignore", invalid="ignore"):
+        out: FloatArray = np.where(duration_s > 0.0, np.log1p(quote_volume / duration_s), np.nan)
+    return out
+
+
 def a14_dist_ema12_atr(close: FloatArray, ema_12: FloatArray, atr_20_abs: FloatArray) -> FloatArray:
     """`(C_t - EMA_12) / ATR_20` (absoluto) — §2.2 A14. Mesma resolução
     dimensional de A13 (numerador em unidade de preço → denominador ATR

@@ -217,6 +217,18 @@ def _run_full_vector_stage(
     # (ADR-001, "iteração exploratória") pra exatamente essa situação --
     # nenhuma das 3 rodadas deste módulo é o retreino canônico, então
     # nenhuma delas deve escrever no caminho imutável de produção.
+    #
+    # AG-371 (2026-08-28) -- `stage="on"` (`use_hyperparams_by_combo=
+    # True`) agora FALHA ALTO (`HyperparamFeatureMismatchError`) até
+    # `alpha_hyperparams_by_combo.yaml` ser recalibrado sob o vetor de 22
+    # `T1_FEATURE_IDS` atual -- o hiperparâmetro calibrado (ADR-003,
+    # 25/08) foi medido sob os 62 `SUPPORT_FEATURE_IDS` da época,
+    # substitutivo, extinto nessa forma desde `AG-362` (27/08). É
+    # esperado e intencional: rerodar esta função hoje sob `stage="on"`
+    # reproduziria a mesma contaminação que motivou o AG-371. Só volta a
+    # rodar depois da recalibração (AG-371 item (c), já priorizada) ou
+    # com `allow_feature_mismatch=True` explícito (decisão do Manager,
+    # marca o report como contaminado -- não decidido aqui).
     reports_raw = run_layer1_sprint_all_combinations(
         symbols=symbols,
         resolutions=resolutions,
@@ -286,6 +298,20 @@ def run_stage(
     )
     winner_use_hyperparams_by_combo = winner == "on"
 
+    # AG-371 (2026-08-28) -- achado NOVO desta investigação: se `winner ==
+    # "on"`, esta chamada combina `ORIGINAL_T1_FEATURE_IDS` (7, congelado
+    # pré-AG-362) com `use_hyperparams_by_combo=True` -- hiperparâmetro
+    # calibrado (ADR-003) sob um vetor de 62 features, nunca sob 7. É uma
+    # TERCEIRA combinação incompatível, distinta da que o AG-371 original
+    # documenta (22 features + hiper stale), dentro do MESMO script cujo
+    # resultado ("on vence off") motivou rodar o retreino canônico com
+    # `use_hyperparams_by_combo=True`. `HyperparamFeatureMismatchError`
+    # agora recusa esta chamada nesse caso -- não corrigido silenciosamente
+    # aqui porque decidir se o estágio "base" deveria usar hiperparâmetro
+    # global (isola o eixo de contagem de features de verdade) ou
+    # `allow_feature_mismatch=True` (mantém o eixo `use_hyperparams_by_
+    # combo` constante entre os 3 estágios, contaminado) é decisão de
+    # metodologia do Manager, não mecânica.
     t_start = time.monotonic()
     logger.info(
         "ag362_incremental_value.stage_start",

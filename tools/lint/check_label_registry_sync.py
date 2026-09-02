@@ -36,8 +36,15 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 from src.labels.experiment_log import (  # noqa: E402 -- sys.path acima é pré-requisito
+    UnregisteredLabelArtifact,
     find_unregistered_label_artifacts,
 )
+
+
+def _imprime(a: UnregisteredLabelArtifact, registro: str) -> None:
+    print(f"  {a.symbol}/{a.grade}/{a.version}")
+    print(f"      disco    : {a.config_hash_no_disco}")
+    print(f"      registro : {registro}")
 
 
 def main() -> int:
@@ -68,12 +75,28 @@ def main() -> int:
         print("check_label_registry_sync: todo labels.parquet tem linha no registro.")
         return 0
 
-    print(f"check_label_registry_sync: {len(achados)} artefato(s) SEM linha no registro:\n")
-    for a in achados:
+    aceitos = [a for a in achados if a.accepted_gap]
+    pendentes = [a for a in achados if not a.accepted_gap]
+
+    if aceitos:
+        print(f"check_label_registry_sync: {len(aceitos)} artefato(s) com gap ACEITO (AG-309):\n")
+        for a in aceitos:
+            registro = ", ".join(a.config_hashes_no_registro) or "(nenhuma linha para esta célula)"
+            _imprime(a, registro)
+        print(
+            "\nGrade de relógio 15m -- decisão do Manager (2026-08-27): não roda mais, "
+            "obsoleta desde AG-042. Ver src.labels.experiment_log."
+            "KNOWN_LEGACY_GRADE_LINEAGE_GAPS.\n"
+        )
+
+    if not pendentes:
+        print("check_label_registry_sync: nenhum gap FORA da lista aceita.")
+        return 0
+
+    print(f"check_label_registry_sync: {len(pendentes)} artefato(s) SEM linha no registro:\n")
+    for a in pendentes:
         registro = ", ".join(a.config_hashes_no_registro) or "(nenhuma linha para esta célula)"
-        print(f"  {a.symbol}/{a.grade}/{a.version}")
-        print(f"      disco    : {a.config_hash_no_disco}")
-        print(f"      registro : {registro}")
+        _imprime(a, registro)
     print(
         "\nCada um destes é um artefato de produção cuja proveniência não está registrada:\n"
         "nenhum número publicado a partir dele é rastreável à config que o gerou.\n"
@@ -81,7 +104,9 @@ def main() -> int:
         "declara, duas vezes, 'não inventa retroativamente o que não foi registrado na\n"
         "hora'. Fecha-se escrevendo os labels de novo pelo caminho que registra\n"
         "(src.labels.backfill_multi_symbol.build_and_write_labels_for_symbol), ou\n"
-        "aceitando explicitamente que a janela anterior ficou sem proveniência."
+        "aceitando explicitamente que a janela anterior ficou sem proveniência\n"
+        "(src.labels.experiment_log.KNOWN_LEGACY_GRADE_LINEAGE_GAPS, se for o mesmo "
+        "caso da grade 15m já tratado)."
     )
     return 1
 

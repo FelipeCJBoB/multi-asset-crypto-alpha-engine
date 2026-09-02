@@ -162,6 +162,155 @@ def b11_bb_position_20(close: FloatArray, window: int, std_multiplier: float) ->
 
 
 # ============================================================================
+# Lote D da liberação de features (2026-08-28, `AG-372`/ADR-006) — B12-B15,
+# família momentum/reversão reconstruída em torno do H real medido nesta
+# sessão (n_bars_held mediana=1, p75=3, estável entre R1/R2/R3). Todas T1
+# por decisão direta do Manager (autorização explícita 2026-08-28,
+# `CLAUDE.md` "correção pedida pelo Manager é o default imediato").
+# ============================================================================
+
+
+def b12_close_location_h3(
+    high: FloatArray, low: FloatArray, close: FloatArray, window: int
+) -> FloatArray:
+    """Posição do close dentro do range mínimo-máximo rolante de `window`
+    barras (mesmo núcleo de B10), reescalado pra `[-1,1]` (mesma convenção
+    de B01) — **[NOVO, 2026-08-28, `AG-372`/ADR-006]** consolida A10/B09/
+    B10/B11 (4 features julgadas o MESMO conceito -- "posição do close na
+    distribuição recente" -- sob 4 janelas (1/48/14/20) nunca calibradas
+    contra H, veredito `SEM_MECANISMO`/`INCOERENTE_DIMENSIONAL` em
+    `audit/feature_thesis/fichas_69_2026-08-25.yaml`) numa família única,
+    na janela certa. `range_=0` (preço flat na janela inteira) produz `0`
+    (ponto médio de `[-1,1]`), mesma convenção de A07-A10. Janela rolante
+    fixa (a barra `t` entra na própria janela, B02 não se aplica)."""
+    lowest_low = pl.Series(low).rolling_min(window_size=window, min_samples=window).to_numpy()
+    highest_high = pl.Series(high).rolling_max(window_size=window, min_samples=window).to_numpy()
+    range_ = highest_high - lowest_low
+    with np.errstate(divide="ignore", invalid="ignore"):
+        pct = np.where(range_ == 0.0, 0.5, (close - lowest_low) / range_)
+        out: FloatArray = pct * 2.0 - 1.0
+    return out
+
+
+def b13_extension_h3(ret_h: FloatArray, realized_vol_h: FloatArray) -> FloatArray:
+    """`|ret_h| / realized_vol_h` — magnitude do movimento recente
+    relativo à volatilidade realizada típica, mesma janela `H`. **[NOVO,
+    2026-08-28, `AG-372`/ADR-006]** Tese: quão "extremo" é o movimento —
+    condição de entrada da hipótese de reversão (extensão grande é
+    candidato a exaustão, não confirmação por si só — ver B14).
+
+    **[CORRIGIDO 2026-08-28, achado de `/audit_engineering`]**
+    `realized_vol_h` (`std` de 3 retornos, janela curta de propósito —
+    ver ADR-006) pode ser exatamente `0` em barras consecutivas de preço
+    idêntico — não hipotético: dollar bar fecha por volume, não por
+    tempo, e um trade de tick repetido em ativo de menor liquidez (ex.
+    XRP/BNB) pode gerar 3 barras de retorno zero. `check_unguarded_
+    ratios.py` pegou a divisão sem guarda (denominador `realized_vol_h`
+    variável, sem checagem de sinal). Guardado: `realized_vol_h<=0`
+    produz `NaN`, nunca `inf` silencioso."""
+    with np.errstate(divide="ignore", invalid="ignore"):
+        out: FloatArray = np.where(realized_vol_h > 0.0, np.abs(ret_h) / realized_vol_h, np.nan)
+    return out
+
+
+def b14_rejection_after_extension(
+    ret_h_prior: FloatArray, ret_1: FloatArray, atr_20_pct: FloatArray
+) -> FloatArray:
+    """`-sign(ret_h_prior) × ret_1_t / atr_20_pct_t` — **[NOVO,
+    2026-08-28, `AG-372`/ADR-006]**, a feature de "exaustão"/falha de
+    continuação. `ret_h_prior` é o retorno de `H` barras já ENCERRADO em
+    `t-1` (a extensão que aconteceu ANTES da barra atual — não inclui a
+    barra `t`); `ret_1` é o retorno de uma barra da barra atual. Extensão
+    prévia de alta (`ret_h_prior>0`) seguida de barra atual que reverte
+    (`ret_1<0`): produto `sign(ret_h_prior)×ret_1` negativo → com o `-` na
+    frente, sinal POSITIVO = rejeição/falha de continuação detectada.
+    Extensão confirmada (mesmo sinal): sinal negativo = continuação, não
+    rejeição. Causal por construção: `ret_h_prior` usa só dado até `t-1`
+    (deslocado em `build.py` antes de chegar aqui), `ret_1`/`atr_20_pct`
+    usam só dado até `t` — nenhum índice >= `t+1` em nenhum dos dois."""
+    with np.errstate(divide="ignore", invalid="ignore"):
+        out: FloatArray = -np.sign(ret_h_prior) * ret_1 / atr_20_pct
+    return out
+
+
+def b15_efficiency_ratio_h3(close: FloatArray, window: int) -> FloatArray:
+    """`|C_t - C_{t-window}| / Σ|C_i - C_{i-1}|` — mesmo núcleo de B07/B08
+    (`support.efficiency_ratio`), janela medida (`H`). **[NOVO,
+    2026-08-28, `AG-372`/ADR-006]** Kaufman's Efficiency Ratio na escala
+    do holding period real: mede se o movimento que o trade de fato
+    captura foi "reto" (tendência limpa, consistência direcional alta) ou
+    "ruidoso" (zigue-zague), não um regime mais lento (B07=48, B08=16)."""
+    return support.efficiency_ratio(close, window)
+
+
+# ============================================================================
+# Lote D2 (2026-08-28, `AG-372`/ADR-006, validação da especificação de Candle
+# Features proposta pelo usuário) -- B16-B18: dinâmica de range/corpo entre
+# barras consecutivas e "engolfo" normalizado por ATR. Todas T1 por decisão
+# direta do Manager -- mesmo default imediato das anteriores.
+# ============================================================================
+
+
+def b16_log_range_ratio_1(high: FloatArray, low: FloatArray, lag_bars: int) -> FloatArray:
+    """`ln(Range_t / Range_{t-lag_bars})`, `Range_t = H_t - L_t` — **[NOVO,
+    2026-08-28, `AG-372`/ADR-006]** expansão/compressão de range em 1
+    barra (lag=1, a mediana exata de `H`) — diferente de C06/C10/C11
+    (suavizados 12/96 barras). `Range_t<=0` ou `Range_{t-lag_bars}<=0`
+    (barra flat, achado de `/audit_engineering`: guardado desde a
+    implementação, não descoberto depois) produz `NaN`."""
+    range_ = high - low
+    n = range_.shape[0]
+    range_prev = np.full(n, np.nan, dtype=np.float64)
+    if n > lag_bars:
+        range_prev[lag_bars:] = range_[:-lag_bars]
+    with np.errstate(divide="ignore", invalid="ignore"):
+        out: FloatArray = np.where(
+            (range_ > 0.0) & (range_prev > 0.0), np.log(range_ / range_prev), np.nan
+        )
+    return out
+
+
+def b17_directional_pressure_h3(open_: FloatArray, close: FloatArray, window: int) -> FloatArray:
+    """`Σbody_i / Σ|body_i|` sobre `window` barras, `body_i = C_i - O_i`
+    — **[NOVO, 2026-08-28, `AG-372`/ADR-006]** pressão direcional via
+    CORPO (open→close intra-barra), diferente de B15 (via close-a-close
+    entre barras) — mesma janela=3 (H medido), ângulo de medição
+    genuinamente distinto. `Σ|body_i|=0` só se as 3 barras tiverem corpo
+    exatamente zero (doji triplo) — guardado, produz `NaN`."""
+    body = close - open_
+    body_abs = np.abs(body)
+    num = pl.Series(body).rolling_sum(window_size=window, min_samples=window).to_numpy()
+    denom = pl.Series(body_abs).rolling_sum(window_size=window, min_samples=window).to_numpy()
+    with np.errstate(divide="ignore", invalid="ignore"):
+        out: FloatArray = np.where(denom > 0.0, num / denom, np.nan)
+    return out
+
+
+def b18_engulfing_atr(open_: FloatArray, close: FloatArray, atr_20_abs: FloatArray) -> FloatArray:
+    """`-sign(body_atr_{t-1}) × body_atr_t`, `body_atr = (C-O)/ATR_20`
+    — **[NOVO, 2026-08-28, `AG-372`/ADR-006]** "engolfo" contínuo,
+    normalizado por ATR (não pelo range da própria barra — comparável
+    ENTRE barras, diferente de A07 que é intra-barra). Barra `t-1` de
+    baixa seguida de `t` de alta com corpo maior (em unidades de ATR) →
+    sinal positivo grande (reversão/engolfo real); mesma direção → sinal
+    negativo (continuação). Sob dollar bar, comparar corpo entre barras
+    consecutivas é comparar "agressão por unidade de turnover" — as duas
+    barras têm ~o mesmo quantum de dólar negociado (`AG-321`), então a
+    diferença de tamanho de corpo já é diferença pura de eficácia
+    direcional, não confundida por volume desigual (o problema que essa
+    comparação teria sob barra de relógio). Causal: `body_atr_{t-1}` usa
+    só dado até `t-1`; `body_atr_t` usa só dado até `t`."""
+    with np.errstate(divide="ignore", invalid="ignore"):
+        body_atr: FloatArray = (close - open_) / atr_20_abs
+    n = body_atr.shape[0]
+    body_atr_prior = np.full(n, np.nan, dtype=np.float64)
+    if n > 1:
+        body_atr_prior[1:] = body_atr[:-1]
+    out: FloatArray = -np.sign(body_atr_prior) * body_atr
+    return out
+
+
+# ============================================================================
 # Lote B da liberação de features (H5, 2026-08-24) — B10, única do grupo B
 # nesta leva (precisa de primitiva nova: mínimo/máximo rolante).
 # ============================================================================

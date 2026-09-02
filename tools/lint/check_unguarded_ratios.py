@@ -21,6 +21,20 @@ função ser chamada) — por isso a saída sem `--strict` é sempre "achados
 pra revisar", não "veredito"; só `--strict` (CI/pre-commit) trata unguarded
 não-suprimido como falha.
 
+Três padrões de guarda reconhecidos, todos "em qualquer lugar da função",
+não amarrados estruturalmente ao ponto exato da divisão (mesma imprecisão
+deliberada dos outros dois — ver parágrafo acima):
+1. `if`/`assert` com comparação de sinal contra o denominador.
+2. `try`/`except ZeroDivisionError`.
+3. **[NOVO, 2026-08-28, achado de `/audit_engineering` sobre
+   `group_a.py::a17_true_range_per_overshoot` (renomeada no mesmo dia
+   pra `a17_log_tr_per_overshoot_ratio`, `AG-373`)/`group_b.py::
+   b13_extension_h3`]** `np.where(<denominador> <op> 0, <divisão>, <NaN>)`
+   — guarda e divisão na MESMA expressão (ternário vetorizado), não em
+   `if`/`assert` separado antes dela. Sem isto, o script reportava falso
+   positivo em todo o guard idiomático deste repo pra funções de feature
+   vetorizadas (`np.errstate` + `np.where`, não `if`/`raise` escalar).
+
 Divisão por LITERAL numérico (`bps / 10000`, `x / 2`) é conversão de
 unidade, não razão de dado variável — excluída por construção, mesma
 distinção que `_ALLOWED_NUMERIC_LITERALS` já faz em `banned_patterns.py`
@@ -82,7 +96,7 @@ _SIGN_COMPARISONS: tuple[type[ast.cmpop], ...] = (
 
 
 def _out(message: str) -> None:
-    print(message)  # noqa: T201
+    print(message)
 
 
 @dataclass(frozen=True)
@@ -140,6 +154,24 @@ def _mentions_sign_check(node: ast.expr, denom_key: str) -> bool:
     return False
 
 
+def _is_where_guard(node: ast.AST, denom_key: str) -> bool:
+    """`True` se `node` é uma chamada `np.where(cond, ...)` (ou
+    `numpy.where`/`where` importado direto) cuja condição (1º argumento)
+    menciona `denom_key` numa comparação de sinal contra zero — o padrão
+    de guarda/divisão na MESMA expressão (ternário vetorizado), diferente
+    de `if`/`assert` em statement separado. Achado de `/audit_engineering`
+    2026-08-28 (`group_a.py::a17_true_range_per_overshoot` — renomeada no
+    mesmo dia pra `a17_log_tr_per_overshoot_ratio`, `AG-373` —
+    /`group_b.py::b13_extension_h3`, ver docstring do módulo)."""
+    if not isinstance(node, ast.Call):
+        return False
+    func = node.func
+    func_name = func.id if isinstance(func, ast.Name) else getattr(func, "attr", "")
+    if func_name != "where" or not node.args:
+        return False
+    return _mentions_sign_check(node.args[0], denom_key)
+
+
 def _function_has_zero_division_guard(func_node: ast.AST, denom_key: str) -> bool:
     for sub in ast.walk(func_node):
         if isinstance(sub, ast.Try):
@@ -155,6 +187,8 @@ def _function_has_zero_division_guard(func_node: ast.AST, denom_key: str) -> boo
         if isinstance(sub, (ast.If, ast.Assert)) and _mentions_sign_check(
             sub.test if isinstance(sub, (ast.If, ast.Assert)) else sub, denom_key
         ):
+            return True
+        if _is_where_guard(sub, denom_key):
             return True
     return False
 

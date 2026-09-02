@@ -593,6 +593,337 @@ def test_a11_reproduz_true_range_sobre_close_anterior() -> None:
     np.testing.assert_allclose(out, expected, equal_nan=True)
 
 
+# ============================================================================
+# Lote D (2026-08-28, AG-372/ADR-006) -- A16/A17/B12/B13/B14/B15.
+# ============================================================================
+
+
+def test_a16_causalidade() -> None:
+    bars = _make_ohlcv(300)
+    cutoff = 150
+    out_base = group_a.a16_return_3(bars["close"], lag_bars=3)
+
+    close2 = bars["close"].copy()
+    close2[cutoff + 1 :] *= 1.5
+    out_perturbed = group_a.a16_return_3(close2, lag_bars=3)
+
+    np.testing.assert_allclose(out_base[: cutoff + 1], out_perturbed[: cutoff + 1])
+
+
+def test_a17_causalidade() -> None:
+    bars = _make_ohlcv(300)
+    rng = np.random.default_rng(7)
+    overshoot = rng.uniform(1.0, 1000.0, 300)
+    threshold_quote = np.full(300, 5000.0)
+    cutoff = 150
+    out_base = group_a.a17_log_tr_per_overshoot_ratio(
+        bars["high"], bars["low"], bars["close"], overshoot, threshold_quote
+    )
+
+    high2, low2, close2, overshoot2 = (
+        bars["high"].copy(),
+        bars["low"].copy(),
+        bars["close"].copy(),
+        overshoot.copy(),
+    )
+    high2[cutoff + 1 :] *= 1.5
+    low2[cutoff + 1 :] *= 1.5
+    close2[cutoff + 1 :] *= 1.5
+    overshoot2[cutoff + 1 :] *= 3.0
+    out_perturbed = group_a.a17_log_tr_per_overshoot_ratio(
+        high2, low2, close2, overshoot2, threshold_quote
+    )
+
+    np.testing.assert_allclose(out_base[: cutoff + 1], out_perturbed[: cutoff + 1])
+
+
+def test_a17_guarda_overshoot_e_threshold_nao_positivos() -> None:
+    bars = _make_ohlcv(50)
+    overshoot = np.full(50, 100.0)
+    overshoot[10] = 0.0
+    overshoot[20] = -5.0
+    threshold_quote = np.full(50, 5000.0)
+    threshold_quote[30] = 0.0
+    threshold_quote[31] = -1.0
+    out = group_a.a17_log_tr_per_overshoot_ratio(
+        bars["high"], bars["low"], bars["close"], overshoot, threshold_quote
+    )
+    assert np.isnan(out[10])
+    assert np.isnan(out[20])
+    assert np.isnan(out[30])
+    assert np.isnan(out[31])
+    assert not np.isnan(out[40])
+
+
+def test_a17_invariante_a_nivel_de_preco() -> None:
+    """Prova direta do fix de `AG-373`: escalar high/low/close por uma
+    constante (simulando outro nível de preço/época do mesmo ativo) NÃO
+    muda a saída, porque `TR/C_{t-1}` (numerador) já é adimensional --
+    diferente da v1 (`TR` bruto / `overshoot`), que tinha unidade
+    residual `1/coin` e teria mudado sob este mesmo teste."""
+    bars = _make_ohlcv(300)
+    rng = np.random.default_rng(17)
+    overshoot = rng.uniform(1.0, 1000.0, 300)
+    threshold_quote = np.full(300, 5000.0)
+    out_base = group_a.a17_log_tr_per_overshoot_ratio(
+        bars["high"], bars["low"], bars["close"], overshoot, threshold_quote
+    )
+    scale = 37.0  # preço 37x maior; overshoot/threshold_quote inalterados
+    out_scaled = group_a.a17_log_tr_per_overshoot_ratio(
+        bars["high"] * scale,
+        bars["low"] * scale,
+        bars["close"] * scale,
+        overshoot,
+        threshold_quote,
+    )
+    np.testing.assert_allclose(out_base, out_scaled, equal_nan=True)
+
+
+def test_b12_causalidade() -> None:
+    bars = _make_ohlcv(300)
+    cutoff = 150
+    out_base = group_b.b12_close_location_h3(bars["high"], bars["low"], bars["close"], window=3)
+
+    high2, low2, close2 = bars["high"].copy(), bars["low"].copy(), bars["close"].copy()
+    high2[cutoff + 1 :] *= 1.5
+    low2[cutoff + 1 :] *= 1.5
+    close2[cutoff + 1 :] *= 1.5
+    out_perturbed = group_b.b12_close_location_h3(high2, low2, close2, window=3)
+
+    np.testing.assert_allclose(out_base[: cutoff + 1], out_perturbed[: cutoff + 1])
+
+
+def test_b12_faixa_menos1_a_1() -> None:
+    bars = _make_ohlcv(300)
+    out = group_b.b12_close_location_h3(bars["high"], bars["low"], bars["close"], window=3)
+    valid = out[~np.isnan(out)]
+    assert (valid >= -1.0).all()
+    assert (valid <= 1.0).all()
+
+
+def test_b12_guarda_range_flat_produz_ponto_medio() -> None:
+    """Range flat (high=low=close constantes na janela) é o caso
+    degenerado real de par ilíquido em baixíssima volatilidade -- achado
+    de `/audit_engineering` (2026-08-28): B12 tinha a guarda implementada
+    (`range_==0 -> 0.5`) mas nenhum teste exercitava esse branch."""
+    n = 10
+    flat = np.full(n, 100.0)
+    out = group_b.b12_close_location_h3(flat, flat, flat, window=3)
+    valid = out[~np.isnan(out)]
+    assert valid.shape[0] > 0
+    np.testing.assert_allclose(valid, 0.0)
+
+
+def test_b13_causalidade() -> None:
+    rng = np.random.default_rng(11)
+    n = 300
+    ret_h = rng.normal(0, 0.01, n)
+    realized_vol_h = rng.uniform(0.001, 0.05, n)
+    cutoff = 150
+    out_base = group_b.b13_extension_h3(ret_h, realized_vol_h)
+
+    ret_h2, vol_h2 = ret_h.copy(), realized_vol_h.copy()
+    ret_h2[cutoff + 1 :] *= 5.0
+    vol_h2[cutoff + 1 :] *= 5.0
+    out_perturbed = group_b.b13_extension_h3(ret_h2, vol_h2)
+
+    np.testing.assert_allclose(out_base[: cutoff + 1], out_perturbed[: cutoff + 1])
+
+
+def test_b13_guarda_realized_vol_zero() -> None:
+    # achado de /audit_engineering (2026-08-28): 3 barras de retorno
+    # idêntico (dollar bar, tick repetido em ativo de menor liquidez) ->
+    # realized_vol_h=0 -- não pode virar inf silencioso.
+    ret_h = np.array([0.02, 0.0, -0.01])
+    realized_vol_h = np.array([0.01, 0.0, 0.005])
+    out = group_b.b13_extension_h3(ret_h, realized_vol_h)
+    assert np.isnan(out[1])
+    assert not np.isnan(out[0])
+    assert not np.isnan(out[2])
+
+
+def test_b14_causalidade() -> None:
+    rng = np.random.default_rng(13)
+    n = 300
+    ret_h_prior = rng.normal(0, 0.01, n)
+    ret_1 = rng.normal(0, 0.005, n)
+    atr_20_pct = rng.uniform(0.001, 0.02, n)
+    cutoff = 150
+    out_base = group_b.b14_rejection_after_extension(ret_h_prior, ret_1, atr_20_pct)
+
+    a2, b2, c2 = ret_h_prior.copy(), ret_1.copy(), atr_20_pct.copy()
+    a2[cutoff + 1 :] *= 5.0
+    b2[cutoff + 1 :] *= 5.0
+    c2[cutoff + 1 :] *= 2.0
+    out_perturbed = group_b.b14_rejection_after_extension(a2, b2, c2)
+
+    np.testing.assert_allclose(out_base[: cutoff + 1], out_perturbed[: cutoff + 1])
+
+
+def test_b14_sinaliza_rejeicao_e_continuacao_corretamente() -> None:
+    # extensão de alta (ret_h_prior>0) seguida de barra que reverte (ret_1<0)
+    # -> sinal positivo (rejeição). extensão de alta confirmada (ret_1>0)
+    # -> sinal negativo (continuação).
+    ret_h_prior = np.array([0.02, 0.02])
+    ret_1 = np.array([-0.01, 0.01])
+    atr_20_pct = np.array([0.01, 0.01])
+    out = group_b.b14_rejection_after_extension(ret_h_prior, ret_1, atr_20_pct)
+    assert out[0] > 0.0  # rejeição
+    assert out[1] < 0.0  # continuação
+
+
+def test_b15_causalidade() -> None:
+    bars = _make_ohlcv(300)
+    cutoff = 150
+    out_base = group_b.b15_efficiency_ratio_h3(bars["close"], window=3)
+
+    close2 = bars["close"].copy()
+    close2[cutoff + 1 :] *= 1.5
+    out_perturbed = group_b.b15_efficiency_ratio_h3(close2, window=3)
+
+    np.testing.assert_allclose(out_base[: cutoff + 1], out_perturbed[: cutoff + 1])
+
+
+def test_b15_faixa_0_a_1() -> None:
+    bars = _make_ohlcv(300)
+    out = group_b.b15_efficiency_ratio_h3(bars["close"], window=3)
+    valid = out[~np.isnan(out)]
+    assert (valid >= 0.0).all()
+    assert (valid <= 1.0).all()
+
+
+# ============================================================================
+# Lote D2 (2026-08-28, AG-372/ADR-006) -- validação da especificação de
+# Candle Features: A18-A21/B16-B18.
+# ============================================================================
+
+
+def test_a18_causalidade() -> None:
+    bars = _make_ohlcv(300)
+    cutoff = 150
+    out_base = group_a.a18_body_log(bars["open"], bars["close"])
+
+    open2, close2 = bars["open"].copy(), bars["close"].copy()
+    open2[cutoff + 1 :] *= 1.5
+    close2[cutoff + 1 :] *= 1.5
+    out_perturbed = group_a.a18_body_log(open2, close2)
+
+    np.testing.assert_allclose(out_base[: cutoff + 1], out_perturbed[: cutoff + 1])
+
+
+def test_a19_causalidade_e_flat_da_zero() -> None:
+    bars = _make_ohlcv(300)
+    cutoff = 150
+    out_base = group_a.a19_log_range(bars["high"], bars["low"])
+
+    high2, low2 = bars["high"].copy(), bars["low"].copy()
+    high2[cutoff + 1 :] *= 1.5
+    low2[cutoff + 1 :] *= 1.5
+    out_perturbed = group_a.a19_log_range(high2, low2)
+    np.testing.assert_allclose(out_base[: cutoff + 1], out_perturbed[: cutoff + 1])
+
+    flat = np.full(5, 100.0)
+    assert np.allclose(group_a.a19_log_range(flat, flat), 0.0)
+
+
+def test_a20_causalidade_e_log1p_de_zero() -> None:
+    rng = np.random.default_rng(21)
+    n = 300
+    open_time = np.cumsum(rng.uniform(500, 5000, n))
+    close_time = open_time + rng.uniform(0, 3000, n)
+    cutoff = 150
+    out_base = group_a.a20_log_duration(open_time, close_time)
+
+    open_time2, close_time2 = open_time.copy(), close_time.copy()
+    open_time2[cutoff + 1 :] += 10_000.0
+    close_time2[cutoff + 1 :] += 10_000.0
+    out_perturbed = group_a.a20_log_duration(open_time2, close_time2)
+    np.testing.assert_allclose(out_base[: cutoff + 1], out_perturbed[: cutoff + 1])
+
+    assert group_a.a20_log_duration(np.array([0.0]), np.array([0.0]))[0] == 0.0
+
+
+def test_a21_causalidade_e_guarda_duracao_zero() -> None:
+    rng = np.random.default_rng(23)
+    n = 300
+    quote_volume = rng.uniform(1000.0, 50_000.0, n)
+    duration_s = rng.uniform(0.1, 30.0, n)
+    cutoff = 150
+    out_base = group_a.a21_log_dollar_velocity(quote_volume, duration_s)
+
+    qv2, dur2 = quote_volume.copy(), duration_s.copy()
+    qv2[cutoff + 1 :] *= 5.0
+    dur2[cutoff + 1 :] *= 5.0
+    out_perturbed = group_a.a21_log_dollar_velocity(qv2, dur2)
+    np.testing.assert_allclose(out_base[: cutoff + 1], out_perturbed[: cutoff + 1])
+
+    # duração=0 (barra de 1 trade instantâneo) -- NaN, nunca inf.
+    out_guard = group_a.a21_log_dollar_velocity(np.array([100.0]), np.array([0.0]))
+    assert np.isnan(out_guard[0])
+
+
+def test_b16_causalidade_e_guarda_range_zero() -> None:
+    bars = _make_ohlcv(300)
+    cutoff = 150
+    out_base = group_b.b16_log_range_ratio_1(bars["high"], bars["low"], lag_bars=1)
+
+    high2, low2 = bars["high"].copy(), bars["low"].copy()
+    high2[cutoff + 1 :] *= 1.5
+    low2[cutoff + 1 :] *= 1.5
+    out_perturbed = group_b.b16_log_range_ratio_1(high2, low2, lag_bars=1)
+    np.testing.assert_allclose(out_base[: cutoff + 1], out_perturbed[: cutoff + 1])
+
+    # 2ª barra flat (range=0) -- razão indefinida, precisa virar NaN.
+    high_flat = np.array([100.0, 100.0, 101.0])
+    low_flat = np.array([99.0, 100.0, 99.0])
+    out_guard = group_b.b16_log_range_ratio_1(high_flat, low_flat, lag_bars=1)
+    assert np.isnan(out_guard[1])  # range[1]=0
+    assert np.isnan(out_guard[2])  # range_prev=range[1]=0
+
+
+def test_b17_causalidade_e_guarda_soma_body_zero() -> None:
+    bars = _make_ohlcv(300)
+    cutoff = 150
+    out_base = group_b.b17_directional_pressure_h3(bars["open"], bars["close"], window=3)
+
+    open2, close2 = bars["open"].copy(), bars["close"].copy()
+    open2[cutoff + 1 :] *= 1.5
+    close2[cutoff + 1 :] *= 1.5
+    out_perturbed = group_b.b17_directional_pressure_h3(open2, close2, window=3)
+    np.testing.assert_allclose(out_base[: cutoff + 1], out_perturbed[: cutoff + 1])
+
+    # 3 barras de corpo exatamente zero (doji triplo) -- denom=0 -> NaN.
+    open_flat = np.array([100.0, 100.0, 100.0])
+    close_flat = np.array([100.0, 100.0, 100.0])
+    out_guard = group_b.b17_directional_pressure_h3(open_flat, close_flat, window=3)
+    assert np.isnan(out_guard[2])
+
+
+def test_b18_causalidade() -> None:
+    bars = _make_ohlcv(300)
+    atr_abs = support.atr_wilder(bars["high"], bars["low"], bars["close"], window=20)
+    cutoff = 150
+    out_base = group_b.b18_engulfing_atr(bars["open"], bars["close"], atr_abs)
+
+    open2, close2 = bars["open"].copy(), bars["close"].copy()
+    open2[cutoff + 1 :] *= 1.5
+    close2[cutoff + 1 :] *= 1.5
+    atr_abs2 = support.atr_wilder(bars["high"], bars["low"], close2, window=20)
+    out_perturbed = group_b.b18_engulfing_atr(open2, close2, atr_abs2)
+
+    np.testing.assert_allclose(out_base[: cutoff + 1], out_perturbed[: cutoff + 1])
+
+
+def test_b18_sinaliza_engolfo_e_continuacao_corretamente() -> None:
+    # t-1 de baixa, t de alta com corpo MAIOR (em unidades de ATR) -> engolfo
+    # (sinal positivo grande). t-1 e t mesma direção -> continuação (negativo).
+    open_ = np.array([100.0, 95.0])
+    close = np.array([95.0, 102.0])  # barra 0: corpo -5; barra 1: corpo +7
+    atr_abs = np.array([5.0, 5.0])
+    out = group_b.b18_engulfing_atr(open_, close, atr_abs)
+    assert out[1] > 0.0  # engolfo real (reverte e supera em módulo)
+
+
 def test_a14_causalidade() -> None:
     bars = _make_ohlcv(300)
     atr_abs = support.atr_wilder(bars["high"], bars["low"], bars["close"], window=20)
