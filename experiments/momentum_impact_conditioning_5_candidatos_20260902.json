@@ -1,0 +1,697 @@
+{
+  "BTCUSDT/R2": {
+    "n_signals": 624,
+    "n_filled": 608,
+    "fill_rate_geral": 0.9743589743589743,
+    "holding_por_decil_abs_a04": [
+      {
+        "decile": 1,
+        "n": 60,
+        "n_bars_held_mean": 2.0,
+        "ret_net_mean": -0.0010225349764624622
+      },
+      {
+        "decile": 2,
+        "n": 61,
+        "n_bars_held_mean": 1.6721311475409837,
+        "ret_net_mean": -0.0005189771270560973
+      },
+      {
+        "decile": 3,
+        "n": 61,
+        "n_bars_held_mean": 1.9836065573770492,
+        "ret_net_mean": -0.0009809517537434813
+      },
+      {
+        "decile": 4,
+        "n": 61,
+        "n_bars_held_mean": 1.639344262295082,
+        "ret_net_mean": -0.0009690840229312976
+      },
+      {
+        "decile": 5,
+        "n": 61,
+        "n_bars_held_mean": 1.721311475409836,
+        "ret_net_mean": -0.00025259677320986517
+      },
+      {
+        "decile": 6,
+        "n": 60,
+        "n_bars_held_mean": 1.9166666666666667,
+        "ret_net_mean": -0.00040936724369438563
+      },
+      {
+        "decile": 7,
+        "n": 61,
+        "n_bars_held_mean": 1.5901639344262295,
+        "ret_net_mean": -0.00045230646424728203
+      },
+      {
+        "decile": 8,
+        "n": 61,
+        "n_bars_held_mean": 2.0,
+        "ret_net_mean": -0.00031614708515939356
+      },
+      {
+        "decile": 9,
+        "n": 61,
+        "n_bars_held_mean": 1.5901639344262295,
+        "ret_net_mean": -0.0007239617368002521
+      },
+      {
+        "decile": 10,
+        "n": 61,
+        "n_bars_held_mean": 1.4918032786885247,
+        "ret_net_mean": 0.0016961618847287025
+      }
+    ],
+    "custo_fill_por_decil_a11": [
+      {
+        "decile": 1,
+        "n": 62,
+        "fill_rate": 0.967741935483871,
+        "fee_bps_mean": 5.55,
+        "adverse_selection_bps_mean": 1.5
+      },
+      {
+        "decile": 2,
+        "n": 62,
+        "fill_rate": 0.9354838709677419,
+        "fee_bps_mean": 5.706896551724138,
+        "adverse_selection_bps_mean": 1.5
+      },
+      {
+        "decile": 3,
+        "n": 63,
+        "fill_rate": 0.9523809523809523,
+        "fee_bps_mean": 5.35,
+        "adverse_selection_bps_mean": 1.5
+      },
+      {
+        "decile": 4,
+        "n": 62,
+        "fill_rate": 1.0,
+        "fee_bps_mean": 5.5,
+        "adverse_selection_bps_mean": 1.5
+      },
+      {
+        "decile": 5,
+        "n": 63,
+        "fill_rate": 0.9841269841269841,
+        "fee_bps_mean": 5.838709677419355,
+        "adverse_selection_bps_mean": 1.5
+      },
+      {
+        "decile": 6,
+        "n": 62,
+        "fill_rate": 0.967741935483871,
+        "fee_bps_mean": 5.4,
+        "adverse_selection_bps_mean": 1.5
+      },
+      {
+        "decile": 7,
+        "n": 62,
+        "fill_rate": 0.967741935483871,
+        "fee_bps_mean": 5.4,
+        "adverse_selection_bps_mean": 1.5
+      },
+      {
+        "decile": 8,
+        "n": 63,
+        "fill_rate": 0.9841269841269841,
+        "fee_bps_mean": 5.741935483870968,
+        "adverse_selection_bps_mean": 1.5
+      },
+      {
+        "decile": 9,
+        "n": 62,
+        "fill_rate": 0.9838709677419355,
+        "fee_bps_mean": 5.032786885245901,
+        "adverse_selection_bps_mean": 1.5
+      },
+      {
+        "decile": 10,
+        "n": 63,
+        "fill_rate": 1.0,
+        "fee_bps_mean": 5.238095238095238,
+        "adverse_selection_bps_mean": 1.5
+      }
+    ]
+  },
+  "SOLUSDT/R2": {
+    "n_signals": 224,
+    "n_filled": 222,
+    "fill_rate_geral": 0.9910714285714286,
+    "holding_por_decil_abs_a04": [
+      {
+        "decile": 1,
+        "n": 22,
+        "n_bars_held_mean": 2.0,
+        "ret_net_mean": -0.0008667759577743225
+      },
+      {
+        "decile": 2,
+        "n": 22,
+        "n_bars_held_mean": 2.0454545454545454,
+        "ret_net_mean": 0.0011764260435173075
+      },
+      {
+        "decile": 3,
+        "n": 22,
+        "n_bars_held_mean": 2.3181818181818183,
+        "ret_net_mean": -0.002512652758029219
+      },
+      {
+        "decile": 4,
+        "n": 22,
+        "n_bars_held_mean": 1.4090909090909092,
+        "ret_net_mean": -0.0028342510396738734
+      },
+      {
+        "decile": 5,
+        "n": 23,
+        "n_bars_held_mean": 1.9130434782608696,
+        "ret_net_mean": 0.0008146409134071427
+      },
+      {
+        "decile": 6,
+        "n": 22,
+        "n_bars_held_mean": 1.8636363636363635,
+        "ret_net_mean": -0.0016572971007997753
+      },
+      {
+        "decile": 7,
+        "n": 22,
+        "n_bars_held_mean": 2.090909090909091,
+        "ret_net_mean": -0.0023428758024815646
+      },
+      {
+        "decile": 8,
+        "n": 22,
+        "n_bars_held_mean": 2.6363636363636362,
+        "ret_net_mean": 0.0021120809391861964
+      },
+      {
+        "decile": 9,
+        "n": 22,
+        "n_bars_held_mean": 1.0454545454545454,
+        "ret_net_mean": 0.0012387501062202427
+      },
+      {
+        "decile": 10,
+        "n": 23,
+        "n_bars_held_mean": 2.260869565217391,
+        "ret_net_mean": 0.003015634499238671
+      }
+    ],
+    "custo_fill_por_decil_a11": [
+      {
+        "decile": 1,
+        "n": 22,
+        "fill_rate": 1.0,
+        "fee_bps_mean": 4.818181818181818,
+        "adverse_selection_bps_mean": 1.5
+      },
+      {
+        "decile": 2,
+        "n": 22,
+        "fill_rate": 1.0,
+        "fee_bps_mean": 6.181818181818182,
+        "adverse_selection_bps_mean": 1.5
+      },
+      {
+        "decile": 3,
+        "n": 23,
+        "fill_rate": 1.0,
+        "fee_bps_mean": 5.043478260869565,
+        "adverse_selection_bps_mean": 1.5
+      },
+      {
+        "decile": 4,
+        "n": 22,
+        "fill_rate": 1.0,
+        "fee_bps_mean": 5.636363636363637,
+        "adverse_selection_bps_mean": 1.5
+      },
+      {
+        "decile": 5,
+        "n": 23,
+        "fill_rate": 1.0,
+        "fee_bps_mean": 5.565217391304348,
+        "adverse_selection_bps_mean": 1.5
+      },
+      {
+        "decile": 6,
+        "n": 22,
+        "fill_rate": 1.0,
+        "fee_bps_mean": 5.090909090909091,
+        "adverse_selection_bps_mean": 1.5
+      },
+      {
+        "decile": 7,
+        "n": 22,
+        "fill_rate": 0.9545454545454546,
+        "fee_bps_mean": 5.714285714285714,
+        "adverse_selection_bps_mean": 1.5
+      },
+      {
+        "decile": 8,
+        "n": 23,
+        "fill_rate": 1.0,
+        "fee_bps_mean": 5.826086956521739,
+        "adverse_selection_bps_mean": 1.5
+      },
+      {
+        "decile": 9,
+        "n": 22,
+        "fill_rate": 0.9545454545454546,
+        "fee_bps_mean": 5.571428571428571,
+        "adverse_selection_bps_mean": 1.5
+      },
+      {
+        "decile": 10,
+        "n": 23,
+        "fill_rate": 1.0,
+        "fee_bps_mean": 5.434782608695652,
+        "adverse_selection_bps_mean": 1.5
+      }
+    ]
+  },
+  "SOLUSDT/R3": {
+    "n_signals": 101,
+    "n_filled": 100,
+    "fill_rate_geral": 0.9900990099009901,
+    "holding_por_decil_abs_a04": [
+      {
+        "decile": 1,
+        "n": 10,
+        "n_bars_held_mean": 1.9,
+        "ret_net_mean": -0.0006743357790149993
+      },
+      {
+        "decile": 2,
+        "n": 10,
+        "n_bars_held_mean": 3.0,
+        "ret_net_mean": -0.0029287312675972143
+      },
+      {
+        "decile": 3,
+        "n": 10,
+        "n_bars_held_mean": 1.8,
+        "ret_net_mean": -0.0027646281821777376
+      },
+      {
+        "decile": 4,
+        "n": 10,
+        "n_bars_held_mean": 1.0,
+        "ret_net_mean": -0.007964838793933707
+      },
+      {
+        "decile": 5,
+        "n": 10,
+        "n_bars_held_mean": 2.8,
+        "ret_net_mean": -0.009827306534338753
+      },
+      {
+        "decile": 6,
+        "n": 10,
+        "n_bars_held_mean": 3.5,
+        "ret_net_mean": -0.004565707916311101
+      },
+      {
+        "decile": 7,
+        "n": 9,
+        "n_bars_held_mean": 2.7777777777777777,
+        "ret_net_mean": 0.003840938171596173
+      },
+      {
+        "decile": 8,
+        "n": 11,
+        "n_bars_held_mean": 0.9090909090909091,
+        "ret_net_mean": 0.003375221583876242
+      },
+      {
+        "decile": 9,
+        "n": 10,
+        "n_bars_held_mean": 1.4,
+        "ret_net_mean": 0.014353524002443569
+      },
+      {
+        "decile": 10,
+        "n": 10,
+        "n_bars_held_mean": 1.7,
+        "ret_net_mean": 0.004440706654838034
+      }
+    ],
+    "custo_fill_por_decil_a11": [
+      {
+        "decile": 1,
+        "n": 10,
+        "fill_rate": 0.9,
+        "fee_bps_mean": 6.0,
+        "adverse_selection_bps_mean": 1.5
+      },
+      {
+        "decile": 2,
+        "n": 10,
+        "fill_rate": 1.0,
+        "fee_bps_mean": 5.5,
+        "adverse_selection_bps_mean": 1.5
+      },
+      {
+        "decile": 3,
+        "n": 10,
+        "fill_rate": 1.0,
+        "fee_bps_mean": 5.8,
+        "adverse_selection_bps_mean": 1.5
+      },
+      {
+        "decile": 4,
+        "n": 10,
+        "fill_rate": 1.0,
+        "fee_bps_mean": 5.8,
+        "adverse_selection_bps_mean": 1.5
+      },
+      {
+        "decile": 5,
+        "n": 10,
+        "fill_rate": 1.0,
+        "fee_bps_mean": 5.2,
+        "adverse_selection_bps_mean": 1.5
+      },
+      {
+        "decile": 6,
+        "n": 10,
+        "fill_rate": 1.0,
+        "fee_bps_mean": 6.4,
+        "adverse_selection_bps_mean": 1.5
+      },
+      {
+        "decile": 7,
+        "n": 10,
+        "fill_rate": 1.0,
+        "fee_bps_mean": 5.5,
+        "adverse_selection_bps_mean": 1.5
+      },
+      {
+        "decile": 8,
+        "n": 10,
+        "fill_rate": 1.0,
+        "fee_bps_mean": 5.5,
+        "adverse_selection_bps_mean": 1.5
+      },
+      {
+        "decile": 9,
+        "n": 10,
+        "fill_rate": 1.0,
+        "fee_bps_mean": 4.9,
+        "adverse_selection_bps_mean": 1.5
+      },
+      {
+        "decile": 10,
+        "n": 11,
+        "fill_rate": 1.0,
+        "fee_bps_mean": 5.090909090909091,
+        "adverse_selection_bps_mean": 1.5
+      }
+    ]
+  },
+  "XRPUSDT/R2": {
+    "n_signals": 87,
+    "n_filled": 87,
+    "fill_rate_geral": 1.0,
+    "holding_por_decil_abs_a04": [
+      {
+        "decile": 1,
+        "n": 8,
+        "n_bars_held_mean": 2.375,
+        "ret_net_mean": 0.0003888973831126091
+      },
+      {
+        "decile": 2,
+        "n": 9,
+        "n_bars_held_mean": 1.4444444444444444,
+        "ret_net_mean": 0.0017561260892258517
+      },
+      {
+        "decile": 3,
+        "n": 9,
+        "n_bars_held_mean": 2.111111111111111,
+        "ret_net_mean": -0.0015232365441656677
+      },
+      {
+        "decile": 4,
+        "n": 8,
+        "n_bars_held_mean": 1.125,
+        "ret_net_mean": -0.0062071550650779446
+      },
+      {
+        "decile": 5,
+        "n": 9,
+        "n_bars_held_mean": 2.2222222222222223,
+        "ret_net_mean": -0.007947033400134655
+      },
+      {
+        "decile": 6,
+        "n": 9,
+        "n_bars_held_mean": 2.2222222222222223,
+        "ret_net_mean": 0.0010075464468744136
+      },
+      {
+        "decile": 7,
+        "n": 8,
+        "n_bars_held_mean": 1.0,
+        "ret_net_mean": -0.004562982801050686
+      },
+      {
+        "decile": 8,
+        "n": 9,
+        "n_bars_held_mean": 1.0,
+        "ret_net_mean": -0.004585768423022354
+      },
+      {
+        "decile": 9,
+        "n": 9,
+        "n_bars_held_mean": 1.1111111111111112,
+        "ret_net_mean": -0.00621482001683386
+      },
+      {
+        "decile": 10,
+        "n": 9,
+        "n_bars_held_mean": 4.333333333333333,
+        "ret_net_mean": -0.00979250170910139
+      }
+    ],
+    "custo_fill_por_decil_a11": [
+      {
+        "decile": 1,
+        "n": 8,
+        "fill_rate": 1.0,
+        "fee_bps_mean": 5.875,
+        "adverse_selection_bps_mean": 1.5
+      },
+      {
+        "decile": 2,
+        "n": 9,
+        "fill_rate": 1.0,
+        "fee_bps_mean": 6.0,
+        "adverse_selection_bps_mean": 1.5
+      },
+      {
+        "decile": 3,
+        "n": 9,
+        "fill_rate": 1.0,
+        "fee_bps_mean": 5.333333333333333,
+        "adverse_selection_bps_mean": 1.5
+      },
+      {
+        "decile": 4,
+        "n": 8,
+        "fill_rate": 1.0,
+        "fee_bps_mean": 5.125,
+        "adverse_selection_bps_mean": 1.5
+      },
+      {
+        "decile": 5,
+        "n": 9,
+        "fill_rate": 1.0,
+        "fee_bps_mean": 6.0,
+        "adverse_selection_bps_mean": 1.5
+      },
+      {
+        "decile": 6,
+        "n": 9,
+        "fill_rate": 1.0,
+        "fee_bps_mean": 5.666666666666667,
+        "adverse_selection_bps_mean": 1.5
+      },
+      {
+        "decile": 7,
+        "n": 8,
+        "fill_rate": 1.0,
+        "fee_bps_mean": 6.625,
+        "adverse_selection_bps_mean": 1.5
+      },
+      {
+        "decile": 8,
+        "n": 9,
+        "fill_rate": 1.0,
+        "fee_bps_mean": 5.666666666666667,
+        "adverse_selection_bps_mean": 1.5
+      },
+      {
+        "decile": 9,
+        "n": 9,
+        "fill_rate": 1.0,
+        "fee_bps_mean": 5.666666666666667,
+        "adverse_selection_bps_mean": 1.5
+      },
+      {
+        "decile": 10,
+        "n": 9,
+        "fill_rate": 1.0,
+        "fee_bps_mean": 6.0,
+        "adverse_selection_bps_mean": 1.5
+      }
+    ]
+  },
+  "XRPUSDT/R3": {
+    "n_signals": 186,
+    "n_filled": 185,
+    "fill_rate_geral": 0.9946236559139785,
+    "holding_por_decil_abs_a04": [
+      {
+        "decile": 1,
+        "n": 18,
+        "n_bars_held_mean": 2.1666666666666665,
+        "ret_net_mean": -0.0008975423077729333
+      },
+      {
+        "decile": 2,
+        "n": 19,
+        "n_bars_held_mean": 2.0,
+        "ret_net_mean": -0.0019434515314040036
+      },
+      {
+        "decile": 3,
+        "n": 18,
+        "n_bars_held_mean": 1.8888888888888888,
+        "ret_net_mean": 0.0014041850604675163
+      },
+      {
+        "decile": 4,
+        "n": 19,
+        "n_bars_held_mean": 1.8421052631578947,
+        "ret_net_mean": -0.004002899925848962
+      },
+      {
+        "decile": 5,
+        "n": 18,
+        "n_bars_held_mean": 1.1666666666666667,
+        "ret_net_mean": 0.00636296712292379
+      },
+      {
+        "decile": 6,
+        "n": 18,
+        "n_bars_held_mean": 0.8888888888888888,
+        "ret_net_mean": 0.005459392651498579
+      },
+      {
+        "decile": 7,
+        "n": 19,
+        "n_bars_held_mean": 2.0526315789473686,
+        "ret_net_mean": 0.004253806371647815
+      },
+      {
+        "decile": 8,
+        "n": 19,
+        "n_bars_held_mean": 1.105263157894737,
+        "ret_net_mean": -0.0033157016144017616
+      },
+      {
+        "decile": 9,
+        "n": 18,
+        "n_bars_held_mean": 0.8888888888888888,
+        "ret_net_mean": 0.006312778756719573
+      },
+      {
+        "decile": 10,
+        "n": 19,
+        "n_bars_held_mean": 0.8947368421052632,
+        "ret_net_mean": 0.003927862199921304
+      }
+    ],
+    "custo_fill_por_decil_a11": [
+      {
+        "decile": 1,
+        "n": 18,
+        "fill_rate": 1.0,
+        "fee_bps_mean": 5.666666666666667,
+        "adverse_selection_bps_mean": 1.5
+      },
+      {
+        "decile": 2,
+        "n": 19,
+        "fill_rate": 1.0,
+        "fee_bps_mean": 4.947368421052632,
+        "adverse_selection_bps_mean": 1.5
+      },
+      {
+        "decile": 3,
+        "n": 18,
+        "fill_rate": 1.0,
+        "fee_bps_mean": 4.833333333333333,
+        "adverse_selection_bps_mean": 1.5
+      },
+      {
+        "decile": 4,
+        "n": 19,
+        "fill_rate": 1.0,
+        "fee_bps_mean": 4.947368421052632,
+        "adverse_selection_bps_mean": 1.5
+      },
+      {
+        "decile": 5,
+        "n": 19,
+        "fill_rate": 1.0,
+        "fee_bps_mean": 5.578947368421052,
+        "adverse_selection_bps_mean": 1.5
+      },
+      {
+        "decile": 6,
+        "n": 18,
+        "fill_rate": 1.0,
+        "fee_bps_mean": 5.5,
+        "adverse_selection_bps_mean": 1.5
+      },
+      {
+        "decile": 7,
+        "n": 19,
+        "fill_rate": 1.0,
+        "fee_bps_mean": 5.2631578947368425,
+        "adverse_selection_bps_mean": 1.5
+      },
+      {
+        "decile": 8,
+        "n": 18,
+        "fill_rate": 1.0,
+        "fee_bps_mean": 5.833333333333333,
+        "adverse_selection_bps_mean": 1.5
+      },
+      {
+        "decile": 9,
+        "n": 19,
+        "fill_rate": 0.9473684210526315,
+        "fee_bps_mean": 5.333333333333333,
+        "adverse_selection_bps_mean": 1.5
+      },
+      {
+        "decile": 10,
+        "n": 19,
+        "fill_rate": 1.0,
+        "fee_bps_mean": 5.7368421052631575,
+        "adverse_selection_bps_mean": 1.5
+      }
+    ]
+  }
+}
