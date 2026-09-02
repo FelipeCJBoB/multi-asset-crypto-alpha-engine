@@ -167,3 +167,5 @@ que todo código deste repositório segue.
 
 Projeto individual, código aberto para fins de portfólio técnico. Não é
 recomendação de investimento, produto financeiro, nem sinal de trading.
+
+Licenciado sob [MIT](LICENSE).
