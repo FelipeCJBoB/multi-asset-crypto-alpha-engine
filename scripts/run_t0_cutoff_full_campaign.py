@@ -26,10 +26,23 @@ com `t0_end=None` (sem corte) — isola se a melhora vem do corte de data
 ou só do seed corrigido. Storage/resultados em arquivo SEPARADO, nunca
 mistura com a campanha `t0_end` original.
 
+**`--tag` (`AG-422`)**: sufixa `storage_dir`/`results_path` com
+`_{tag}` — necessário sempre que a IDENTIDADE da busca muda por um
+jeito que `results.json` não rastreia (`feature_ids`/`search_space`,
+via `config_hash`) mas o `done`-tracking deste script rastreia só
+`(symbol, resolution_id, variant)`. Sem `--tag`, reusar `--control`
+depois de `AG-421` (vetor T1 36->30) ou `AG-422` (filtro
+anti-degeneração no objective) leria o `results.json` ANTIGO e pularia
+os 10 combos como "já feitos" — nenhum trial novo rodaria, silenciosamente,
+mesmo a busca subjacente sendo outra (`study_name` novo, `config_hash`
+diferente). `--tag` força um `results.json`/`storage_dir` novos, campanha
+genuinamente do zero.
+
 Uso:
 
     uv run python -m scripts.run_t0_cutoff_full_campaign
     uv run python -m scripts.run_t0_cutoff_full_campaign --control
+    uv run python -m scripts.run_t0_cutoff_full_campaign --control --tag post_ag421_ag422
 """
 
 from __future__ import annotations
@@ -84,6 +97,14 @@ def main(argv: list[str] | None = None) -> int:
         help="AG-416 -- roda sem t0_end (t0_end=None), isolando o efeito do seed "
         "corrigido (AG-399) do efeito do corte de data. Storage/resultados separados.",
     )
+    parser.add_argument(
+        "--tag",
+        type=str,
+        default=None,
+        help="AG-422 -- sufixa storage_dir/results_path com _{tag}. Use sempre que "
+        "feature_ids/search_space mudou desde a última campanha (o done-tracking "
+        "deste script não rastreia config_hash, só symbol/resolution_id/variant).",
+    )
     args = parser.parse_args(argv)
 
     configure_logging(json_output=False)
@@ -99,6 +120,11 @@ def main(argv: list[str] | None = None) -> int:
 
     storage_dir = _CONTROL_STORAGE_DIR if args.control else _STORAGE_DIR
     results_path = _CONTROL_RESULTS_PATH if args.control else _RESULTS_PATH
+    if args.tag:
+        storage_dir = storage_dir.parent / f"{storage_dir.name}_{args.tag}"
+        results_path = results_path.with_name(
+            f"{results_path.stem}_{args.tag}{results_path.suffix}"
+        )
 
     results: list[dict[str, object]] = []
     if results_path.exists():
