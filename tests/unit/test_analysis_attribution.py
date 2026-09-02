@@ -753,6 +753,176 @@ def test_confidence_deciles_by_side_n_deciles_customizado() -> None:
 
 
 # ============================================================================
+# feature_deciles_by_side — generalização de confidence_deciles_by_side pra
+# feature arbitrária (AG-424). Mesmas fixtures/derivação à mão de t_stat da
+# seção acima, com um terceiro frame (`feature_values`) no lugar da coluna
+# `confidence` embutida em `predictions`.
+# ============================================================================
+
+
+def _feature_fixture_side(
+    *, n: int, side_hat: int, bps_values: list[float], feature: str, t0_offset_days: int = 0
+) -> tuple[pl.DataFrame, pl.DataFrame, pl.DataFrame]:
+    """`predictions`/`labels`/`feature_values` de UM lado, `n` trades. O
+    valor da feature e `t0` crescem estritamente com a posição `i` -- rank
+    da feature == índice `i` == posição em `bps_values`, mesma derivação
+    de `_decile_fixture_side` (ver cabeçalho da seção irmã)."""
+    assert len(bps_values) == n
+    t0s = _t0s(n, offset_days=t0_offset_days)
+    pred_rows = [{"t0": t0s[i], "side_hat": side_hat, "is_oof": True} for i in range(n)]
+    label_rows = [
+        {
+            "t0": t0s[i],
+            "side": side_hat,
+            "barrier_hit": "TP",
+            "ret_net": bps_values[i] / 10_000.0,
+        }
+        for i in range(n)
+    ]
+    predictions = pl.DataFrame(
+        {
+            "t0": pl.Series([r["t0"] for r in pred_rows], dtype=_T0_DTYPE_MS),
+            "side_hat": pl.Series([r["side_hat"] for r in pred_rows], dtype=pl.Int8),
+            "is_oof": pl.Series([r["is_oof"] for r in pred_rows], dtype=pl.Boolean),
+        }
+    )
+    feature_values = pl.DataFrame(
+        {
+            "t0": pl.Series(t0s, dtype=_T0_DTYPE_MS),
+            feature: pl.Series([float(i) for i in range(n)], dtype=pl.Float64),
+        }
+    )
+    return predictions, _labels_df(label_rows), feature_values
+
+
+def test_feature_deciles_by_side_media_e_tstat_conferidos_a_mao() -> None:
+    """50 trades long, 5 por decil (>= _MIN_OBS_T_STAT, ver AG-424) --
+    decil k tem bps={2k-2,2k-1,2k,2k+1,2k+2} (5 inteiros consecutivos
+    centrados em 2k) -> mean=2k (simétrico), variância amostral (ddof=1)
+    dos offsets {-2,-1,0,1,2} = (4+1+0+1+4)/4 = 2.5, std=sqrt(2.5),
+    t_stat = 2k / (sqrt(2.5)/sqrt(5)) = 2k / sqrt(0.5) = 2*sqrt(2)*k."""
+    bps_values: list[float] = []
+    for k in range(1, 11):
+        bps_values.extend([2.0 * k + offset for offset in (-2.0, -1.0, 0.0, 1.0, 2.0)])
+    predictions, labels, feature_values = _feature_fixture_side(
+        n=50, side_hat=1, bps_values=bps_values, feature="A04_log_return_12"
+    )
+
+    out = attr.feature_deciles_by_side(
+        predictions, labels, feature_values, ("A04_log_return_12",)
+    )
+    assert out.height == 10
+    assert set(out["feature"].unique().to_list()) == {"A04_log_return_12"}
+    assert set(out["side"].unique().to_list()) == {"long"}
+
+    d1 = out.filter(pl.col("decile") == 1).row(0, named=True)
+    assert d1["n"] == 5
+    assert d1["mean_ret_net_bps_value"] == pytest.approx(2.0)
+    assert d1["std_ret_net_bps"] == pytest.approx(math.sqrt(2.5))
+    assert d1["t_stat"] == pytest.approx(2.0 * math.sqrt(2.0))
+    assert d1["mean_ret_net_bps_valid"] is True
+    assert d1["value_min"] == pytest.approx(0.0)
+    assert d1["value_max"] == pytest.approx(4.0)
+
+    d10 = out.filter(pl.col("decile") == 10).row(0, named=True)
+    assert d10["mean_ret_net_bps_value"] == pytest.approx(20.0)
+    assert d10["t_stat"] == pytest.approx(20.0 * math.sqrt(2.0))
+
+
+def test_feature_deciles_by_side_tstat_nan_abaixo_do_piso_min_obs() -> None:
+    """AG-424 -- achado real rodando nas 30 features T1: sem este piso,
+    81% dos decis "significativos" (|t|>=2) nos 5 candidatos reais tinham
+    n<=5 (um único trade fora da curva bastava). n=4 por decil, `std>0`
+    (a divisão seria matematicamente definida), mas `t_stat` fica `nan`
+    porque n < `_MIN_OBS_T_STAT` (5) -- "definido" não é "confiável"."""
+    bps_values: list[float] = []
+    for k in range(1, 11):
+        bps_values.extend([2.0 * k - 1.5, 2.0 * k - 0.5, 2.0 * k + 0.5, 2.0 * k + 1.5])
+    predictions, labels, feature_values = _feature_fixture_side(
+        n=40, side_hat=1, bps_values=bps_values, feature="A04_log_return_12"
+    )
+
+    out = attr.feature_deciles_by_side(
+        predictions, labels, feature_values, ("A04_log_return_12",)
+    )
+    d1 = out.filter(pl.col("decile") == 1).row(0, named=True)
+    assert d1["n"] == 4
+    assert d1["std_ret_net_bps"] > 0.0
+    assert math.isnan(d1["t_stat"])
+    assert d1["mean_ret_net_bps_value"] == pytest.approx(2.0)  # média continua reportada
+
+
+def test_feature_deciles_by_side_multiplas_features_de_uma_vez() -> None:
+    """2 features no mesmo `feature_values`, resultado tem `feature` como
+    coluna -- linhas de cada uma não se misturam."""
+    bps_values = [float(i + 1) for i in range(10)]
+    predictions, labels, fv_a = _feature_fixture_side(
+        n=10, side_hat=1, bps_values=bps_values, feature="A04_log_return_12"
+    )
+    fv_b = fv_a.rename({"A04_log_return_12": "A11_true_range_pct"})
+    feature_values = fv_a.join(fv_b, on="t0")
+
+    out = attr.feature_deciles_by_side(
+        predictions, labels, feature_values, ("A04_log_return_12", "A11_true_range_pct")
+    )
+    assert out.height == 20
+    assert set(out["feature"].unique().to_list()) == {"A04_log_return_12", "A11_true_range_pct"}
+    for feature in ("A04_log_return_12", "A11_true_range_pct"):
+        sub = out.filter(pl.col("feature") == feature)
+        assert sub.height == 10
+        means = sub.sort("decile")["mean_ret_net_bps_value"].to_list()
+        assert means == sorted(means)
+
+
+def test_feature_deciles_by_side_std_zero_e_tstat_nan_quando_n_igual_1() -> None:
+    bps_values = [float(i + 1) for i in range(10)]
+    predictions, labels, feature_values = _feature_fixture_side(
+        n=10, side_hat=-1, bps_values=bps_values, feature="A04_log_return_12"
+    )
+    out = attr.feature_deciles_by_side(
+        predictions, labels, feature_values, ("A04_log_return_12",)
+    )
+    assert set(out["side"].unique().to_list()) == {"short"}
+    for decile in range(1, 11):
+        row = out.filter(pl.col("decile") == decile).row(0, named=True)
+        assert row["n"] == 1
+        assert row["std_ret_net_bps"] == 0.0
+        assert math.isnan(row["t_stat"])
+
+
+def test_feature_deciles_by_side_coluna_ausente_em_feature_values_levanta_valueerror() -> None:
+    predictions, labels, feature_values = _feature_fixture_side(
+        n=2, side_hat=1, bps_values=[1.0, 2.0], feature="A04_log_return_12"
+    )
+    with pytest.raises(ValueError, match="feature_values"):
+        attr.feature_deciles_by_side(
+            predictions, labels, feature_values.drop("A04_log_return_12"), ("A04_log_return_12",)
+        )
+
+
+def test_feature_deciles_by_side_features_vazio_levanta_valueerror() -> None:
+    predictions, labels, feature_values = _feature_fixture_side(
+        n=2, side_hat=1, bps_values=[1.0, 2.0], feature="A04_log_return_12"
+    )
+    with pytest.raises(ValueError, match="features vazio"):
+        attr.feature_deciles_by_side(predictions, labels, feature_values, ())
+
+
+def test_feature_deciles_by_side_nenhum_trade_retorna_frame_vazio_com_schema() -> None:
+    predictions, labels, feature_values = _feature_fixture_side(
+        n=2, side_hat=1, bps_values=[1.0, 2.0], feature="A04_log_return_12"
+    )
+    out = attr.feature_deciles_by_side(
+        predictions.filter(pl.lit(False)),
+        labels.filter(pl.lit(False)),
+        feature_values,
+        ("A04_log_return_12",),
+    )
+    assert out.height == 0
+    assert out.schema == attr._FEATURE_DECILE_OUTPUT_SCHEMA
+
+
+# ============================================================================
 # Integração real — skip se predictions/labels/diagnostics ainda não existem
 # ============================================================================
 

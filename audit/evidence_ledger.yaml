@@ -4541,3 +4541,40 @@ entries:
     hiperparametro novo pra producao -- melhorar sobre um canonico BUGADO
     nao e evidencia de generalizacao real. Ver
     audit/architecture_gaps_log.yaml::AG-419.
+- id_curto: caso0de20-item4-census-decil-30-features-2026-09-02
+  data: '2026-09-02'
+  fase: '"Caso 0/20" item 4 -- census de decil das 30 features T1 ativas contra
+    ret_net realizado, generalizando confidence_deciles_by_side (feature_deciles_by_side,
+    novo, src/analysis/attribution.py)'
+  symbol: BTCUSDT/R2, SOLUSDT/R2, SOLUSDT/R3, XRPUSDT/R2, XRPUSDT/R3
+  tf: dollar-bar R2/R3, Camada1 (principal) e Camada0 (baseline)
+  lado: long e short SEPARADOS (nunca pooled -- classificadores/calibradores distintos)
+  regime: nao segmentado
+  feature_ou_filtro: 30 features T1 ativas (pos-AG-421), decil por rank dentro
+    do lado, teste-t por decil com piso n>=5 (mesmo piso de _MIN_OBS_SPEARMAN/score_quality/monotonic,
+    3 modulos irmaos)
+  metrica_tipo: contagem de celulas (feature x lado x decil x combo) com |t_stat|>=2,
+    comparada ao esperado por acaso puro sob o numero de testes rodados (nenhuma
+    correcao de teste multiplo aplicada -- contagem agregada e o proprio controle)
+  metrica_valor: 'Camada1: 175 de 2040 celulas com t_stat computavel (n>=5) saem
+    significativas (8,58%) contra 5% esperado por acaso (z=7,42, p=1,2e-13) --
+    excesso real, nao ruido. Por feature: 2,9% (A21_log_dollar_velocity) a 14,7%
+    (E27f_cost_atr_ratio), sem separacao nitida entre features -- estrutura difusa,
+    nao concentrada numa unica feature dominante. Camada0 (baseline): 189/1770
+    (10,68%), padrao parecido.'
+  n: 2040
+  status: amarelo
+  fonte_arquivo: 'experiments/alpha_walk_forward_feature_deciles_{symbol}_{resolution}_{camada}.parquet
+    (10 artefatos)'
+  fonte_secao: src/analysis/attribution.py::feature_deciles_by_side; scripts/run_walk_forward_with_predictions.py
+  nota: >
+    AMARELO -- excesso estatisticamente real (p=1,2e-13), mas difuso demais
+    pra virar decisao de engenharia sozinho (companion feature, recalibracao
+    de monotone_constraints) sem olhar celula a celula qual decil/lado carrega
+    cada excesso -- proximo passo, nao feito aqui. 2 bugs reais achados e
+    corrigidos ANTES deste numero ser reportado: (1) faltava piso n>=5 no
+    t_stat (81% dos "significativos" iniciais tinham n<=5, um trade fora da
+    curva bastava); (2) bug no script de verificacao, nao no codigo de
+    producao -- polars trata NaN>=2.0 como True (ordena NaN como "maior que
+    tudo"), inflando a contagem inicial pra 1135/2040 antes de excluir NaN
+    explicitamente. Ver audit/architecture_gaps_log.yaml::AG-424.

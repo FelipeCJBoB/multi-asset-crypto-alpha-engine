@@ -16,6 +16,13 @@ só ADICIONA `keep_predictions=True`. Escreve em arquivos SEPARADOS:
   `fold_id`/`symbol`/`resolution_id`/`variant` como colunas — mesmo
   padrão de escrita atômica tmp→fsync→rename de `hyperparams_optuna.
   export_trial_trajectory`)
+- `experiments/alpha_walk_forward_feature_deciles_{symbol}_{res}_{variant}.parquet`
+  (AG-424 -- census de decil das 30 features T1 ativas contra `ret_net`
+  realizado, `src.analysis.attribution.feature_deciles_by_side`, mesma
+  matemática/guard estatístico já validado em produção pra
+  `confidence_deciles_by_side`. Artefato canônico de produção, não
+  experimento solto -- regenerado toda vez que este script roda, mesmo
+  ciclo de vida dos predictions acima).
 
 Autorização explícita do Manager (2026-09-01): "Aprovo Retreino junto"
 (itens 16/P2/P3), custo real de `n_lifetime` (retreino completo dos 5
@@ -38,6 +45,8 @@ from typing import Any
 import polars as pl
 import structlog
 
+from src.analysis import attribution
+from src.features.build import T1_FEATURE_IDS
 from src.models import alpha, dataset, hyperparams_by_combo, pipeline
 from src.models import walk_forward as wf
 from src.models._constants import load_constant
@@ -125,6 +134,26 @@ def main() -> int:
                     "scripts.run_walk_forward_with_predictions.predictions_escrito",
                     path=str(pred_path),
                     n_rows=all_predictions.height,
+                )
+
+                # AG-424 -- census de decil das 30 features T1 contra o
+                # ret_net realizado, mesma matemática/guard de
+                # confidence_deciles_by_side. mf.data já tem t0 + todas as
+                # T1_FEATURE_IDS + ret_net/barrier_hit -- serve tanto de
+                # `labels` quanto de `feature_values` na assinatura.
+                feature_deciles = attribution.feature_deciles_by_side(
+                    all_predictions, mf.data, mf.data, T1_FEATURE_IDS
+                )
+                deciles_path = (
+                    EXPERIMENTS_DIR
+                    / f"alpha_walk_forward_feature_deciles_{symbol}_{resolution_id}_"
+                    f"{variant}.parquet"
+                )
+                _write_parquet_atomic(feature_deciles, deciles_path)
+                logger.info(
+                    "scripts.run_walk_forward_with_predictions.feature_deciles_escrito",
+                    path=str(deciles_path),
+                    n_rows=feature_deciles.height,
                 )
 
             result_dict = dataclasses.asdict(result)

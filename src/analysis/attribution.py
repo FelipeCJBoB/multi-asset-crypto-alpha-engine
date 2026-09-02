@@ -1,7 +1,9 @@
 """Atribuição de importância de feature — IC de Spearman por regime
 (`ic_by_regime`) e gain do XGBoost por lado (`gain_by_side`), uma métrica
-de concordância entre os dois rankings (`feature_agreement`), e monotonia
-de retorno por decil de confiança calibrada (`confidence_deciles_by_side`).
+de concordância entre os dois rankings (`feature_agreement`), monotonia
+de retorno por decil de confiança calibrada (`confidence_deciles_by_side`),
+e o mesmo teste de decil generalizado pra QUALQUER feature de entrada
+(`feature_deciles_by_side`).
 
 **PÓS-HOC, EXPLICATIVO, NUNCA INSUMO DE TREINO OU SELEÇÃO DE FEATURE.**
 Este módulo lê resultado REALIZADO (`ret_net`, `barrier_hit` — o que
@@ -85,6 +87,20 @@ FloatArray = NDArray[np.float64]
 # importado — ver docstring do módulo, "não compartilham código".
 _MIN_OBS_SPEARMAN = 5  # noqa: magic-number
 
+# Piso pra um t_stat de decil ter sentido -- mesmo valor/mesma categoria de
+# _MIN_OBS_SPEARMAN acima (e de src.models.score_quality._MIN_OBS_FOR_SMALL_
+# SAMPLE_METRICS/src.models.monotonic._MIN_OBS_PER_ENV, mesmo piso em 3
+# módulos diferentes, nunca importado entre eles por design -- ver docstring
+# do módulo). Achado real (AG-424, 2026-09-02): sem este piso, um decil com
+# n=2-3 produz |t_stat|>=2 por um único trade fora da curva, não por sinal --
+# medido rodando `feature_deciles_by_side` nas 30 features T1 reais dos 5
+# candidatos: 81% dos decis "significativos" (|t|>=2) tinham n<=5 antes deste
+# guard existir. `confidence_deciles_by_side`/`_decile_row` (mais antiga,
+# já em produção) tem a MESMA lacuna -- não corrigida aqui por decisão
+# separada (mudar comportamento de artefato já consumido exige autorização
+# própria, não incluída no escopo desta função nova).
+_MIN_OBS_T_STAT = 5  # noqa: magic-number
+
 _REGIME_COL = "regime"
 _T0_COL = "t0"
 _RET_NET_COL = "ret_net"
@@ -156,6 +172,26 @@ _DECILE_OUTPUT_SCHEMA: pl.Schema = pl.Schema(
         "n": pl.Int64,
         "confidence_min": pl.Float64,
         "confidence_max": pl.Float64,
+        "mean_ret_net_bps_value": pl.Float64,
+        "mean_ret_net_bps_unit": pl.Utf8,
+        "mean_ret_net_bps_n": pl.Int64,
+        "mean_ret_net_bps_n_semantics": pl.Utf8,
+        "mean_ret_net_bps_source": pl.Utf8,
+        "mean_ret_net_bps_valid": pl.Boolean,
+        "mean_ret_net_bps_invalid_reason": pl.Utf8,
+        "std_ret_net_bps": pl.Float64,
+        "t_stat": pl.Float64,
+    }
+)
+
+_FEATURE_DECILE_OUTPUT_SCHEMA: pl.Schema = pl.Schema(
+    {
+        "feature": pl.Utf8,
+        "side": pl.Utf8,
+        "decile": pl.Int64,
+        "n": pl.Int64,
+        "value_min": pl.Float64,
+        "value_max": pl.Float64,
         "mean_ret_net_bps_value": pl.Float64,
         "mean_ret_net_bps_unit": pl.Utf8,
         "mean_ret_net_bps_n": pl.Int64,
@@ -697,6 +733,223 @@ def _decile_row(
         "n": n,
         "confidence_min": float(np.min(confidence)),
         "confidence_max": float(np.max(confidence)),
+        **{f"mean_ret_net_bps_{k}": v for k, v in metric.to_json().items()},
+        "std_ret_net_bps": std_bps,
+        "t_stat": t_stat,
+    }
+
+
+def feature_deciles_by_side(
+    predictions: pl.DataFrame,
+    labels: pl.DataFrame,
+    feature_values: pl.DataFrame,
+    features: tuple[str, ...],
+    *,
+    n_deciles: int = _N_DECILES_DEFAULT,
+) -> pl.DataFrame:
+    """Generalização de `confidence_deciles_by_side` pra QUALQUER feature de
+    entrada (T1 ou não), não só `confidence` (probabilidade calibrada de
+    saída). Pergunta: "o valor CRU da feature, no momento do sinal, ordena
+    o retorno realizado por decil (rank, dentro do lado)". Mesma matemática
+    de `confidence_deciles_by_side` (bucket por RANK, `n<2`/`std==0` ->
+    `Metric(valid=False)`, nunca `inf`/`ZeroDivisionError` silencioso), MAIS
+    um piso que aquela função não tem: `t_stat` só é reportado com
+    `n >= _MIN_OBS_T_STAT` (5, mesmo valor de `_MIN_OBS_SPEARMAN` acima) --
+    abaixo disso fica `nan` mesmo com `std>0` (divisão matematicamente
+    definida, mas não confiável). Não reusa `_decile_row`/`_deciles_for_side`
+    (privados, acoplados à coluna `confidence`) por design deste módulo:
+    cada pergunta de atribuição tem sua própria junção dedicada, ver
+    docstring do módulo, "não amarrar lógica de análise a um único
+    caminho de código".
+
+    **Por que existe, e por que o piso de `n>=5`** (achado real,
+    2026-09-02): a primeira tentativa de responder essa pergunta foi um
+    script solto em `scripts/` com um heurístico inventado
+    (`threshold_score` = maior salto entre decis vizinhos / range) que se
+    mostrou não-robusto a ruído de amostra pequena. Substituído por uma
+    versão sem o piso de `n>=5` (mesma regra de `confidence_deciles_by_
+    side`, só `n<2`) -- rodando nas 30 features T1 reais dos 5
+    candidatos, 27% dos decis (815/3000, feature×side×decile×combo)
+    saíram "significativos" (`|t|>=2`) contra ~5% esperado por acaso;
+    81% desses (664/815) tinham `n<=5` -- um único trade fora da curva
+    bastava pra estourar `|t|>=2` com 2-4 graus de liberdade. O piso
+    fecha essa classe de falso-positivo por construção, mesmo valor já
+    usado em 3 módulos irmãos (`score_quality.py`/`monotonic.py`/aqui
+    mesmo pra Spearman) -- não uma régua nova, a MESMA já validada.
+    `confidence_deciles_by_side`/`_decile_row` (mais antiga, já em
+    produção) tem a MESMA lacuna, não corrigida aqui -- decisão separada.
+
+    Nenhuma correção de teste múltiplo é aplicada aqui (múltiplas
+    features × múltiplos decis é exatamente o cenário que precisa dela)
+    -- quem lê o resultado
+    precisa comparar a contagem de decis "significativos" contra o
+    esperado por acaso sob o número de testes rodados, não interpretar
+    célula por célula isoladamente.
+
+    **Junção — mesmo padrão de `ic_by_regime`/`confidence_deciles_by_side`,
+    uma vez por lado:** `predictions` filtrado (`is_oof=True`,
+    `side_hat==side`) junta com `labels` por `(t0, side_hat==side)`,
+    descarta `barrier_hit==NOFILL`, depois junta com `feature_values` por
+    `t0` (`feature_values` precisa ter `t0` + cada coluna de `features` --
+    tipicamente `src.models.dataset.build_modeling_frame().data`, que já
+    tem tudo isso mais os labels, mas os 3 argumentos ficam separados pra
+    bater com a convenção de `ic_by_regime` e pra quem já tem `labels`
+    isolado não precisar montar um frame combinado só pra chamar isto).
+    `feature_values` é deduplicado por `t0` antes do join (mesma razão de
+    `ic_by_regime`: regime/feature não variam por lado).
+
+    **Decis por lado SEPARADO, nunca pooled long+short** -- mesma
+    disciplina do resto do módulo (classificadores/calibradores distintos
+    por lado, misturar inventaria uma população que não existe). Decis
+    são atribuídos por RANK dentro do lado (não por valor) -- mesmo motivo
+    de `confidence_deciles_by_side`: plateaus de valor não colapsam
+    decis.
+
+    Retorna uma linha por `(feature, side, decile)` -- `value_min`/
+    `value_max` são os limites do valor CRU da feature naquele decil
+    (não confidence), resto idêntico ao schema de `confidence_deciles_
+    by_side`."""
+    if not features:
+        raise ValueError("feature_deciles_by_side: features vazio — nada para medir")
+    if n_deciles < 1:
+        raise ValueError(f"feature_deciles_by_side: n_deciles={n_deciles} — precisa ser >= 1")
+
+    _require_columns(predictions, ("t0", "side_hat", "is_oof"), df_name="predictions")
+    _require_columns(labels, ("t0", "side", _BARRIER_HIT_COL, _RET_NET_COL), df_name="labels")
+    _require_columns(feature_values, ("t0", *features), df_name="feature_values")
+
+    source = _infer_predictions_source(predictions)
+    labels_small = labels.select(["t0", "side", _BARRIER_HIT_COL, _RET_NET_COL]).with_columns(
+        pl.col("t0").cast(_T0_DTYPE)
+    )
+    feature_values_small = (
+        feature_values.select(["t0", *features])
+        .with_columns(pl.col("t0").cast(_T0_DTYPE))
+        .unique(subset=["t0"], keep="first")
+    )
+
+    rows: list[dict[str, Any]] = []
+    for side_value, side_label in _SIDE_LABEL_BY_HAT.items():
+        preds_side = (
+            predictions.filter(pl.col("is_oof") & (pl.col("side_hat") == side_value))
+            .select(["t0", "side_hat"])
+            .with_columns(pl.col("t0").cast(_T0_DTYPE))
+        )
+        joined = preds_side.join(
+            labels_small, left_on=["t0", "side_hat"], right_on=["t0", "side"], how="inner"
+        ).filter(pl.col(_BARRIER_HIT_COL).cast(pl.Utf8) != _NOFILL)
+        joined = joined.join(feature_values_small, on="t0", how="inner")
+
+        logger.info(
+            "analysis.attribution.feature_deciles_by_side_joined",
+            side=side_label,
+            n_predictions_oof_lado=preds_side.height,
+            n_apos_joins=joined.height,
+            n_features=len(features),
+            n_deciles=n_deciles,
+            source=source,
+        )
+
+        if joined.height == 0:
+            logger.warning(
+                "analysis.attribution.feature_deciles_sem_trades_no_lado", side=side_label
+            )
+            continue
+
+        for feature in features:
+            rows.extend(
+                _feature_deciles_for_side(
+                    joined,
+                    feature=feature,
+                    side_label=side_label,
+                    n_deciles=n_deciles,
+                    source=source,
+                )
+            )
+
+    if not rows:
+        return pl.DataFrame(schema=_FEATURE_DECILE_OUTPUT_SCHEMA)
+    return pl.DataFrame(rows, schema=_FEATURE_DECILE_OUTPUT_SCHEMA)
+
+
+def _feature_deciles_for_side(
+    joined: pl.DataFrame, *, feature: str, side_label: str, n_deciles: int, source: str
+) -> list[dict[str, Any]]:
+    """Núcleo de bucketing por rank + agregação, uma chamada por
+    `(feature, side)` (ver `feature_deciles_by_side`). `joined` já passou
+    pelos joins/filtros -- aqui só ordena por `feature`, atribui decil e
+    agrega."""
+    ordered = joined.sort([feature, "t0"])
+    n_total = ordered.height
+    idx = np.arange(n_total, dtype=np.int64)
+    decile_idx = (idx * n_deciles) // n_total + 1
+    ordered = ordered.with_columns(pl.Series("decile", decile_idx, dtype=pl.Int64))
+
+    rows: list[dict[str, Any]] = []
+    for decile in range(1, n_deciles + 1):
+        sub = ordered.filter(pl.col("decile") == decile)
+        rows.append(
+            _feature_decile_row(
+                sub, feature=feature, side_label=side_label, decile=decile, source=source
+            )
+        )
+    return rows
+
+
+def _feature_decile_row(
+    sub: pl.DataFrame, *, feature: str, side_label: str, decile: int, source: str
+) -> dict[str, Any]:
+    n = sub.height
+    if n == 0:
+        metric = not_computable(
+            Unit.BPS_PER_TRADE,
+            _N_SEMANTICS_TRADES,
+            source,
+            f"{feature} decil {decile} sem trades no lado {side_label}",
+        )
+        return {
+            "feature": feature,
+            "side": side_label,
+            "decile": decile,
+            "n": 0,
+            "value_min": float("nan"),
+            "value_max": float("nan"),
+            **{f"mean_ret_net_bps_{k}": v for k, v in metric.to_json().items()},
+            "std_ret_net_bps": float("nan"),
+            "t_stat": float("nan"),
+        }
+
+    bps = sub[_RET_NET_COL].to_numpy().astype(np.float64) * _BPS_PER_UNIT
+    values = sub[feature].to_numpy().astype(np.float64)
+
+    mean_bps = float(np.mean(bps))
+    std_bps = float(np.std(bps, ddof=1)) if n > 1 else 0.0
+    # AG-424 -- t_stat só é reportado com n >= _MIN_OBS_T_STAT (5); abaixo
+    # disso a aproximação normal/t não se sustenta (ver docstring da
+    # constante) e o valor fica NaN mesmo quando std>0 e a divisão seria
+    # matematicamente definida -- "definido" não é o mesmo que "confiável".
+    t_stat = (
+        mean_bps / (std_bps / math.sqrt(n))
+        if n >= _MIN_OBS_T_STAT and std_bps > 0.0
+        else float("nan")
+    )
+
+    metric = Metric(
+        value=mean_bps,
+        unit=Unit.BPS_PER_TRADE,
+        n=n,
+        n_semantics=_N_SEMANTICS_TRADES,
+        source=source,
+        valid=True,
+        invalid_reason=None,
+    )
+    return {
+        "feature": feature,
+        "side": side_label,
+        "decile": decile,
+        "n": n,
+        "value_min": float(np.min(values)),
+        "value_max": float(np.max(values)),
         **{f"mean_ret_net_bps_{k}": v for k, v in metric.to_json().items()},
         "std_ret_net_bps": std_bps,
         "t_stat": t_stat,

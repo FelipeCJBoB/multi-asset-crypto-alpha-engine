@@ -27736,3 +27736,79 @@ entries:
     resolved_by_commit: null
     resolution: "aplicado -- decisao de negocio do Manager executada. '0/20' reafirmado pela terceira vez, nao revertido."
     status: "concluido -- producao promovida (run_stamp=20260902T213701Z), artefatos canonicos regenerados (walk-forward + layer1_sprint), gates reavaliados. Nenhum dos 5 candidatos passa mesmo apos AG-421+AG-422. SOLUSDT/R3 C0 e o primeiro achado de 'edge passa, dados nao' -- sinaliza onde investir a seguir."
+
+  - id: AG-424
+    date: "2026-09-02"
+    file: "src/analysis/attribution.py::feature_deciles_by_side (novo); scripts/run_walk_forward_with_predictions.py; experiments/alpha_walk_forward_feature_deciles_*.parquet (10 artefatos canonicos novos)"
+    related_file: "tests/unit/test_analysis_attribution.py; scripts/analyze_momentum_impact_conditioning.py (removido); item 4 do roadmap desta sessao"
+    numeracao: "AG-424."
+    found_by: >-
+      Pedido do Manager (item 4 do roadmap: generalizar census de decil
+      das 30 features T1). Primeira tentativa foi um script solto em
+      `scripts/` com heuristico proprio (`threshold_score`) -- Manager
+      interrompeu: "pq ta criando arquivo novo e metodos novos se isso
+      nao e um teste? [...] o teste e direto na producao" -- pediu
+      migracao pra dentro do pipeline de producao, usando a metodologia
+      estatistica que ja existe no projeto, nao um heuristico novo.
+    gap: >
+      `src.analysis.attribution` ja tinha `confidence_deciles_by_side`
+      (decil por rank + teste-t, guardado contra n<2/std==0) pra medir
+      se a CONFIANCA calibrada do Alpha ordena retorno realizado -- mas
+      nao existia equivalente pra medir isso sobre uma FEATURE DE
+      ENTRADA arbitraria. `feature_deciles_by_side` (novo) generaliza a
+      MESMA matematica (mesmo modulo, mesmo padrao de juncao de
+      `ic_by_regime`, nunca compartilhando codigo com `confidence_
+      deciles_by_side` por design do modulo) pras 30 features T1 de
+      uma vez, decis SEPARADOS por lado (nunca pooled long+short --
+      seriam classificadores/calibradores distintos misturados).
+
+      **2 bugs reais achados e corrigidos ANTES de reportar qualquer
+      numero** (medir antes de afirmar, B23):
+      1. Sem piso de `n>=5` no `t_stat` (mesmo valor de `_MIN_OBS_
+         SPEARMAN`/`score_quality._MIN_OBS_FOR_SMALL_SAMPLE_METRICS`/
+         `monotonic._MIN_OBS_PER_ENV`, ja usado em 3 modulos irmaos),
+         81% dos decis "significativos" (`|t|>=2`) nos 5 candidatos
+         reais tinham `n<=5` -- um unico trade fora da curva bastava.
+         Corrigido: `_MIN_OBS_T_STAT=5` adicionado, `t_stat=nan` abaixo
+         disso mesmo com `std>0` (divisao definida != confiavel).
+         `confidence_deciles_by_side`/`_decile_row` (mais antiga, ja em
+         producao) tem a MESMA lacuna -- NAO corrigida aqui, decisao
+         separada (mudar artefato ja consumido exige autorizacao
+         propria).
+      2. Bug no MEU proprio script de verificacao (nao no codigo de
+         producao): `polars` trata `NaN >= 2.0` como `True` (ordena NaN
+         como "maior que tudo" pra sustentar ordenacao total, diferente
+         do IEEE 754 que numpy/Python seguem) -- contagem inicial de
+         "decis significativos" (`.filter(pl.col("t_stat").abs()>=2.0)`
+         sem excluir NaN antes) deu 1135/2040, oscilando com viés
+         obvio; corrigido pra `.filter(pl.col("t_stat").is_not_nan())`
+         antes do filtro de significancia -- numero real: 175/2040.
+    severity: "media -- nova capacidade de medicao, integrada a producao; os 2 bugs foram pegos e corrigidos ANTES de qualquer numero ser reportado ao Manager, nao depois"
+    layer: "analysis (nova funcao em modulo existente) + scripts (script de producao ganhou uma saida nova, script solto anterior removido)"
+    consequence: >
+      Achado real, agora medido corretamente: `feature_deciles_by_side`
+      nas 30 features T1 x 5 candidatos x 2 lados (Camada1, `n>=5` por
+      celula) -- **175 de 2040 celulas com `t_stat` computavel saem
+      significativas (`|t|>=2`), 8,58%, contra 5% esperado por acaso
+      puro (z=7,42, p=1,2e-13)** -- excesso real, nao ruido de teste
+      multiplo, mas moderado (nao concentrado numa unica feature
+      dominante): taxa por feature vai de 2,9% (`A21_log_dollar_
+      velocity`) a 14,7% (`E27f_cost_atr_ratio`), sem separacao nitida
+      "cauda vs. linear". Camada0 (baseline) mostra padrao parecido
+      (189/1770, 10,68%). Estrutura real existe em varias features de
+      forma difusa, nao concentrada -- nao justifica sozinho nenhuma
+      companion-feature ou recalibracao de `monotone_constraints` sem
+      olhar qual decil/lado especifico carrega cada excesso (proximo
+      passo, nao feito aqui).
+
+      10 artefatos canonicos novos (`alpha_walk_forward_feature_
+      deciles_{symbol}_{resolution}_{camada}.parquet`), mesmo ciclo de
+      vida dos `_predictions.parquet` ja existentes -- regenerados
+      sempre que `run_walk_forward_with_predictions.py` roda, nao
+      arquivo solto em `experiments/`. `scripts/analyze_momentum_
+      impact_conditioning.py` (commitado antes desta entrada, item 4/5
+      original) removido -- mesma classe de script solto que o Manager
+      pediu pra eliminar.
+    resolved_by_commit: null
+    resolution: "aplicado -- feature_deciles_by_side em producao, testado (9 testes novos), 2 bugs reais corrigidos antes do numero final ser reportado."
+    status: "concluido -- capacidade de medicao integrada ao pipeline. Achado real (8,58% vs 5% esperado, p=1,2e-13) documentado, decisao de engenharia (companion feature/monotone_constraints) explicitamente NAO tomada aqui -- exige olhar celula a celula, fora do escopo desta entrada."
