@@ -3314,14 +3314,22 @@ alpha_gate_data_min_folds_usados:
     de contagem ja adotado neste repo em `alpha.MIN_OCCURRENCES_ABOVE_
     TAU`=10 para confiabilidade de estatistica agregada sobre trades --
     aqui aplicado ao nivel de FOLD, nao de trade, pela mesma razao.
-    Consequencia medida contra a campanha real (2026-08-31, n_lifetime
-    id=42): NENHUM dos 10 combo×variant atinge n_folds_usados>=10 (max
-    real = 8, BTCUSDT/R2/camada1) -- o teto de folds do desenho atual
-    (initial_train_years=2 + passo trimestral, 12-19 folds totais) e
-    estruturalmente insuficiente pra este piso, achado real registrado
-    em AG-391, nao um efeito colateral do numero escolhido.
 
-    SWEEP DE SENSIBILIDADE (2026-08-31, exigido por classe A antes do
+    ATUALIZADO 2026-09-03 (AG-428, apos target_signal_rate subir pra
+    0,10): o achado abaixo (2026-08-31, "NENHUM dos 10 combo×variant
+    atinge n_folds_usados>=10, max real=8") esta SUPERADO pelo dado
+    atual -- nao e mais verdade. Sob o mecanismo de tau corrigido
+    (AG-427, janela 180d) + target_signal_rate=0,10 (AG-428), **6 de 10
+    combo×variant JA PASSAM este piso** (`BTCUSDT/R2/C0`=15,
+    `SOLUSDT/R2/C1`=11, `SOLUSDT/R2/C0`=10, `XRPUSDT/R2/C1`=11,
+    `XRPUSDT/R2/C0`=11, `XRPUSDT/R3/C0`=10 -- o maximo real chegou a 15,
+    quase o dobro do piso). O teto estrutural de folds (initial_train_
+    years=2 + passo trimestral) deixou de ser o gargalo dominante --
+    virou o gate Alpha (edge sem significancia estatistica), ver
+    `AG-428`. Preservado abaixo por transparencia historica, nao mais
+    a leitura atual:
+
+    "SWEEP DE SENSIBILIDADE (2026-08-31, exigido por classe A antes do
     Gate 3, 0 trials -- reavaliacao do mesmo dado ja computado, sem
     retreino): testado contra os 10 combo×variant reais em min_folds in
     {5, 8, 10, 15, 20}. Gate Data isolado: 4/10 passam em min_folds=5,
@@ -3333,7 +3341,12 @@ alpha_gate_data_min_folds_usados:
     escolha exata do limiar dentro do range. DECISAO (2026-08-31,
     delegada explicitamente pelo Manager ao Chief Architect): valor
     travado em 10, nao ha justificativa pra mudar dado que o veredito
-    composto e insensivel ao limiar dentro do range plausivel.
+    composto e insensivel ao limiar dentro do range plausivel." --
+    ESTA GRADE DE SENSIBILIDADE NAO FOI REMEDIDA sob o dado novo
+    (fora do escopo do AG-428, so a citacao factual do "max=8" foi
+    corrigida); o veredito composto continua 0/10 sob o valor travado
+    (10), mas se o limiar em si for revisitado no futuro, remedir a
+    grade primeiro.
   class: A
   sweep_required: true
   sweep_range: [5, 20]
