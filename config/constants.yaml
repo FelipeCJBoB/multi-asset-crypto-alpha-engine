@@ -835,14 +835,29 @@ target_signal_rate:
     construção: deriva TEMPORAL entre a janela de treino onde calibra e
     o período de teste walk-forward real (regime pode mudar entre os
     dois, população-mismatch e deriva temporal são causas diferentes).
-    Medição real pendente (`scripts.run_walk_forward_campaign --combo
-    XRPUSDT/R3 --tau-policy total_common_oof --overwrite`, escreve em
-    arquivo separado `_total_common_oof.json`, nunca no canônico) --
-    o único artefato dessa política em disco é de 2026-08-31, sob
-    target_signal_rate=0,0189 (2 gerações atrás), não comparável ao
-    estado atual. Avaliação em andamento, ver `AG-428`. Não bloqueou a
-    decisão desta rodada (autorizada com o número JÁ REALIZADO, não o
-    nominal).
+    MEDIDO 2026-09-03 (`scripts.run_walk_forward_campaign --combo
+    XRPUSDT/R3 --tau-policy total_common_oof --overwrite`, arquivo
+    separado `alpha_walk_forward_XRPUSDT_R3_total_common_oof.json`,
+    nunca tocou o canônico) -- NÃO É CORREÇÃO LIMPA, cria problema
+    NOVO e OPOSTO: `signal_rate_realized` OVERSHOOTA o nominal (0,10)
+    por 2-3x, não fica abaixo dele:
+      camada1: LEGACY usados=9/12 rate=0,0838 edge=+16,81bps ->
+                TOTAL_COMMON_OOF usados=11/12 rate=0,2322 edge=+10,23bps
+      camada0: LEGACY usados=10/12 rate=0,0718 edge=+12,59bps ->
+                TOTAL_COMMON_OOF usados=11/12 rate=0,2999 edge=+14,41bps
+    Mais folds usáveis (11/12 nos 2), mas taxa de sinal 3-4x maior que
+    o alvo estouraria o teto econômico de 5,88%/mês (AG-428) por larga
+    margem -- a política resolve o problema medido dentro da própria
+    população de calibração (por construção), mas generaliza pior, não
+    melhor, pra fora da amostra walk-forward real neste teste único.
+    NÃO PROMOVER a produção sem investigar por que a calibração
+    conjunta erra tão mais na direção oposta -- hipótese de deriva
+    temporal (não descasamento de população) ganha força: se fosse só
+    população/NOFILL, `TOTAL_COMMON_OOF` teria fechado o gap, não
+    invertido o sinal do erro. Investigação aberta, ver `AG-428`. Não
+    bloqueou a decisão de `target_signal_rate=0,10` (autorizada com o
+    número JÁ REALIZADO sob a política LEGACY, não afetada por esta
+    exploração).
 
     ACHADO DE CONTROLE (mesma sessão, antes desta decisão): tau FIXO em
     0,51 (proposta descartada) devolveu taxa de sinal de 56,4% médio das

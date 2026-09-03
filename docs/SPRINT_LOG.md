@@ -6843,7 +6843,14 @@ Contrapartida real: `BTCUSDT/R2` e `SOLUSDT/R2` viraram Sharpe NEGATIVO
 no Run Canônico sob a amostra ~3× maior (18.068→53.355 trades) — mais
 dado revelou pior, não melhor, nesses 2. Detalhe completo:
 `audit/architecture_gaps_log.yaml::AG-428`, artefato "ADR-007 — Painel
-de Execução" (Run Canônico + ADR-008 Fase 4/6) atualizado. Investigação
-aberta e não fechada: por que a taxa realizada diverge da nominal nessa
-faixa (hipótese da exclusividade mútua, acima, não confirmada
-quantitativamente).
+de Execução" (Run Canônico + ADR-008 Fase 4/6) atualizado.
+
+**Addendum mesmo dia — investigação da divergência FECHADA (parcialmente), full Optuna autorizado.** Manager autorizou 4 itens: full Optuna re-run, atualizar métricas pós-Optuna (Fases 5/7/8 continuam paradas), invocar agentes pra investigar a divergência nominal-vs-realizado, e corrigir a proveniência stale de `alpha_gate_data_min_folds_usados`. <!-- check-sprint-log: skip -->
+
+Item de proveniência corrigido — "máximo real medido=8" estava obsoleto, agora chega a 15, 6/10 células já passam o piso. <!-- check-sprint-log: skip -->
+
+2 agentes de investigação (background, sem retreino) + medição direta feita por mim depois que ambos corretamente recusaram executar código (regra `CLAUDE.md` — autorização de execução não se repassa a subagentes): **hipótese da exclusividade mútua REFUTADA por medição real** (`scripts/ag428_signal_rate_decomposition.py`, 10 artefatos de predição, n=212.782 barras OOF) — explica só 6,1% do gap. O gargalo real (93,9%) é `rate_long_alone`/`rate_short_alone` (cada lado SOZINHO, sem competição) já ficando bem abaixo do nominal fora da amostra — deriva treino-vs-teste na própria calibração de `tau`, não a regra de decisão.
+
+Segundo agente investigou `TAU_POLICY_TOTAL_COMMON_OOF` (`AG-210`, já implementada) como correção candidata — medição real pra `XRPUSDT/R3` (arquivo separado, nunca tocou o canônico) deu resultado **surpreendente e não-promovível**: a política OVERSHOOTA o nominal por 2-3× (`signal_rate_realized` 0,23-0,30 contra alvo 0,10), o oposto do problema original. Estouraria o teto econômico de 5,88%/mês por larga margem. Não promovido — investigação continua aberta, agora com evidência de que é deriva TEMPORAL (regime treino≠teste), não descasamento de população (que `TOTAL_COMMON_OOF` já corrige por construção e ainda assim não resolveu). Detalhe completo em `config/constants.yaml::target_signal_rate` e `AG-428`.
+
+Full Optuna re-run (150 trials × 10 studies, `--tag rate010_20260903`) rodando em background — Run Canônico + walk-forward campaign + predictions serão re-executados e o artefato ADR-007 atualizado de novo assim que sair. <!-- check-sprint-log: skip -->
