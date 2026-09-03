@@ -2875,14 +2875,41 @@ alpha_prune_max_gate_fpr:
 
 alpha_production_hyperparam_override:
   value:
-    SOLUSDT_R3: "20260903T115158Z"
-    XRPUSDT_R2: "20260903T115158Z"
-    XRPUSDT_R3: "20260903T115158Z"
-    BTCUSDT_R2: "20260903T115158Z"
-    SOLUSDT_R2: "20260903T115158Z"
+    SOLUSDT_R3: "20260903T192150Z"
+    XRPUSDT_R2: "20260903T192150Z"
+    XRPUSDT_R3: "20260903T192150Z"
+    BTCUSDT_R2: "20260903T192150Z"
+    SOLUSDT_R2: "20260903T192150Z"
   provenance: ASSUMED
   source: >
-    **[ATUALIZADO 2026-09-03]** Decisão explícita do Manager — promove a
+    **[ATUALIZADO 2026-09-03, RODADA 2]** Decisão explícita do Manager
+    ("Full Optuna re-run ... Autorizado") — promove a campanha de
+    controle (`--tag rate010_20260903`, seed corrigido `AG-399`, SEM
+    corte de data, 1 seed × 150 trials) rodada sob `target_signal_
+    rate=0,10` (era 0,0284, `AG-428` -- teto econômico de 5,88%/mês do
+    capital medido contra `src/risk/sizing.py`/`limits.py` e autorizado
+    pelo Manager), mecanismo de janela de tau inalterado (`tau_
+    calibration_window_days=180`, `AG-427`), vetor T1 de 31 features
+    inalterado (`AG-426`). `best_value` de screening (1 seed) por study:
+    BTCUSDT/R2 C1=0,1959/C0=0,2940; SOLUSDT/R2 C1=0,0360/C0=-0,1029;
+    SOLUSDT/R3 C1=0,5650/C0=0,6177; XRPUSDT/R2 C1=0,7096/C0=0,9487;
+    XRPUSDT/R3 C1=0,8899/C0=0,7980 -- CAIU substancialmente vs. a rodada
+    1 em quase toda célula (ex. XRPUSDT/R2/C0 0,9487 contra 1,1046;
+    SOLUSDT/R2/C0 foi a NEGATIVO, -0,1029, era +0,3095) -- consistente
+    com o achado do `AG-428`: a taxa de sinal mais alta admite uma
+    população de trade mais diluída, o `best_value` de screening (Sharpe
+    pooled de 1 seed) reflete isso diretamente. Ainda sujeito ao mesmo
+    viés otimista de 1 seed que motivou a confirmação multi-seed do
+    `ADR-002` (não é, por si só, prova de edge real; walk-forward e
+    gates decidem isso, não o `best_value` de screening). **Schema
+    honesto**: os 5 JSONs novos (`run_stamp=20260903T192150Z`) seguem
+    NÃO replicando os campos de confirmação multi-seed do processo
+    `ADR-007` original — 1 seed, não 10. Números novos do walk-forward
+    canônico e dos gates: `audit/architecture_gaps_log.yaml::AG-428`.
+
+    **Histórico — promoção anterior (2026-09-03 cedo, campanha `tau_fix_
+    20260903`, achada sob target_signal_rate=0,0284, valores
+    substituídos acima):** Decisão explícita do Manager — promove a
     campanha de controle (`--tag tau_fix_20260903`, seed corrigido
     `AG-399`, SEM corte de data, 1 seed × 150 trials) rodada sob o
     mecanismo de tau corrigido nesta sessão (`AG-427`): `tau_calibration_

@@ -28184,3 +28184,74 @@ entries:
       Fases 5/7/8 + as 2 auditorias (adversarial/engenharia) continuam
       NAO refeitas -- fora do escopo desta correcao, como na rodada
       anterior.
+
+      ADENDO 2026-09-03, RODADA 3 (mesmo dia -- Manager autorizou 4
+      itens: full Optuna re-run, atualizar metricas pos-Optuna,
+      invocar agentes pra investigar a divergencia nominal-vs-
+      realizado, corrigir proveniencia stale de
+      `alpha_gate_data_min_folds_usados`).
+
+      Investigacao da divergencia FECHADA (parcialmente), antes do
+      Optuna: 2 agentes em background (sem retreino, so leitura de
+      artefatos ja existentes) corretamente recusaram executar codigo
+      (regra CLAUDE.md -- autorizacao de execucao nao se repassa a
+      subagentes), prepararam scripts prontos, medicao real feita
+      pela sessao principal depois. Hipotese da exclusividade mutua
+      REFUTADA por medicao (`scripts/ag428_signal_rate_decomposition.py`,
+      10 artefatos de predicao, n=212.782 barras OOF): explica so 6,1%
+      do gap. Causa-raiz confirmada (93,9% do gap): `rate_long_alone`/
+      `rate_short_alone` (cada lado SOZINHO, sem competicao) ja ficam
+      bem abaixo do nominal fora da amostra -- deriva de generalizacao
+      treino-vs-teste na propria calibracao de `tau`, nao a regra de
+      decisao. `TAU_POLICY_TOTAL_COMMON_OOF` (AG-210, ja implementada)
+      testada como correcao candidata (XRPUSDT/R3, arquivo separado,
+      nunca tocou o canonico): OVERSHOOT de 2-3x o nominal (0,23-0,30
+      contra 0,10) -- NAO promovida, estouraria o teto economico.
+      Aponta pra deriva TEMPORAL (regime treino != teste) como causa
+      dominante, nao descasamento de populacao (que aquela politica ja
+      corrige por construcao e mesmo assim nao fechou o gap).
+
+      `alpha_gate_data_min_folds_usados` -- proveniencia stale
+      corrigida ("max real medido=8" nao era mais verdade, ja
+      chegava a 15 antes mesmo do Optuna).
+
+      Full Optuna re-run executado (`scripts.run_t0_cutoff_full_
+      campaign --control --tag rate010_20260903`, 150 trials x 10
+      studies, 10/10 concluidos, ~2h de compute) sob
+      `target_signal_rate=0,10`. `best_value` de screening caiu
+      substancialmente em quase toda celula vs. a campanha anterior
+      (0,0284) -- `SOLUSDT/R2/C0` foi a NEGATIVO (-0,1029, era
+      +0,3095) -- consistente com o achado da divergencia (taxa mais
+      alta dilui a populacao de trade admitida). Promovido
+      (`run_stamp=20260903T192150Z`,
+      `scripts.promote_control_campaign_to_production`). Run Canonico
+      + walk-forward campaign + predictions REGENERADOS sob o
+      hiperparametro novo, 0 falhas.
+
+      RESULTADO FINAL (rodada 3): continua 0/10 combo x camada, mas
+      com um marco real: **`XRPUSDT/R3/Camada1` passa o gate Alpha**
+      (edge=+22,75bps, p=0,030 < 0,05) -- primeira celula em TODA a
+      investigacao (das 3 rodadas desta sessao) a vencer qualquer um
+      dos 3 gates com significancia estatistica real, nao so "perto".
+      Nao sobrevive ao composto porque o gate Model reprova nos 2
+      lados dessa mesma celula (AUC 0,517/0,416). Gate Data: 7/10
+      celulas passam agora (era 6/10, `BTCUSDT/R2/C1` cruzou o piso
+      pela 1a vez). Run Canonico: todos os 5 combos voltaram a Sharpe
+      positivo (eram 2 negativos na rodada 2) -- mas `BTCUSDT/R2`
+      (0,196) e `SOLUSDT/R2` (0,036) muito perto de zero, o Optuna
+      achou o melhor ponto dentro de uma busca mais dificil, nao
+      recuperou o nivel da rodada 1. Fase 4 walk-forward: 6/10 celulas
+      com edge positivo agora (era 2/10) -- `SOLUSDT/R3` e `XRPUSDT/R2`
+      (as 2 camadas cada) viraram positivas.
+
+      Artefato "ADR-007" atualizado de novo (banner, Run Canonico,
+      ADR-008 Fase4/Fase6) com os numeros da rodada 3:
+      https://claude.ai/code/artifact/ed42926f-90e2-4acd-bf61-58a9e05d9604
+      Briefing tecnico-financeiro de auditoria externa publicado
+      cobrindo a cadeia de codigo + matematica financeira completa +
+      o achado desta investigacao:
+      https://claude.ai/code/artifact/9b13590c-bf34-4828-9290-1cd2a772ea67
+      Investigacao da deriva temporal permanece ABERTA -- causa exata
+      nao isolada quantitativamente, so inferida por eliminacao via o
+      teste do `TAU_POLICY_TOTAL_COMMON_OOF` acima. Fases 5/7/8 + as 2
+      auditorias continuam NAO refeitas.
