@@ -27879,3 +27879,67 @@ entries:
     resolved_by_commit: null
     resolution: "aplicado -- capacidade de medicao integrada, testada (11 testes novos), rodada nos 5 candidatos. Achado: sem excesso detectavel (p=0,50 pooled), direcao pontual OPOSTA a tese original, nenhum dos dois suficientemente forte pra decisao."
     status: "concluido -- item 5 do roadmap fechado com resultado real (nao positivo, nao decisivo). adverse_selection_bps continua ASSUMED, sweep formal via Testnet (Sprint 16) segue sendo o unico caminho pra medir de verdade -- este item era proxy historico, nao substituto."
+
+  - id: AG-426
+    date: "2026-09-02"
+    file: "src/features/groups/group_e.py (e21f_toptrader_ls_ratio_count, nova); src/features/_sources.py (_FUTURES_POSITIONING_COLS +1 entrada); src/features/build.py (T1_FEATURE_IDS 30->31, compute_t1_features); src/features/registry.yaml (E21f_toptrader_ls_ratio_count, nova); src/models/dataset.py (_FUTURES_POSITIONING_FEATURE_IDS +1)"
+    related_file: "item 1 do roadmap desta sessao (pesquisa de dado Binance nao aproveitado, agente background); E14f_toptrader_ls_ratio (feature-irma, nota historica do Lote C que ja apontava a coluna count_ sem feature dedicada); AG-372/ADR-006 (PRINCIPIO DE GATE do registry, override deliberado documentado aqui, mesmo precedente do Lote D)"
+    numeracao: "AG-426."
+    found_by: >-
+      Pesquisa da sessao (item 1, agente em background) confirmou que
+      `count_toptrader_long_short_ratio` -- variante por NUMERO DE
+      CONTAS do mesmo grupo de top traders de `E14f_toptrader_ls_ratio`
+      (que usa a variante SUM, por notional) -- ja existe em `schemas.
+      METRICS` e ja esta baixada nos parquets de `metrics` desde 2020/
+      2021 (mesmos arquivos que E14f/E16f/E18f ja leem), mas ficou sem
+      feature dedicada desde o Lote C original (2026-08-24) -- nota
+      historica ja presente em `registry.yaml::E14f_toptrader_ls_ratio`:
+      "a nao usada fica sem feature dedicada nesta leva". Unico item do
+      levantamento com custo de aquisicao ZERO (dado ja em disco, so
+      falta engenharia de feature). Manager ordenou implementacao direta.
+    gap: >
+      `T1_FEATURE_IDS` nao incluia nenhuma feature derivada da
+      cardinalidade (numero de contas) do positioning de top traders --
+      so a soma ponderada por notional (E14f). Dado o achado desta
+      sessao de que features de positioning (grupo E) carregam mais
+      sinal real (via SHAP) que features de momentum, testar se a
+      mesma populacao de trader vista por uma lente diferente (contagem
+      de contas vs. peso de capital) generaliza o edge e uma pergunta
+      barata de responder -- e o dado ja estava disponivel havia anos
+      sem ninguem ter perguntado.
+    severity: "baixa -- adicao aditiva de 1 feature passthrough ao T1 (30->31), mesma causalidade/contrato das 3 irmas ja em producao (E14f/E16f/E18f), custo de IO zero (mesmo arquivo metrics, coluna que ja era lida do schema mas nao repassada)"
+    layer: "features (registry + T1_FEATURE_IDS + _sources + group_e) + models/dataset.py (frozenset de deteccao de carregamento)"
+    consequence: >
+      `T1_FEATURE_IDS` sobe de 30 para 31 (`E21f_toptrader_ls_ratio_
+      count`, ultima posicao). `registry.yaml` ganha 1 entrada (`tier:
+      T1`, `layer: [L2]`, `quarentena: false`, `defeito_construcao:
+      false`, mesmo schema completo de E14f/E16f/E18f) -- `test_
+      registry_cobre_todo_o_vetor_t1` deveria continuar verde (registry
+      T1 == build.py T1 == 31==31, nao executado nesta entrada, ver
+      ressalva abaixo). `_FUTURES_POSITIONING_FEATURE_IDS` (dataset.py)
+      ganhou a entrada nova por completude/manutencao futura, apesar de
+      E14f/E16f ja garantirem `_needs_futures_positioning=True` hoje
+      (nao muda comportamento observavel agora, evita divergencia
+      silenciosa se E14f/E16f algum dia saírem do T1 sem essa entrada
+      ser lembrada -- mesma licao do achado real documentado no
+      comentario ja existente ali sobre `AG-300`).
+
+      **Ressalva explicita (instrucao do Manager, "nada de testes"
+      nesta rodada):** nenhum teste novo foi escrito. `causal_proof` de
+      `E21f` no registry documenta honestamente que o teste de grupo
+      `test_e08f_e14f_e16f_e18f_sao_passthrough` (tests/unit/test_
+      features_groups.py) AINDA NAO cobre E21f -- mesma causalidade
+      passthrough das 4 irmas, mas sem cobertura dedicada.
+      `parity_tested: false` (diferente das irmas, `true`) reflete isso
+      com honestidade, nao com um valor forjado. `uv run pytest` NAO foi
+      executado por Claude nesta sessao (regra de execucao do CLAUDE.md
+      -- Claude nao roda .py/pytest; nenhuma autorizacao explicita do
+      Manager pra excecao nesta rodada) -- o proprio retreino que o
+      Manager pediu em seguida (walk-forward com hiperparametro de
+      producao salvo, 5 candidatos x 2 camadas) e o primeiro exercicio
+      real do vetor de 31 features; se `compute_max_feature_lookback_
+      bars`/`layer2_feature_ids`/qualquer gate mecanico rejeitar a
+      entrada nova, aparece no output desse comando, nao aqui.
+    resolved_by_commit: null
+    resolution: "aplicado -- feature nova implementada em todos os pontos de producao necessarios (fonte/nucleo/registry/deteccao de carregamento), sem gate formal de step 5 isolado (override deliberado do Manager, mesmo precedente do Lote D/AG-372) -- o retreino que segue esta entrada funciona como o teste de valor incremental."
+    status: "aplicado, NAO verificado por execucao -- pendente do usuario rodar o retreino real (scripts.run_walk_forward_with_predictions) pra confirmar que o vetor de 31 features carrega/treina sem erro e pra medir se E21f de fato agrega valor incremental. Reverter (tirar de T1_FEATURE_IDS, manter no registry como T2/L4) se a leitura mostrar que nao agrega."

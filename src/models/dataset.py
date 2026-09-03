@@ -130,14 +130,17 @@ _BAR_SOURCE_BY_RESOLUTION: dict[str, str] = {
     "R3": "dollar_r3",
 }
 
-# Achado real (audit_engineering, 2026-08-24) -- ids das 4 features T2 de
+# Achado real (audit_engineering, 2026-08-24) -- ids das features de
 # futures-positioning (Lote C, H5) que exigem `load_futures_positioning=
-# True` em `features_build.build_t1_features`. Mesmos ids de `src.features.
-# build.SUPPORT_FEATURE_IDS`, duplicado aqui só como um `frozenset` pra
-# checagem O(1) de interseção com `extra_feature_ids` -- não é uma segunda
-# fonte de verdade sobre QUAIS features existem (`build.SUPPORT_FEATURE_
-# IDS` continua sendo isso), só sobre quais delas precisam desse
-# carregamento específico.
+# True` em `features_build.build_t1_features`. Mesmos ids referenciados em
+# `src.features.build` (a maioria via `SUPPORT_FEATURE_IDS`, T2 -- exceto
+# `E14f`/`E16f`/`E21f`, já promovidas a `T1_FEATURE_IDS`), duplicado aqui
+# só como um `frozenset` pra checagem O(1) de interseção com `extra_
+# feature_ids`/`T1_FEATURE_IDS` -- não é uma segunda fonte de verdade sobre
+# QUAIS features existem, só sobre quais delas precisam desse carregamento
+# específico. `E21f_toptrader_ls_ratio_count` adicionada `AG-426`
+# (2026-09-02) -- mesma fonte (`metrics`), coluna nova no dict de
+# `_sources.load_futures_positioning_aligned`.
 _FUTURES_POSITIONING_FEATURE_IDS: frozenset[str] = frozenset(
     {
         "E08f_oi_notional",
@@ -146,6 +149,7 @@ _FUTURES_POSITIONING_FEATURE_IDS: frozenset[str] = frozenset(
         "E16f_global_ls_ratio",
         "E17f_retail_vs_top_spread",
         "E18f_taker_ls_vol_ratio",
+        "E21f_toptrader_ls_ratio_count",
     }
 )
 

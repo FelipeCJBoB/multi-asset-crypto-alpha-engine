@@ -31,6 +31,7 @@
     0.0,
     0.0,
     0.0,
+    0.0,
     0.0
   ],
   "concentration_effective_weights": {
@@ -63,6 +64,7 @@
     "E10f_oi_change_z_48": 0.0,
     "E14f_toptrader_ls_ratio": 0.0,
     "E16f_global_ls_ratio": 0.46193837477552957,
+    "E21f_toptrader_ls_ratio_count": 0.0,
     "E27f_cost_atr_ratio": 0.0
   },
   "concentration_shares": {
@@ -95,6 +97,7 @@
     "E10f_oi_change_z_48": 0.0,
     "E14f_toptrader_ls_ratio": 0.0,
     "E16f_global_ls_ratio": 0.46193837477552957,
+    "E21f_toptrader_ls_ratio_count": 0.0,
     "E27f_cost_atr_ratio": 0.0
   },
   "fold_id": 13,

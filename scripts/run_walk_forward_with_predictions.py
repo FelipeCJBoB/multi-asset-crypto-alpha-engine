@@ -17,7 +17,8 @@ só ADICIONA `keep_predictions=True`. Escreve em arquivos SEPARADOS:
   padrão de escrita atômica tmp→fsync→rename de `hyperparams_optuna.
   export_trial_trajectory`)
 - `experiments/alpha_walk_forward_feature_deciles_{symbol}_{res}_{variant}.parquet`
-  (AG-424 -- census de decil das 30 features T1 ativas contra `ret_net`
+  (AG-424 -- census de decil das features T1 ativas (`T1_FEATURE_IDS`,
+  30 na medição original do AG-424, 31 desde `AG-426`) contra `ret_net`
   realizado, `src.analysis.attribution.feature_deciles_by_side`, mesma
   matemática/guard estatístico já validado em produção pra
   `confidence_deciles_by_side`. Artefato canônico de produção, não
@@ -136,7 +137,7 @@ def main() -> int:
                     n_rows=all_predictions.height,
                 )
 
-                # AG-424 -- census de decil das 30 features T1 contra o
+                # AG-424 -- census de decil das features T1 ativas contra o
                 # ret_net realizado, mesma matemática/guard de
                 # confidence_deciles_by_side. mf.data já tem t0 + todas as
                 # T1_FEATURE_IDS + ret_net/barrier_hit -- serve tanto de

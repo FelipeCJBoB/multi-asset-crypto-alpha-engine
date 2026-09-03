@@ -8,10 +8,11 @@
     0.15014530917612506,
     3.2624952070820085e-17,
     2.3537194701809343e-18,
-    1.114159675038028e-33,
-    1.2666110073201897e-34,
-    7.019839446401808e-50,
-    0.0,
+    1.1800606799137454e-33,
+    1.2784160132340259e-34,
+    5.260802288584779e-50,
+    2.0816310622039406e-50,
+    1.7365183311048646e-67,
     0.0,
     0.0,
     0.0,
@@ -63,6 +64,7 @@
     "E10f_oi_change_z_48": 0.0,
     "E14f_toptrader_ls_ratio": 0.0,
     "E16f_global_ls_ratio": 0.0,
+    "E21f_toptrader_ls_ratio_count": 0.0,
     "E27f_cost_atr_ratio": 0.0
   },
   "concentration_shares": {
@@ -95,6 +97,7 @@
     "E10f_oi_change_z_48": 0.0,
     "E14f_toptrader_ls_ratio": 0.0,
     "E16f_global_ls_ratio": 0.0,
+    "E21f_toptrader_ls_ratio_count": 0.0,
     "E27f_cost_atr_ratio": 0.0
   },
   "fold_id": 7,

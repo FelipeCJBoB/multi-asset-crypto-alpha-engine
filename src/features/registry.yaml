@@ -2054,3 +2054,23 @@
   parity_tested: true
   version: v1
   added: 2026-08-24
+
+- id: E21f_toptrader_ls_ratio_count
+  tier: T1
+  group: E
+  layer: [L2]
+  quarentena: false
+  defeito_construcao: false
+  formula: "count_toptrader_long_short_ratio, ja alinhado ao grid de 15m por asof-join backward"
+  sources: [D04]
+  lookback_bars: 1
+  min_warmup_bars: 200
+  tf: 15m
+  dtype: float64
+  range: [0.0, .inf]
+  nan_policy: "NaN se a barra for anterior ao primeiro ponto de metrics conhecido; null antes de min_warmup_bars"
+  causal_proof: "passthrough, mesma causalidade de E08f/E14f/E16f/E18f -- AINDA NAO adicionado ao teste de grupo test_e08f_e14f_e16f_e18f_sao_passthrough (AG-426, pendente -- instrucao explicita do Manager de nao escrever teste nesta rodada, 2026-09-02)"
+  parity_tested: false
+  version: v1
+  added: 2026-09-02
+  nota: "variante COUNT (baseada em numero de contas) do MESMO grupo de top traders de E14f_toptrader_ls_ratio (que e SUM, baseada em soma de posicoes/notional) -- nao e o mercado geral, essa e E16f_global_ls_ratio. Coluna count_toptrader_long_short_ratio ja existia em schemas.METRICS e ja estava baixada desde 2020/2021 (nota historica em E14f: 'a nao usada fica sem feature dedicada nesta leva'). Implementada por AG-426 (2026-09-02), ordem explicita do Manager a partir de achado do item 1 do roadmap 'Caso 0/20' (pesquisa de dado Binance ja disponivel e nao aproveitado) -- custo-zero de aquisicao, so engenharia de feature. Adicionada direto ao T1_FEATURE_IDS sem passar pelos passos 1-5 do PRINCIPIO DE GATE (AG-372/ADR-006) isoladamente -- mesmo precedente do Lote D (override deliberado do Manager); o retreino que segue esta adicao funciona como o teste de valor incremental do passo 5."

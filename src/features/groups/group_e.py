@@ -337,6 +337,27 @@ def e18f_taker_ls_vol_ratio(taker_ls_vol_ratio_aligned: FloatArray) -> FloatArra
     return taker_ls_vol_ratio_aligned
 
 
+def e21f_toptrader_ls_ratio_count(toptrader_ls_ratio_count_aligned: FloatArray) -> FloatArray:
+    """`count_toptrader_long_short_ratio` (variante baseada em NÚMERO DE
+    CONTAS do MESMO grupo de top traders de `E14f_toptrader_ls_ratio`,
+    que é baseada em SOMA de posições/notional — não é a razão do
+    mercado geral, essa é `E16f_global_ls_ratio`), já alinhado ao grid
+    causal — `AG-426` (2026-09-02). Passthrough puro, mesma convenção de
+    `e14f_toptrader_ls_ratio`/`e16f_global_ls_ratio`/`e18f_taker_ls_vol_
+    ratio`.
+
+    Coluna já existe em `schemas.METRICS` e já vinha sendo baixada desde
+    o Lote C original (2026-08-24) — ficou sem feature dedicada
+    deliberadamente naquela leva (nota em `E14f_toptrader_ls_ratio`,
+    `registry.yaml`: "a não usada fica sem feature dedicada nesta
+    leva"). Implementada agora por decisão explícita do Manager
+    (2026-09-02), a partir de achado de pesquisa desta sessão (item 1 do
+    roadmap "Caso 0/20") que confirmou ser o único ganho de custo-zero
+    disponível no levantamento de dados Binance ainda não aproveitados
+    -- dado já em disco, sem download novo."""
+    return toptrader_ls_ratio_count_aligned
+
+
 def e12f_price_oi_divergence(
     ret_lag: FloatArray, oi_contracts_aligned: FloatArray, oi_lag_bars: int
 ) -> FloatArray:

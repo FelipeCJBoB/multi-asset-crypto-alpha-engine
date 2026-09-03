@@ -400,11 +400,22 @@ def load_taker_imbalance_1m_agg_aligned(
 #: número de contas) — decisão do Manager, 2026-08-24: consistente com
 #: `E09f_oi_contracts`/`E18f_taker_ls_vol_ratio`, que já usam colunas
 #: `sum_` neste projeto (peso de capital, não contagem de contas).
+#:
+#: `toptrader_ls_ratio_count` (`AG-426`, 2026-09-02) — variante COUNT
+#: (número de contas) do MESMO grupo de top traders de `toptrader_ls_
+#: ratio` acima, não do mercado geral. Coluna `count_toptrader_long_
+#: short_ratio` já existe em `schemas.METRICS` e já está baixada nos
+#: parquets de `metrics` desde 2020/2021 (mesmo arquivo que as outras 4)
+#: — ficou sem feature dedicada desde o Lote C original (nota histórica
+#: em `E14f_toptrader_ls_ratio`, `registry.yaml`); pesquisa desta sessão
+#: (item 1 do roadmap "Caso 0/20") confirmou que é o único ganho de
+#: custo-zero disponível (dado já em disco, só falta a feature).
 _FUTURES_POSITIONING_COLS: dict[str, str] = {
     "oi_notional": "sum_open_interest_value",
     "toptrader_ls_ratio": "sum_toptrader_long_short_ratio",
     "global_ls_ratio": "count_long_short_ratio",
     "taker_ls_vol_ratio": "sum_taker_long_short_vol_ratio",
+    "toptrader_ls_ratio_count": "count_toptrader_long_short_ratio",
 }
 
 
@@ -416,10 +427,12 @@ def load_futures_positioning_aligned(
     vol_ratio, cada uma alinhada ao grid de 15m por asof-join backward
     (mesmo contrato causal de `load_oi_aligned`/`load_funding_aligned`).
     1 leitura/dedup só dos arquivos de `metrics`
-    (`load_metrics_series_deduped`, as 4 colunas de uma vez) — evita
-    reler e rededuplicar o MESMO parquet 4× pra 4 asof-joins separados
+    (`load_metrics_series_deduped`, as colunas de uma vez) — evita
+    reler e rededuplicar o MESMO parquet N× pra N asof-joins separados
     (mesmos arquivos que `load_oi_series_deduped` já lê pra `sum_open_
-    interest`)."""
+    interest`). `AG-426` (2026-09-02) adicionou `toptrader_ls_ratio_count`
+    (E21f) à mesma leitura em lote, sem custo de IO adicional (mesmo
+    arquivo, coluna que já era lida do schema mas não repassada antes)."""
     metrics = load_metrics_series_deduped(
         symbol, start, end, value_cols=tuple(_FUTURES_POSITIONING_COLS.values())
     )

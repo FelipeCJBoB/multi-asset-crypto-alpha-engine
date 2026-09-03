@@ -176,6 +176,16 @@ T1_FEATURE_IDS: tuple[str, ...] = (
     # `layer: L4`/`tier: T2` no registry (mesmo tratamento de retirada sem
     # `defeito_construcao`, precedente `B11_bb_position_20`), disponíveis
     # via `extra_feature_ids` -- não deletadas, reversível pelo ablation.
+    # AG-426 (2026-09-02, ordem explícita do Manager) -- variante COUNT de
+    # E14f_toptrader_ls_ratio (mesmo grupo de top traders, agregação por
+    # número de contas em vez de soma de notional). Custo-zero: coluna já
+    # baixada desde 2020/2021, achado do item 1 do roadmap "Caso 0/20"
+    # (pesquisa de dado Binance ainda não aproveitado). Adicionada direto
+    # ao T1 sem gate formal de step 5 isolado (mesmo precedente do Lote D,
+    # AG-372 -- "override deliberado") -- o próprio retreino que segue
+    # esta adição funciona como o teste de valor incremental; reverter se
+    # a leitura mostrar que não agrega.
+    "E21f_toptrader_ls_ratio_count",
 )
 
 # T2 -- insumo de outra camada (Regime Engine, `layer: L1`) ou primitiva de
@@ -819,8 +829,9 @@ def compute_t1_features(
 
     `futures_positioning_aligned` (Lote C, H5, 2026-08-24) — E08f_oi_
     notional/E14f_toptrader_ls_ratio/E16f_global_ls_ratio/E18f_taker_
-    ls_vol_ratio, mesmo contrato de `taker_imbalance_1m_agg_aligned`
-    (dict com 4 arrays já alinhados, produzido por `_sources.load_
+    ls_vol_ratio/E21f_toptrader_ls_ratio_count (esta última, `AG-426`,
+    2026-09-02), mesmo contrato de `taker_imbalance_1m_agg_aligned`
+    (dict com 5 arrays já alinhados, produzido por `_sources.load_
     futures_positioning_aligned`; `None` por default). Diferente de
     D07f, não precisa de `bar_source` especial — usa `asof_align_
     backward` (mesmo mecanismo causal de funding/OI), que funciona sob
@@ -886,11 +897,15 @@ def compute_t1_features(
         toptrader_ls_ratio_arr = np.full(n_bars, np.nan, dtype=np.float64)
         global_ls_ratio_arr = np.full(n_bars, np.nan, dtype=np.float64)
         taker_ls_vol_ratio_arr = np.full(n_bars, np.nan, dtype=np.float64)
+        toptrader_ls_ratio_count_arr = np.full(n_bars, np.nan, dtype=np.float64)
     else:
         oi_notional_arr = _to_numpy(futures_positioning_aligned["oi_notional"])
         toptrader_ls_ratio_arr = _to_numpy(futures_positioning_aligned["toptrader_ls_ratio"])
         global_ls_ratio_arr = _to_numpy(futures_positioning_aligned["global_ls_ratio"])
         taker_ls_vol_ratio_arr = _to_numpy(futures_positioning_aligned["taker_ls_vol_ratio"])
+        toptrader_ls_ratio_count_arr = _to_numpy(
+            futures_positioning_aligned["toptrader_ls_ratio_count"]
+        )
     lote_a = LoteAWindows.from_constants()
     lote_b = LoteBWindows.from_constants()
     lote_d = LoteDWindows.from_constants()
@@ -1129,6 +1144,11 @@ def compute_t1_features(
             min_common_history_bars=windows.min_common_history_bars,
         ),
         "E18f_taker_ls_vol_ratio": group_e.e18f_taker_ls_vol_ratio(taker_ls_vol_ratio_arr),
+        # AG-426 (2026-09-02) -- variante COUNT de E14f, custo-zero (dado
+        # já em disco desde 2020/2021, item 1 do roadmap "Caso 0/20").
+        "E21f_toptrader_ls_ratio_count": group_e.e21f_toptrader_ls_ratio_count(
+            toptrader_ls_ratio_count_arr
+        ),
         # Lote D (2026-08-28, AG-372/ADR-006) -- 6 novas, T1 direto por
         # decisão do Manager (CLAUDE.md "Diretrizes de comportamento").
         "A16_return_3": a16_return_3,
@@ -1335,8 +1355,9 @@ def build_t1_features(
     do mesmo jeito; `NaN` honesto é preferível a um número errado.
 
     `futures_positioning_aligned` (Lote C, H5, 2026-08-24) — E08f/E14f/
-    E16f/E18f, sempre carregado (`_sources.load_futures_positioning_
-    aligned`, sem flag de opt-out) — usa `asof_align_backward`, mesmo
+    E16f/E18f/E21f (esta última, `AG-426`), sempre carregado (`_sources.
+    load_futures_positioning_aligned`, sem flag de opt-out) — usa
+    `asof_align_backward`, mesmo
     mecanismo causal de funding/OI, seguro sob qualquer `bar_source`
     (diferente de `load_taker_imbalance_1m_agg_aligned`, que depende de
     grid de relógio fixo). Custo de IO comparável ao de OI (mesmo
