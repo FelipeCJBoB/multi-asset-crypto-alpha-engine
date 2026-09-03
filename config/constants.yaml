@@ -753,45 +753,94 @@ canonical_bar_type:
   review_by: ag_035_recalibracao_tick_imbalance
 
 target_signal_rate:
-  value: 0.0284
+  value: 0.10
   provenance: MEASURED
   source: >
-    ATUALIZADO 2026-09-03 (item 2/6/7 do roadmap de correção do mecanismo
-    de tau, decisão do Manager: "medir o quanto é necessário para o tau
-    se comportar bem e usar esse valor"). Sweep real (`scripts.sweep_
-    tau_mechanism --stage B`, walk-forward completo, 5 candidatos x 2
-    camadas, JÁ sob `tau_calibration_window_days=180` do item 3/estágio
-    A) sobre o `sweep_range` já declarado abaixo ([0,0095; 0,0284]),
-    medindo fração de folds walk-forward usáveis (>=10 trades) e
-    desvio-padrão de `signal_rate_realized` entre folds -- NUNCA
-    edge/Sharpe/P&L (isso seria escolher o limiar de decisão pela
-    métrica que ele deveria produzir, o erro que B20/`alpha.py` linha 30
-    existe pra evitar; é calibração de INSTRUMENTAÇÃO -- tamanho de
-    amostra válida --, não de performance):
-      0,0095 -> 29,10% folds usáveis (39/134), std=0,0172
-      0,0142 -> 35,07% folds usáveis (47/134), std=0,0186
-      0,0189 -> 44,03% folds usáveis (59/134), std=0,0230  <- valor antigo
-      0,0236 -> 47,01% folds usáveis (63/134), std=0,0271
-      0,0284 -> 52,24% folds usáveis (70/134), std=0,0293  <- VALOR ADOTADO
-    RELAÇÃO É MONOTÔNICA em todo o range declarado -- não há ótimo
-    interior; taxa mais alta sempre libera mais folds ao custo de mais
-    variância. Adotado o TOPO do range já sancionado pela própria
-    entrada anterior (não uma busca nova além do que já estava
-    declarado) porque a fração de fold usável (poder estatístico real)
-    é o problema que esta correção existe pra resolver -- decisão
-    informada ao Manager (não escondida), reversível pelo próprio
-    `sweep_range` se remedição futura justificar. Achado adicional:
-    `tau_calibration_window_days=180` sozinho (item 3), ANTES desta
-    mudança de taxa, já levava a fração de fold usável de 30,60% (sem
-    janela, mecanismo antigo) pra 44,03% (mesma taxa-alvo antiga) -- a
-    maior parte do ganho vem do mecanismo (item 3), esta mudança de
-    nível é incremento sobre uma correção já substancial, não a causa
-    principal.
+    ATUALIZADO 2026-09-03, RODADA 2 (AG-428, autorização explícita do
+    Manager: "5,88% de % do capital é aceitavel... autorizado"). Sobe de
+    0,0284 (rodada 1, preservada abaixo) pra 0,10 depois de um teto
+    econômico REAL ser medido e aprovado -- não porque a fração de fold
+    usável pedisse mais (ela não tem parada natural sozinha, ver achado
+    do tau FIXO abaixo).
+
+    TETO ECONÔMICO MEDIDO (2026-09-03, contra `src/risk/sizing.py::
+    compute_sizing` e `src/risk/limits.py::control_13_orcamento_fees` --
+    REAIS, não a fórmula de `PRD_V3_2_UNIFICADO.md` §0.2 R3, doc
+    obsoleto por `CLAUDE.md`, que tem 2 bugs já achados nesta mesma
+    cadeia -- `fee_budget_is_per_side`/fator ×2 de lados). Fórmula real:
+    `notional_req = (equity × risk_per_trade) / (sl_atr_mult × atr_pct)`,
+    `custo_trade = notional_req × round_trip_cost_bps / 10000`. ATR
+    mediano REAL por candidato (`atr_at_t0`, `build_modeling_frame`):
+    BTCUSDT/R2 0,356% (nocional R$936,3), XRPUSDT/R2 0,466% (R$715,9),
+    SOLUSDT/R2 0,586% (R$569,1), XRPUSDT/R3 0,673% (R$495,4), SOLUSDT/R3
+    0,839% (R$397,2) -- `max_notional_multiple=3,0` (R$3.000) não trava
+    em nenhum caso. Custo mensal do portfólio (5 combos, Camada1,
+    trades/mês real via `n_test_bars`×`signal_rate_mean` medido/
+    `sweep_tau_mechanism`, não `BARS_PER_YEAR` de grade de relógio 15m
+    obsoleta):
+      0,0284 -> 51,0 trades/mês -> R$18,96/mês = 1,90% do capital/mês
+      0,04   -> 79,6 trades/mês -> R$30,98/mês = 3,10% do capital/mês
+      0,06   -> 99,1 trades/mês -> R$38,38/mês = 3,84% do capital/mês
+      0,10   -> 151,7 trades/mês -> R$58,85/mês = 5,88% do capital/mês  <- APROVADO
+    (Tentativa anterior deste mesmo dia usava nocional=33% do equity
+    fixo -- leitura errada de "lote mínimo" do `CLAUDE.md` §0, que é o
+    PISO imposto pelo `step_size` da exchange sobre uma conta pequena,
+    não o nocional típico de sizing -- corrigida ANTES de qualquer
+    decisão ser tomada em cima do número errado.)
+
+    SENSIBILIDADE ±50% (classe A, `CLAUDE.md` §Proveniência), sweep real
+    (`scripts.sweep_tau_rate_beyond_range`, mesma metodologia do sweep
+    original -- fração de fold usável / desvio-padrão de
+    `signal_rate_realized`, NUNCA edge/Sharpe/P&L) sobre o novo
+    `sweep_range` ([0,05; 0,15], banda em torno de 0,10):
+      0,04 -> 61,19% folds usáveis (82/134), std=0,0386, realizado~0,028
+      0,06 -> 70,90% folds usáveis (95/134), std=0,0452, realizado~0,039
+      0,10 -> 76,87% folds usáveis (103/134), std=0,0766, realizado~0,068  <- VALOR ADOTADO
+      0,15 -> 80,62% folds usáveis (108/134), std=0,1023, realizado~0,098
+    MONOTÔNICO em toda a banda, sem ótimo interior -- mesma forma da
+    rodada 1. ACHADO NOVO (não visto na rodada 1, `sweep_range` antigo
+    não alcançava esta faixa): a taxa REALIZADA (out-of-sample) fica
+    sistematicamente ~65-70% da nominal nesta faixa mais alta -- pedir
+    0,10 entrega ~0,068 realizado, não 0,10. Hipótese líder (não
+    confirmada quantitativamente): `tau_long`/`tau_short` calibrados
+    independentemente (`TAU_POLICY_LEGACY_PER_SIDE`) mas a regra de
+    decisão (`_decision_rule`) exige exclusividade mútua por barra --
+    populações long/short se sobrepõem mais quanto mais frouxo o corte,
+    e o lado perdedor é descartado, reduzindo o realizado combinado
+    abaixo da soma nominal dos dois lados. Não bloqueia esta decisão
+    (autorizada com o número JÁ REALIZADO, não o nominal), mas fica
+    registrado como investigação aberta -- ver `AG-428`.
+
+    ACHADO DE CONTROLE (mesma sessão, antes desta decisão): tau FIXO em
+    0,51 (proposta descartada) devolveu taxa de sinal de 56,4% médio das
+    barras (`scripts.sweep_tau_fixed_vs_calibrated`) -- confirma que
+    "fração de fold usável" sozinha NUNCA teria parado num nível seguro;
+    só o teto econômico real (acima) dá um critério de parada.
+
+    RELAÇÃO É MONOTÔNICA em todo o range: 0,0095 -> 29,10% folds usáveis
+    (39/134), std=0,0172; 0,0142 -> 35,07% (47/134), std=0,0186; 0,0189
+    -> 44,03% (59/134), std=0,0230 (valor pré-AG-427); 0,0236 -> 47,01%
+    (63/134), std=0,0271; 0,0284 -> 52,24% (70/134), std=0,0293 (valor
+    adotado na rodada 1, 2026-09-03 cedo, ver histórico completo abaixo).
+    --- PROVENIÊNCIA RODADA 1 (valor 0.0284, agora superseded) ---
+    "ATUALIZADO 2026-09-03 (item 2/6/7 do roadmap de correção do
+    mecanismo de tau, decisão do Manager: 'medir o quanto é necessário
+    para o tau se comportar bem e usar esse valor'). Adotado o TOPO do
+    range já sancionado pela própria entrada anterior (não uma busca
+    nova além do que já estava declarado) porque a fração de fold usável
+    (poder estatístico real) é o problema que esta correção existe pra
+    resolver. Achado adicional: `tau_calibration_window_days=180`
+    sozinho (item 3), ANTES desta mudança de taxa, já levava a fração de
+    fold usável de 30,60% (sem janela, mecanismo antigo) pra 44,03%
+    (mesma taxa-alvo antiga) -- a maior parte do ganho vem do mecanismo
+    (item 3), esta mudança de nível é incremento sobre uma correção já
+    substancial, não a causa principal."
     --- PROVENIÊNCIA HISTÓRICA (valor 0.0189, agora superseded) ---
     "derivada de fee_budget_monthly, ela própria ASSUMED (§18.5.1) — é o
     threshold do Alpha. Herda a incerteza do pai."
   class: A
   sweep_required: false
+  sweep_range: [0.05, 0.15]
   derived_from: [tau_calibration_window_days]   # medido JUNTO com a janela de calibração de tau -- refazer se ela mudar
   review_by: sprint_10
 

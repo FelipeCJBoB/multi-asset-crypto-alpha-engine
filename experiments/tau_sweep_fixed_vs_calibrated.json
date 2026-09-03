@@ -1,0 +1,120 @@
+{
+  "baseline_calibrado_frac_folds_usados_pooled": 0.5224,
+  "baseline_calibrado_ref": "experiments/tau_sweep_stage_B.json, ultimo ponto (tau_calibration_window_days=180, target_signal_rate=0.0284) -- nao re-executado aqui, ja medido no AG-427",
+  "baseline_calibrado_signal_rate_std_pooled": 0.0293,
+  "ponto_tau_fixo": {
+    "frac_folds_usados_pooled": 0.9253731343283582,
+    "n_folds_total_pooled": 134,
+    "n_folds_usados_pooled": 124,
+    "n_signal_rate_obs_pooled": 132,
+    "per_combo": [
+      {
+        "n_folds_degenerados": 2,
+        "n_folds_total": 19,
+        "n_folds_usados": 17,
+        "resolution_id": "R2",
+        "signal_rate_mean": 0.8589151851395064,
+        "signal_rate_std": 0.27257267750854725,
+        "symbol": "BTCUSDT",
+        "variant": "camada1"
+      },
+      {
+        "n_folds_degenerados": 2,
+        "n_folds_total": 19,
+        "n_folds_usados": 17,
+        "resolution_id": "R2",
+        "signal_rate_mean": 0.9095741014479697,
+        "signal_rate_std": 0.17145645181282607,
+        "symbol": "BTCUSDT",
+        "variant": "camada0"
+      },
+      {
+        "n_folds_degenerados": 2,
+        "n_folds_total": 12,
+        "n_folds_usados": 10,
+        "resolution_id": "R2",
+        "signal_rate_mean": 0.22908185823460825,
+        "signal_rate_std": 0.25290220494450416,
+        "symbol": "SOLUSDT",
+        "variant": "camada1"
+      },
+      {
+        "n_folds_degenerados": 1,
+        "n_folds_total": 12,
+        "n_folds_usados": 11,
+        "resolution_id": "R2",
+        "signal_rate_mean": 0.3059571081776042,
+        "signal_rate_std": 0.25630648949934554,
+        "symbol": "SOLUSDT",
+        "variant": "camada0"
+      },
+      {
+        "n_folds_degenerados": 1,
+        "n_folds_total": 12,
+        "n_folds_usados": 11,
+        "resolution_id": "R3",
+        "signal_rate_mean": 0.4011664319011741,
+        "signal_rate_std": 0.3520658825276198,
+        "symbol": "SOLUSDT",
+        "variant": "camada1"
+      },
+      {
+        "n_folds_degenerados": 1,
+        "n_folds_total": 12,
+        "n_folds_usados": 11,
+        "resolution_id": "R3",
+        "signal_rate_mean": 0.28771591456435686,
+        "signal_rate_std": 0.29762393320569286,
+        "symbol": "SOLUSDT",
+        "variant": "camada0"
+      },
+      {
+        "n_folds_degenerados": 0,
+        "n_folds_total": 12,
+        "n_folds_usados": 12,
+        "resolution_id": "R2",
+        "signal_rate_mean": 0.5138831127161078,
+        "signal_rate_std": 0.3197389977815872,
+        "symbol": "XRPUSDT",
+        "variant": "camada1"
+      },
+      {
+        "n_folds_degenerados": 0,
+        "n_folds_total": 12,
+        "n_folds_usados": 12,
+        "resolution_id": "R2",
+        "signal_rate_mean": 0.5236255146083723,
+        "signal_rate_std": 0.3264939480621572,
+        "symbol": "XRPUSDT",
+        "variant": "camada0"
+      },
+      {
+        "n_folds_degenerados": 1,
+        "n_folds_total": 12,
+        "n_folds_usados": 11,
+        "resolution_id": "R3",
+        "signal_rate_mean": 0.5984495108868643,
+        "signal_rate_std": 0.34674274671199684,
+        "symbol": "XRPUSDT",
+        "variant": "camada1"
+      },
+      {
+        "n_folds_degenerados": 0,
+        "n_folds_total": 12,
+        "n_folds_usados": 12,
+        "resolution_id": "R3",
+        "signal_rate_mean": 0.697405667731378,
+        "signal_rate_std": 0.21191709486558905,
+        "symbol": "XRPUSDT",
+        "variant": "camada0"
+      }
+    ],
+    "signal_rate_mean_pooled": 0.5645471862456072,
+    "signal_rate_std_pooled": 0.3675489287016131,
+    "target_signal_rate": null,
+    "tau_fixed": 0.51,
+    "tau_window_days": null
+  },
+  "producer_entrypoint": "scripts.sweep_tau_fixed_vs_calibrated",
+  "seed": 42
+}

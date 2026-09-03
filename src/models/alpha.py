@@ -1252,6 +1252,7 @@ def fit_side_model(
     early_stopping_mode: str = EARLY_STOPPING_FIXED,
     monotone_screen_override: dict[str, monotonic.FeatureICResult] | None = None,
     tau_window_days: int | None = None,
+    tau_fixed: float | None = None,
 ) -> SideModelResult:
     """Treina UM binário (`M_long` se `side=1`, `M_short` se `side=-1`)
     sobre `train_side_df` — já filtrado por `src.models.dataset.
@@ -1733,15 +1734,27 @@ def fit_side_model(
 
     raw_train_all = np.asarray(model.predict_proba(X_all))[:, 1]
     calibrated_train_all = calibrator.predict(raw_train_all)
-    tau_pool, _tau_pool_is_windowed = _select_tau_calibration_pool(
-        calibrated_train_all,
-        t0_ms_all,
-        tau_window_days=tau_window_days,
-        target_signal_rate=target_signal_rate,
-        side=side,
-        variant=variant,
-    )
-    tau = float(np.quantile(tau_pool, 1.0 - target_signal_rate))
+    if tau_fixed is not None:
+        # `tau_fixed` (medição 2026-09-03, proposta do Manager de travar
+        # tau=0,51 pra todos os folds/lados/combos em vez de calibrar por
+        # quantil) -- bypassa POR COMPLETO `_select_tau_calibration_pool`/
+        # o quantil: não há pool nem taxa-alvo envolvida, só o valor fixo.
+        # `target_signal_rate` continua sendo usado noutro lugar desta
+        # função (scale_pos_weight/relatório) -- só a resolução de `tau`
+        # muda. Só EXISTE pra rodar a medição de fold-usability pedida;
+        # produção (`tau_fixed=None`, default) preserva bit-exato o
+        # comportamento calibrado.
+        tau = float(tau_fixed)
+    else:
+        tau_pool, _tau_pool_is_windowed = _select_tau_calibration_pool(
+            calibrated_train_all,
+            t0_ms_all,
+            tau_window_days=tau_window_days,
+            target_signal_rate=target_signal_rate,
+            side=side,
+            variant=variant,
+        )
+        tau = float(np.quantile(tau_pool, 1.0 - target_signal_rate))
 
     # D-08 (docs/alpha_model_design_doc_2026-08-22.md §4): API do LightGBM
     # substitui `booster.get_score(importance_type="total_gain")` (parsing
@@ -2194,6 +2207,7 @@ def run_fold(
     | None = None,
     target_signal_rate: float | None = None,
     tau_window_days: int | None = None,
+    tau_fixed: float | None = None,
 ) -> FoldResult:
     """`symbol`/`resolution_id` (D-03, `docs/alpha_model_design_doc_
     2026-08-22.md`) — colunas explícitas no schema de saída, mesma classe
@@ -2313,6 +2327,7 @@ def run_fold(
             else None
         ),
         tau_window_days=tau_window_days,
+        tau_fixed=tau_fixed,
     )
     short_result = fit_side_model(
         train_short,
@@ -2337,6 +2352,7 @@ def run_fold(
             else None
         ),
         tau_window_days=tau_window_days,
+        tau_fixed=tau_fixed,
     )
 
     # AG-210 -- resolução de `tau`. No caminho legado, cada lado usa o
@@ -2523,6 +2539,7 @@ def run_all_folds(
     | None = None,
     target_signal_rate: float | None = None,
     tau_window_days: int | None = None,
+    tau_fixed: float | None = None,
 ) -> list[FoldResult]:
     """`feature_ids` (2026-08-24, `docs/t2_t1_promotion_ablation_design_doc_
     2026-08-24.md` §5.2) — default `T1_FEATURE_IDS` preserva bit-exato
@@ -2601,6 +2618,7 @@ def run_all_folds(
             ),
             target_signal_rate=target_signal_rate,
             tau_window_days=tau_window_days,
+            tau_fixed=tau_fixed,
         )
         logger.info(
             "models.alpha.run_fold_done",

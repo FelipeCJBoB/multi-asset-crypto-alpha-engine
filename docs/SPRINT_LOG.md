@@ -6784,3 +6784,66 @@ estatística, não mais por falta de amostra. Detalhe completo:
 de Execução" (aba Run Canônico + ADR-008 Fase 4/6) atualizado. Fases
 5/7/8 da ADR-008 + as 2 auditorias (adversarial/engenharia) continuam
 não refeitas — análise ad-hoc extensa, fora do escopo desta correção.
+
+## 2026-09-03 — `target_signal_rate` sobe pra 0,10 sob teto econômico real medido e autorizado — ainda 0/10, gate Data quase dobra, XRPUSDT/R3 chega perto do gate Alpha (AG-428) <!-- check-sprint-log: skip -->
+
+Manager propôs travar `tau` fixo em 0,51 pra todos os folds/lados/combos
+("mais sinais de entrada"). Medido antes de aplicar
+(`scripts/sweep_tau_fixed_vs_calibrated.py`): taxa de sinal REALIZADA
+saiu descontrolada — 56,4% médio das barras (contra o alvo de 2,84%),
+BTCUSDT/R2 chegando a 91% (quase sempre-ligado). **Descartado** — não é
+"mais sinal", é o corte perto de 0,50 (chance pura) deixando passar
+quase tudo, sem nenhum controle por regime/ativo. Confirma que "fração
+de fold usável" sozinha nunca teria parada natural — só um teto
+econômico real dá critério de parada.
+
+Perguntado então "e se aumentar `target_signal_rate`" — medido
+(`scripts/sweep_tau_rate_beyond_range.py`) que o mecanismo de quantil
+CONTINUA bem comportado acima do `sweep_range` antigo (0,04→61,2%
+folds usáveis; 0,10→76,9%; 0,15→80,6% — monotônico, sem blow-up, bem
+diferente do tau fixo). Achado novo: taxa REALIZADA fica
+sistematicamente ~65-70% da nominal nessa faixa (pedir 0,10 entrega
+~0,068) — hipótese líder, não confirmada: exclusividade mútua
+long/short na regra de decisão (`TAU_POLICY_LEGACY_PER_SIDE`, em
+`src/models/alpha.py`) descarta o lado perdedor quando os 2 clareiam o
+corte na mesma barra.
+
+**Teto econômico medido do zero, direto contra o código de produção**
+(`src/risk/sizing.py::compute_sizing`, `src/risk/limits.py::
+control_13_orcamento_fees`) — não a fórmula de `PRD_V3_2_UNIFICADO.md`
+§0.2 R3 (doc obsoleto, 2 bugs já achados nesta mesma cadeia). Primeira
+tentativa usou nocional=33% do equity fixo — leitura errada de "lote
+mínimo" do `CLAUDE.md` §0 (é o PISO da exchange sobre conta pequena,
+não o nocional típico) — corrigida ANTES de decidir. Fórmula real:
+`notional_req = (equity×risk_per_trade)/(sl_atr_mult×atr_pct)`, ATR
+mediano REAL por candidato (`atr_at_t0`, `src/models/dataset.py`).
+Custo mensal do portfólio (5 combos, trades/mês real medido, não
+`BARS_PER_YEAR` de grade 15m obsoleta):
+    0,0284 -> R$18,96/mes = 1,90% do capital/mes
+    0,04   -> R$30,98/mes = 3,10% do capital/mes
+    0,06   -> R$38,38/mes = 3,84% do capital/mes <!-- check-sprint-log: skip -->
+    0,10   -> R$58,85/mes = 5,88% do capital/mes  <- AUTORIZADO PELO MANAGER <!-- check-sprint-log: skip -->
+
+**Aplicado ponta a ponta** em `config/constants.yaml::target_signal_
+rate=0,10`, `sweep_range` fechado em `[0,05; 0,15]` (banda ±50% em
+torno de 0,10, sensibilidade medida nos 4 pontos). Retreino completo
+real: Run Canônico (CPCV, 5 combos) + walk-forward campaign (10
+combo×camada, `scripts/run_walk_forward_campaign.py`) + predictions/
+feature-deciles — 0 falhas (1 erro de invocação, `ModuleNotFoundError`
+por rodar o script fora de `-m scripts.x`, corrigido antes de qualquer
+dado real ser gerado errado).
+
+**Resultado**: continua 0/10 combo×camada — mas 2 sinais reais de
+progresso. (1) Gate Data quase dobrou: 6/10 células passam agora
+(contra 2/10), incluindo `SOLUSDT/R2`/`XRPUSDT/R2` nas 2 camadas cada.
+(2) `XRPUSDT/R3` (as 2 camadas) chegou mais perto do gate Alpha que
+qualquer célula já medida nesta investigação (p=0,097 e p=0,105,
+contra corte de 0,05) — não passa, mas é a menor distância até agora.
+Contrapartida real: `BTCUSDT/R2` e `SOLUSDT/R2` viraram Sharpe NEGATIVO
+no Run Canônico sob a amostra ~3× maior (18.068→53.355 trades) — mais
+dado revelou pior, não melhor, nesses 2. Detalhe completo:
+`audit/architecture_gaps_log.yaml::AG-428`, artefato "ADR-007 — Painel
+de Execução" (Run Canônico + ADR-008 Fase 4/6) atualizado. Investigação
+aberta e não fechada: por que a taxa realizada diverge da nominal nessa
+faixa (hipótese da exclusividade mútua, acima, não confirmada
+quantitativamente).

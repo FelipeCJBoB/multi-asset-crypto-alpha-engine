@@ -28057,3 +28057,130 @@ entries:
       Fases 5/7/8 + as 2 auditorias (adversarial/engenharia) continuam
       NAO refeitas -- seguem marcadas pendente no artefato, analise
       ad-hoc extensa sem script dedicado, fora do escopo desta correcao.
+
+  - id: AG-428
+    date: "2026-09-03"
+    file: "config/constants.yaml (target_signal_rate 0,0284->0,10, sweep_range fechado em [0,05; 0,15]); src/models/alpha.py (tau_fixed novo em fit_side_model/run_fold/run_all_folds); src/models/walk_forward.py (tau_fixed em run_walk_forward_for_combo); scripts/sweep_tau_fixed_vs_calibrated.py (novo); scripts/sweep_tau_rate_beyond_range.py (novo); scripts/sweep_tau_mechanism.py (_STAGE_B_TARGET_SIGNAL_RATE estendida ate 0,15, registro historico)"
+    related_file: "AG-427 (mecanismo de tau corrigido, base desta rodada); src/risk/sizing.py::compute_sizing (formula real de nocional, usada pra medir o teto economico); src/risk/limits.py::control_13_orcamento_fees (controle de producao que ja usa a mesma formula de custo, reusado como validacao)"
+    numeracao: "AG-428."
+    found_by: >-
+      Manager perguntou o threshold real do tau (probabilidade de
+      entrada, nao o gate de promocao) e propos fixa-lo em 0,51 pra
+      todos os folds/lados/combos, "pra dar mais sinais de entrada".
+      Medido antes de aplicar (`scripts.sweep_tau_fixed_vs_calibrated`):
+      taxa de sinal REALIZADA saiu descontrolada -- 56,4% medio das
+      barras (contra o alvo de 2,84% em vigor), BTCUSDT/R2 chegando a
+      91% (quase sempre-ligado), desvio-padrao entre combos 12,7x maior
+      que o mecanismo calibrado. Nao e "mais sinal" -- e o corte perto
+      de 0,50 (chance pura, o AUC medido destes modelos fica em
+      0,52-0,54) deixando passar quase tudo, sem controle nenhum por
+      regime/ativo. Proposta DESCARTADA pela medicao, nao aplicada.
+
+      Perguntado entao "e se aumentar target_signal_rate" (o mecanismo
+      calibrado, nao um corte fixo) -- medido
+      (`scripts.sweep_tau_rate_beyond_range`) que o quantil continua bem
+      comportado acima do `sweep_range` entao vigente ([0,0095; 0,0284]):
+      0,04->61,2% folds usaveis; 0,06->70,9%; 0,10->76,9%; 0,15->80,6%
+      -- monotonico, sem blow-up, estruturalmente diferente do tau
+      fixo (porque e um quantil, nao uma probabilidade crua). Achado
+      novo: taxa REALIZADA fica sistematicamente ~65-70% da nominal
+      nessa faixa mais alta (pedir 0,10 entrega ~0,068 realizado) --
+      nao visto na rodada anterior porque o `sweep_range` de entao nao
+      alcancava essa faixa.
+
+      Pedido entao pra medir o teto ECONOMICO real antes de qualquer
+      novo valor -- Manager rejeitou (corretamente) a ideia de so
+      seguir empurrando `target_signal_rate` pela metrica de fold
+      usavel sozinha, que nao tem parada natural (o proprio achado do
+      tau fixo acima mostra o extremo pra onde isso vai).
+    gap: >
+      `target_signal_rate=0,0284` (AG-427) foi medido e adotado
+      inteiramente sobre fracao de fold usavel/estabilidade -- correto
+      pra CALIBRAR o mecanismo (B20: nunca escolher o limiar pela
+      metrica que ele deveria produzir), mas SEM nenhum teto economico
+      real de volta a amarrar o NIVEL adotado a um orcamento de custo
+      de fato sustentavel. O unico teto que existia no repo
+      (`fee_budget_monthly=0,03`, 3%/mes) e ele mesmo `ASSUMED`, "sem
+      base; inventado" -- nunca validado pelo Manager como restricao de
+      negocio real, e a formula original que o conectava a
+      `target_signal_rate` (`PRD_V3_2_UNIFICADO.md` SS0.2 R3) e doc
+      obsoleto por `CLAUDE.md`, com 2 bugs ja achados nesta mesma cadeia
+      historica (`fee_budget_is_per_side`, fator x2 de lados). Primeira
+      tentativa de medir o teto nesta sessao usou nocional=33% do
+      equity fixo -- leitura errada de "lote minimo" do `CLAUDE.md` SS0
+      (e o PISO imposto pelo `step_size` da exchange sobre uma conta
+      pequena, nao o nocional TIPICO de sizing) -- corrigida ANTES de
+      qualquer decisao ser tomada sobre o numero errado.
+    severity: "media -- nao e bug de codigo, e ausencia de amarra economica sobre uma constante classe A que ja tinha sido desconectada da sua origem de custo (decisao explicita do Manager no AG-427, 'medir o que o tau precisa, nao estipular') -- risco real era continuar subindo o nivel so pela metrica de instrumentacao, sem checar se o custo de fee cabe em orcamento nenhum"
+    layer: "models (mecanismo de tau, mesmo dos 3 pontos de treino de producao) + risk (formula real de sizing/custo, `src.risk.sizing.compute_sizing`/`src.risk.limits.control_13_orcamento_fees`, usada aqui pela primeira vez fora do proprio modulo de risco pra validar uma decisao de modelo)"
+    consequence: >
+      Teto economico medido do zero, direto contra `src/risk/
+      sizing.py::compute_sizing` (nao a formula obsoleta do PRD):
+      `notional_req = (equity*risk_per_trade)/(sl_atr_mult*atr_pct)`,
+      `custo_trade = notional_req*round_trip_cost_bps/10000`. ATR
+      mediano REAL por candidato (`atr_at_t0`, `build_modeling_frame`):
+      BTCUSDT/R2 0,356% (nocional R$936,3, 93,6% equity), XRPUSDT/R2
+      0,466% (R$715,9), SOLUSDT/R2 0,586% (R$569,1), XRPUSDT/R3 0,673%
+      (R$495,4), SOLUSDT/R3 0,839% (R$397,2) -- `max_notional_
+      multiple=3,0` (R$3.000) nao trava em nenhum caso medido. Custo
+      mensal do portfolio (5 combos, Camada1, trades/mes real via
+      `n_test_bars`*`signal_rate_mean` medido, nao `BARS_PER_YEAR` de
+      grade de relogio 15m obsoleta):
+
+      0,0284->R$18,96/mes=1,90% capital/mes; 0,04->R$30,98/mes=3,10%
+      (ja excede o teto ASSUMED de 3%); 0,06->R$38,38/mes=3,84%;
+      0,10->R$58,85/mes=5,88% capital/mes -- AUTORIZADO EXPLICITAMENTE
+      PELO MANAGER apos ver o numero real.
+
+      Sensibilidade +-50% (classe A) fechada sobre o novo
+      `sweep_range=[0,05; 0,15]`: 0,04/0,06/0,10/0,15 medidos, relacao
+      monotonica confirmada em toda a banda, sem otimo interior --
+      mesma forma do sweep original (AG-427), agora estendida.
+
+      Aplicado ponta-a-ponta: `constants.yaml::target_signal_rate`
+      0,0284->0,10 (MEASURED, `sweep_range` fechado). `tau_fixed: float
+      | None = None` novo em `fit_side_model`/`run_fold`/`run_all_
+      folds`/`run_walk_forward_for_combo` -- so existe pra suportar a
+      medicao do tau fixo (default `None` preserva bit-exato o
+      calibrado, nunca vira comportamento de producao). Retreino
+      completo real sob a taxa nova: Run Canonico (CPCV, 5 combos,
+      0 falhas) + walk-forward campaign (10 combo x camada, 0 falhas
+      apos corrigir 1 erro de invocacao -- `ModuleNotFoundError` por
+      rodar `python scripts/x.py` em vez de `python -m scripts.x`,
+      pego antes de qualquer dado real ser gerado errado) + predictions/
+      feature-deciles regenerados. Lint limpo:
+      `banned_patterns.py --strict`, `ruff check` -- rodados contra
+      todos os arquivos tocados.
+    resolved_by_commit: null
+    resolution: "aplicado e promovido a default de producao -- target_signal_rate=0,10 (era 0,0284), sweep_range fechado em [0,05;0,15] com sensibilidade +-50% medida nos 4 pontos, teto economico real (5,88%/mes do capital) medido contra o codigo de producao de risco (nao a formula obsoleta do PRD) e autorizado explicitamente pelo Manager. Proposta de tau FIXO em 0,51 medida e descartada (taxa de sinal descontrolada, 56,4% medio das barras). Retreino completo (Run Canonico + walk-forward campaign + predictions/feature-deciles) executado sob a taxa nova, 0 falhas apos corrigir 1 erro de invocacao de script. Investigacao aberta, NAO fechada: por que a taxa realizada diverge sistematicamente da nominal nesta faixa mais alta (hipotese lider -- exclusividade mutua long/short na regra de decisao sob TAU_POLICY_LEGACY_PER_SIDE -- nao confirmada quantitativamente, registrada como proximo passo se remedicao futura justificar)."
+    status: >
+      CONCLUIDO. Veredito final: continua 0/10 combo x camada (nenhuma
+      celula passa os 3 gates simultaneamente) -- mas 2 sinais reais de
+      progresso, nao ruido de reexecucao.
+
+      Gate Data quase dobrou: 6/10 celulas passam agora (contra 2/10 na
+      rodada anterior) -- `SOLUSDT/R2` e `XRPUSDT/R2` (as 2 camadas
+      cada) ultrapassaram o piso de 10 folds pela primeira vez, junto
+      com `BTCUSDT/R2/C0` (ja passava) e `XRPUSDT/R3/C0` (novo).
+
+      `XRPUSDT/R3` (as 2 camadas) chegou mais perto do gate Alpha que
+      qualquer celula ja medida nesta investigacao inteira -- p=0,097
+      (C1, edge=+16,81bps) e p=0,105 (C0, edge=+12,59bps), contra o
+      corte de significancia 0,05. Nao passa, mas e a menor distancia
+      medida ate agora, em qualquer rodada.
+
+      Contrapartida real, nao escondida: `BTCUSDT/R2` e `SOLUSDT/R2`
+      viraram Sharpe NEGATIVO no Run Canonico (CPCV) sob a amostra
+      quase 3x maior (18.068->53.355 trades totais) -- eram positivos
+      (+0,773/+0,432) a 0,0284. Mais dado revelou pior, nao melhor,
+      nesses 2 especificamente. `SOLUSDT/R3` seguiu positivo mas caiu
+      bastante (+0,963->+0,356). `XRPUSDT/R2` e `XRPUSDT/R3` seguem
+      positivos nos dois niveis.
+
+      Artefato "ADR-007 -- Painel de Execucao" atualizado (banner
+      principal, aba Run Canonico completa, aba ADR-008 scorecard +
+      Fase 4 + Fase 6):
+      https://claude.ai/code/artifact/ed42926f-90e2-4acd-bf61-58a9e05d9604
+      Fases 5/7/8 + as 2 auditorias (adversarial/engenharia) continuam
+      NAO refeitas -- fora do escopo desta correcao, como na rodada
+      anterior.

@@ -365,6 +365,7 @@ def run_walk_forward_for_combo(
     keep_predictions: bool = False,
     target_signal_rate: float | None = None,
     tau_window_days: int | None = None,
+    tau_fixed: float | None = None,
 ) -> WalkForwardResult:
     """Walk-forward real (RETREINO, um `alpha.run_fold` por fold ancorado)
     sobre `mf_data` já carregado pelo chamador — `build_modeling_frame`
@@ -381,8 +382,10 @@ def run_walk_forward_for_combo(
     predictions` com as predições OOS reais do fold (Meta F6b, §4.4);
     todo chamador do ADR-007/ADR-008 fica exatamente como estava.
 
-    `target_signal_rate`/`tau_window_days` (itens 2/3/6/7 do roadmap de
-    correção do mecanismo de tau, 2026-09-03) -- repassados sem alteração
+    `target_signal_rate`/`tau_window_days`/`tau_fixed` (itens 2/3/6/7 do
+    roadmap de correção do mecanismo de tau, 2026-09-03; `tau_fixed`
+    adicionado 2026-09-03 pra medir a proposta do Manager de travar
+    tau=0,51 pra todos os folds/lados/combos) -- repassados sem alteração
     a `alpha.run_fold` em cada fold ancorado, ver docstring de lá. `None`
     (default) preserva bit-exato todo call site existente.
 
@@ -497,6 +500,7 @@ def run_walk_forward_for_combo(
             calib_weight_basis=calib_weight_basis,
             target_signal_rate=target_signal_rate,
             tau_window_days=tau_window_days,
+            tau_fixed=tau_fixed,
         )
         pending.append((wf_split, cpcv_split, fold_result))
         logger.info(

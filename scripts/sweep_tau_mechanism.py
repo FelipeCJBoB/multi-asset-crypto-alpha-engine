@@ -63,11 +63,26 @@ _VARIANTS: tuple[str, ...] = (alpha.VARIANT_CAMADA1, alpha.VARIANT_CAMADA0)
 # 90/270 são +-90d ao redor do candidato de 180d (item 3, "últimos 6
 # meses"); None é o baseline sem janela (mecanismo legado).
 _STAGE_A_TAU_WINDOW_DAYS: tuple[int | None, ...] = (None, 90, 180, 270)  # noqa: magic-number
-# 5 pontos igualmente espaçados dentro do sweep_range JÁ declarado em
-# constants.yaml::target_signal_rate ([0.0095, 0.0284]) -- eixo do
-# experimento, não constante de domínio nova (a própria constante recebe
-# o valor adotado ao fim do sweep, com proveniência completa).
-_STAGE_B_TARGET_SIGNAL_RATE: tuple[float, ...] = (0.0095, 0.0142, 0.0189, 0.0236, 0.0284)  # noqa: magic-number
+# RODADA 1 (2026-09-03): 5 pontos igualmente espaçados dentro do
+# sweep_range então declarado ([0.0095, 0.0284]) -- adotado 0.0284.
+# RODADA 2 (2026-09-03, AG-428, autorização do Manager sobre o teto
+# econômico real): estendido pra 0.10, adotado sobre o novo sweep_range
+# ([0.05, 0.15]) -- pontos 0.04/0.06/0.10/0.15 medidos via
+# `scripts.sweep_tau_rate_beyond_range` (não reexecutados aqui, ver
+# `experiments/tau_sweep_rate_beyond_range*.json`), registrados nesta
+# tupla só pra manter o eixo do experimento canônico como registro
+# histórico completo -- não constante de domínio nova.
+_STAGE_B_TARGET_SIGNAL_RATE: tuple[float, ...] = (
+    0.0095,  # noqa: magic-number
+    0.0142,  # noqa: magic-number
+    0.0189,  # noqa: magic-number
+    0.0236,  # noqa: magic-number
+    0.0284,  # noqa: magic-number
+    0.04,  # noqa: magic-number
+    0.06,  # noqa: magic-number
+    0.10,  # noqa: magic-number
+    0.15,  # noqa: magic-number
+)
 
 
 def _summarize_point(
