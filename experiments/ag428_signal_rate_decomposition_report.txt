@@ -1,0 +1,71 @@
+Diagnostico AG-428 -- decomposicao do gap nominal vs realizado
+target_signal_rate (config/constants.yaml) = 0.1
+
+=== POR ARQUIVO (is_oof == True) ===
+-- BTCUSDT_R2_camada1 -- n_total=31251 n_oof=31251
+   rate_long_alone=0.0516  rate_short_alone=0.0345  rate_naive_or=0.0861  rate_actual=0.0861
+   long:  n_bateu_tau=1613  n_suprimido=0  frac_suprimido_por_perder_corrida=NaN
+   short: n_bateu_tau=1078  n_suprimido=0  frac_suprimido_por_perder_corrida=NaN
+
+-- BTCUSDT_R2_camada0 -- n_total=31251 n_oof=31251
+   rate_long_alone=0.0518  rate_short_alone=0.0539  rate_naive_or=0.1057  rate_actual=0.1051
+   long:  n_bateu_tau=1620  n_suprimido=4  frac_suprimido_por_perder_corrida=1.0000
+   short: n_bateu_tau=1683  n_suprimido=15  frac_suprimido_por_perder_corrida=1.0000
+
+-- SOLUSDT_R2_camada1 -- n_total=24691 n_oof=24691
+   rate_long_alone=0.0149  rate_short_alone=0.0109  rate_naive_or=0.0256  rate_actual=0.0179
+   long:  n_bateu_tau=367  n_suprimido=9  frac_suprimido_por_perder_corrida=1.0000
+   short: n_bateu_tau=269  n_suprimido=184  frac_suprimido_por_perder_corrida=1.0000
+
+-- SOLUSDT_R2_camada0 -- n_total=24691 n_oof=24691
+   rate_long_alone=0.0701  rate_short_alone=0.0196  rate_naive_or=0.0890  rate_actual=0.0853
+   long:  n_bateu_tau=1730  n_suprimido=3  frac_suprimido_por_perder_corrida=1.0000
+   short: n_bateu_tau=483  n_suprimido=105  frac_suprimido_por_perder_corrida=1.0000
+
+-- SOLUSDT_R3_camada1 -- n_total=12190 n_oof=12190
+   rate_long_alone=0.0295  rate_short_alone=0.0041  rate_naive_or=0.0336  rate_actual=0.0336
+   long:  n_bateu_tau=360  n_suprimido=0  frac_suprimido_por_perder_corrida=NaN
+   short: n_bateu_tau=50  n_suprimido=1  frac_suprimido_por_perder_corrida=1.0000
+
+-- SOLUSDT_R3_camada0 -- n_total=12190 n_oof=12190
+   rate_long_alone=0.0489  rate_short_alone=0.0176  rate_naive_or=0.0664  rate_actual=0.0662
+   long:  n_bateu_tau=596  n_suprimido=2  frac_suprimido_por_perder_corrida=1.0000
+   short: n_bateu_tau=214  n_suprimido=1  frac_suprimido_por_perder_corrida=1.0000
+
+-- XRPUSDT_R2_camada1 -- n_total=25613 n_oof=25613
+   rate_long_alone=0.0586  rate_short_alone=0.0229  rate_naive_or=0.0815  rate_actual=0.0815
+   long:  n_bateu_tau=1502  n_suprimido=0  frac_suprimido_por_perder_corrida=NaN
+   short: n_bateu_tau=586  n_suprimido=0  frac_suprimido_por_perder_corrida=NaN
+
+-- XRPUSDT_R2_camada0 -- n_total=25613 n_oof=25613
+   rate_long_alone=0.0549  rate_short_alone=0.0045  rate_naive_or=0.0594  rate_actual=0.0581
+   long:  n_bateu_tau=1406  n_suprimido=35  frac_suprimido_por_perder_corrida=1.0000
+   short: n_bateu_tau=116  n_suprimido=0  frac_suprimido_por_perder_corrida=NaN
+
+-- XRPUSDT_R3_camada1 -- n_total=12646 n_oof=12646
+   rate_long_alone=0.0542  rate_short_alone=0.0375  rate_naive_or=0.0903  rate_actual=0.0892
+   long:  n_bateu_tau=686  n_suprimido=15  frac_suprimido_por_perder_corrida=1.0000
+   short: n_bateu_tau=474  n_suprimido=17  frac_suprimido_por_perder_corrida=1.0000
+
+-- XRPUSDT_R3_camada0 -- n_total=12646 n_oof=12646
+   rate_long_alone=0.0580  rate_short_alone=0.0169  rate_naive_or=0.0750  rate_actual=0.0744
+   long:  n_bateu_tau=734  n_suprimido=6  frac_suprimido_por_perder_corrida=1.0000
+   short: n_bateu_tau=214  n_suprimido=1  frac_suprimido_por_perder_corrida=1.0000
+
+=== POOLED (10 arquivos, is_oof == True) ===
+n_oof_pooled = 212782
+rate_long_alone  = 0.0499
+rate_short_alone = 0.0243
+rate_naive_or    = 0.0740
+rate_actual      = 0.0723
+long:  n_bateu_tau=10614  n_suprimido=74  frac_suprimido_por_perder_corrida=1.0000
+short: n_bateu_tau=5167  n_suprimido=324  frac_suprimido_por_perder_corrida=1.0000
+
+=== DECOMPOSICAO (pooled) ===
+identidade: (target - rate_actual) = (target - rate_naive_or) + (rate_naive_or - rate_actual)
+gap_total (target - rate_actual)          = 0.0277
+gap_drift (target - rate_naive_or)        = 0.0260
+gap_exclusion (rate_naive_or - rate_actual) = 0.0017
+  -> gap_drift / gap_total     = 93.9%
+  -> gap_exclusion / gap_total = 6.1%
+checagem soma = 0.0277 (deve bater com gap_total)

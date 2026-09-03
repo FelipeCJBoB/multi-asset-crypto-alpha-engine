@@ -801,15 +801,48 @@ target_signal_rate:
     rodada 1. ACHADO NOVO (não visto na rodada 1, `sweep_range` antigo
     não alcançava esta faixa): a taxa REALIZADA (out-of-sample) fica
     sistematicamente ~65-70% da nominal nesta faixa mais alta -- pedir
-    0,10 entrega ~0,068 realizado, não 0,10. Hipótese líder (não
-    confirmada quantitativamente): `tau_long`/`tau_short` calibrados
-    independentemente (`TAU_POLICY_LEGACY_PER_SIDE`) mas a regra de
-    decisão (`_decision_rule`) exige exclusividade mútua por barra --
-    populações long/short se sobrepõem mais quanto mais frouxo o corte,
-    e o lado perdedor é descartado, reduzindo o realizado combinado
-    abaixo da soma nominal dos dois lados. Não bloqueia esta decisão
-    (autorizada com o número JÁ REALIZADO, não o nominal), mas fica
-    registrado como investigação aberta -- ver `AG-428`.
+    0,10 entrega ~0,068 realizado, não 0,10.
+
+    CAUSA-RAIZ CONFIRMADA (2026-09-03, medição real sobre os 10
+    artefatos `experiments/alpha_walk_forward_predictions_*.parquet`,
+    `is_oof==True`, n=212.782 pooled) -- NÃO é exclusividade mútua
+    long/short (hipótese líder original, descartada por medição):
+      rate_long_alone (p_long>tau_long, sem competição)   = 0,0499
+      rate_short_alone (p_short>tau_short, sem competição) = 0,0243
+      rate_naive_or (união, sem exclusão mútua)            = 0,0740
+      rate_actual (side_hat!=0, regra de decisão completa) = 0,0723
+      decomposição do gap (target 0,10 - rate_actual = 0,0277):
+        gap_drift (target - rate_naive_or)     = 0,0260 (93,9% do gap)
+        gap_exclusão (rate_naive_or - rate_actual) = 0,0017 (6,1%)
+    A exclusividade mútua É real (100% dos candidatos suprimidos
+    perderam a corrida interna pro outro lado), mas responde por só
+    6% do gap -- pouca gente chega a competir. O gargalo de verdade
+    (94%) é que `rate_long_alone`/`rate_short_alone`, sozinhos, JÁ
+    ficam bem abaixo do nominal -- `tau` calibrado pra bater 10% na
+    JANELA DE TREINO recente não generaliza pra 10% fora da amostra.
+    É deriva treino-vs-teste na calibração em si, não um efeito da
+    regra de decisão. Reprodutível via `scripts.ag428_signal_rate_
+    decomposition` (`uv run python -m scripts.ag428_signal_rate_
+    decomposition`, read-only, nunca escreve em artefato canônico).
+
+    `TAU_POLICY_TOTAL_COMMON_OOF` (`AG-210`, `_resolve_tau_on_common_
+    bars` em `alpha.py`) ataca ESTRUTURALMENTE os dois componentes do
+    gap -- resolve `tau_long`/`tau_short` JUNTOS via `resolve_joint_tau`
+    sobre a população `unique_test_bars(train_bars)` (mesmo filtro da
+    inferência, corrige o descasamento de NOFILL) e usando `decide_side`
+    (a mesma regra AND) como alvo da bisseção (corrige a corrida
+    interna na origem, não só reduz o sintoma). O que ela NÃO cobre por
+    construção: deriva TEMPORAL entre a janela de treino onde calibra e
+    o período de teste walk-forward real (regime pode mudar entre os
+    dois, população-mismatch e deriva temporal são causas diferentes).
+    Medição real pendente (`scripts.run_walk_forward_campaign --combo
+    XRPUSDT/R3 --tau-policy total_common_oof --overwrite`, escreve em
+    arquivo separado `_total_common_oof.json`, nunca no canônico) --
+    o único artefato dessa política em disco é de 2026-08-31, sob
+    target_signal_rate=0,0189 (2 gerações atrás), não comparável ao
+    estado atual. Avaliação em andamento, ver `AG-428`. Não bloqueou a
+    decisão desta rodada (autorizada com o número JÁ REALIZADO, não o
+    nominal).
 
     ACHADO DE CONTROLE (mesma sessão, antes desta decisão): tau FIXO em
     0,51 (proposta descartada) devolveu taxa de sinal de 56,4% médio das
