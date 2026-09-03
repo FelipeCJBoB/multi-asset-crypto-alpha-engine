@@ -753,12 +753,85 @@ canonical_bar_type:
   review_by: ag_035_recalibracao_tick_imbalance
 
 target_signal_rate:
-  value: 0.0189
-  provenance: DERIVED
-  source: "derivada de fee_budget_monthly, ela própria ASSUMED (§18.5.1) — é o threshold do Alpha. Herda a incerteza do pai."
+  value: 0.0284
+  provenance: MEASURED
+  source: >
+    ATUALIZADO 2026-09-03 (item 2/6/7 do roadmap de correção do mecanismo
+    de tau, decisão do Manager: "medir o quanto é necessário para o tau
+    se comportar bem e usar esse valor"). Sweep real (`scripts.sweep_
+    tau_mechanism --stage B`, walk-forward completo, 5 candidatos x 2
+    camadas, JÁ sob `tau_calibration_window_days=180` do item 3/estágio
+    A) sobre o `sweep_range` já declarado abaixo ([0,0095; 0,0284]),
+    medindo fração de folds walk-forward usáveis (>=10 trades) e
+    desvio-padrão de `signal_rate_realized` entre folds -- NUNCA
+    edge/Sharpe/P&L (isso seria escolher o limiar de decisão pela
+    métrica que ele deveria produzir, o erro que B20/`alpha.py` linha 30
+    existe pra evitar; é calibração de INSTRUMENTAÇÃO -- tamanho de
+    amostra válida --, não de performance):
+      0,0095 -> 29,10% folds usáveis (39/134), std=0,0172
+      0,0142 -> 35,07% folds usáveis (47/134), std=0,0186
+      0,0189 -> 44,03% folds usáveis (59/134), std=0,0230  <- valor antigo
+      0,0236 -> 47,01% folds usáveis (63/134), std=0,0271
+      0,0284 -> 52,24% folds usáveis (70/134), std=0,0293  <- VALOR ADOTADO
+    RELAÇÃO É MONOTÔNICA em todo o range declarado -- não há ótimo
+    interior; taxa mais alta sempre libera mais folds ao custo de mais
+    variância. Adotado o TOPO do range já sancionado pela própria
+    entrada anterior (não uma busca nova além do que já estava
+    declarado) porque a fração de fold usável (poder estatístico real)
+    é o problema que esta correção existe pra resolver -- decisão
+    informada ao Manager (não escondida), reversível pelo próprio
+    `sweep_range` se remedição futura justificar. Achado adicional:
+    `tau_calibration_window_days=180` sozinho (item 3), ANTES desta
+    mudança de taxa, já levava a fração de fold usável de 30,60% (sem
+    janela, mecanismo antigo) pra 44,03% (mesma taxa-alvo antiga) -- a
+    maior parte do ganho vem do mecanismo (item 3), esta mudança de
+    nível é incremento sobre uma correção já substancial, não a causa
+    principal.
+    --- PROVENIÊNCIA HISTÓRICA (valor 0.0189, agora superseded) ---
+    "derivada de fee_budget_monthly, ela própria ASSUMED (§18.5.1) — é o
+    threshold do Alpha. Herda a incerteza do pai."
   class: A
-  sweep_required: true
-  sweep_range: [0.0095, 0.0284]
+  sweep_required: false
+  derived_from: [tau_calibration_window_days]   # medido JUNTO com a janela de calibração de tau -- refazer se ela mudar
+  review_by: sprint_10
+
+tau_calibration_window_days:
+  value: 180
+  provenance: MEASURED
+  source: >
+    NOVO 2026-09-03 (item 3 do roadmap de correção do mecanismo de tau,
+    decisão do Manager). `tau` (limiar de decisão do Alpha) era resolvido
+    como o quantil `1-target_signal_rate` sobre TODO o treino expansivo
+    de cada fold -- cada vez mais dominado por regimes antigos conforme
+    o walk-forward avança (achado real: diagnóstico desta sessão mediu
+    correlação +0,25 a +0,72, por símbolo, entre `signal_rate_realized`
+    e volatilidade/regime real do trimestre -- o "silêncio" de muitos
+    folds não é ruído puro, correlaciona com o mercado de verdade estar
+    calmo, mas o `tau` calibrado sobre histórico velho não acompanha
+    isso). Corrigido pra janela ROLANTE (últimos N dias de treino,
+    ancorada em `max(t0)` do próprio fold -- nunca em calendário
+    absoluto, funciona igual em todo símbolo/histórico).
+    Sweep real (`scripts.sweep_tau_mechanism --stage A`, walk-forward
+    completo, 5 candidatos x 2 camadas, `target_signal_rate` na taxa
+    antiga 0,0189 fixa) sobre {sem janela, 90d, 180d, 270d}, medindo
+    fração de folds usáveis (>=10 trades) e desvio-padrão de
+    `signal_rate_realized`:
+      sem janela (legado) -> 30,60% folds usáveis (41/134), std=0,0135
+      90 dias             -> 44,03% folds usáveis (59/134), std=0,0399
+      180 dias            -> 44,03% folds usáveis (59/134), std=0,0230  <- VALOR ADOTADO
+      270 dias            -> 38,06% folds usáveis (51/134), std=0,0222
+    180d empata com 90d na fração de fold usável (a maior dos 4 pontos)
+    mas com desvio-padrão quase 3x menor (mais estável) -- vencedor claro,
+    não só "menos pior". Guard de amostra mínima idêntico a
+    `_resolve_tau_on_common_bars`/AG-210 (`MIN_OCCURRENCES_ABOVE_TAU=10`)
+    -- se a janela não comportar `ceil(10/target_signal_rate)` pontos,
+    cai pro treino inteiro com aviso logado, nunca silencioso (relevante
+    pra símbolos de histórico curto, SOLUSDT/XRPUSDT desde 2021-12).
+    Nunca afeta `X_fit`/`X_calib` do modelo em si (continuam sobre o
+    expansivo inteiro) -- só o quantil de `tau`, pós-processamento puro
+    sobre scores já calculados.
+  class: B
+  sweep_required: false
   review_by: sprint_10
 
 fee_budget_is_per_side:
@@ -2705,14 +2778,36 @@ alpha_prune_max_gate_fpr:
 
 alpha_production_hyperparam_override:
   value:
-    SOLUSDT_R3: "20260902T213701Z"
-    XRPUSDT_R2: "20260902T213701Z"
-    XRPUSDT_R3: "20260902T213701Z"
-    BTCUSDT_R2: "20260902T213701Z"
-    SOLUSDT_R2: "20260902T213701Z"
+    SOLUSDT_R3: "20260903T115158Z"
+    XRPUSDT_R2: "20260903T115158Z"
+    XRPUSDT_R3: "20260903T115158Z"
+    BTCUSDT_R2: "20260903T115158Z"
+    SOLUSDT_R2: "20260903T115158Z"
   provenance: ASSUMED
   source: >
-    **[ATUALIZADO 2026-09-02]** Decisão explícita do Manager — promove a
+    **[ATUALIZADO 2026-09-03]** Decisão explícita do Manager — promove a
+    campanha de controle (`--tag tau_fix_20260903`, seed corrigido
+    `AG-399`, SEM corte de data, 1 seed × 150 trials) rodada sob o
+    mecanismo de tau corrigido nesta sessão (`AG-427`): `tau_calibration_
+    window_days=180` (janela rolante de calibração, era treino expansivo
+    inteiro) e `target_signal_rate=0,0284` (era 0,0189, medido — sweep
+    real mostrou fração de fold walk-forward usável subir de 30,60% pra
+    52,24%), mais o vetor T1 de 31 features (`AG-426`, `E21f_toptrader_
+    ls_ratio_count`). `best_value` de screening (1 seed) por study:
+    BTCUSDT/R2 C1=0,7727/C0=0,6160; SOLUSDT/R2 C1=0,4319/C0=0,3095;
+    SOLUSDT/R3 C1=0,9628/C0=0,9250; XRPUSDT/R2 C1=1,0079/C0=1,1046;
+    XRPUSDT/R3 C1=0,9289/C0=0,7704 — ainda sujeito ao mesmo viés otimista
+    de 1 seed que motivou a confirmação multi-seed do `ADR-002` (não é,
+    por si só, prova de edge real; walk-forward e gates decidem isso,
+    não o `best_value` de screening). **Schema honesto**: os 5 JSONs
+    novos (`run_stamp=20260903T115158Z`) seguem NÃO replicando os campos
+    de confirmação multi-seed do processo `ADR-007` original — 1 seed,
+    não 10. Números novos do walk-forward canônico e dos gates:
+    `audit/architecture_gaps_log.yaml::AG-427`.
+
+    **Histórico — promoção anterior (2026-09-02, campanha `post_ag421_
+    ag422`, achada sob o mecanismo de tau antigo e vetor de 30 features,
+    valores substituídos acima):** Decisão explícita do Manager — promove a
     campanha de controle (`--tag post_ag421_ag422`, seed corrigido
     `AG-399`, SEM corte de data, 1 seed × 150 trials) rodada sob 2
     correções aplicadas nesta sessão: `AG-421` (vetor T1 de 36 → 30

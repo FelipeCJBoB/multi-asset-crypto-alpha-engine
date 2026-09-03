@@ -1,0 +1,56 @@
+{
+  "symbol": "SOLUSDT",
+  "resolution_id": "R2",
+  "source_campaign": "t0_cutoff_control_campaign_results_tau_fix_20260903 -- seed corrigido (AG-399), SEM corte de data, 1 seed, 150 trials -- NAO e confirmacao multi-seed como o processo ADR-007 anterior. Ver o --tag no nome do arquivo (se houver) pro contexto exato desta campanha (vetor de features/mecanismo de tau/etc. vigentes no momento em que rodou -- consultar audit/architecture_gaps_log.yaml pela data).",
+  "run_stamp": "20260903T115158Z",
+  "camada1": {
+    "winner": {
+      "hyper": {
+        "max_depth": 3,
+        "n_estimators": 678,
+        "learning_rate": 0.052548454122022435,
+        "subsample": 0.9869051750925184,
+        "subsample_freq": 7,
+        "feature_fraction": 0.6088911213804639,
+        "lambda_l2": 15.44761150635131,
+        "min_child_samples": 12,
+        "num_leaves": 48,
+        "min_sum_hessian_in_leaf": 1.0259381146371698,
+        "max_bin": 425,
+        "ess_regularization_n_obs_independentes_alvo": 24.092635001722357,
+        "ess_regularization_fator_conservador": 0.8154426286952737,
+        "regularization_basis": "ess_derived",
+        "early_stopping_mode": "three_way",
+        "ic_magnitude_floor_k": 2.0
+      },
+      "best_value": 0.4318773025551108
+    },
+    "n_trials": 150,
+    "study_name": "alpha_hyperparams_SOLUSDT_R2_camada1_cpu_a59d920d"
+  },
+  "camada0": {
+    "winner": {
+      "hyper": {
+        "max_depth": 3,
+        "n_estimators": 800,
+        "learning_rate": 0.009596457665579967,
+        "subsample": 0.5451185399952422,
+        "subsample_freq": 1,
+        "feature_fraction": 0.47021590440505734,
+        "lambda_l2": 23.650083328412293,
+        "min_child_samples": 15,
+        "num_leaves": 45,
+        "min_sum_hessian_in_leaf": 0.01948531301809413,
+        "max_bin": 360,
+        "ess_regularization_n_obs_independentes_alvo": 39.34562800878872,
+        "ess_regularization_fator_conservador": 0.4026738918481501,
+        "regularization_basis": "ess_derived",
+        "early_stopping_mode": "three_way",
+        "ic_magnitude_floor_k": 2.0
+      },
+      "best_value": 0.30954078164507287
+    },
+    "n_trials": 150,
+    "study_name": "alpha_hyperparams_SOLUSDT_R2_camada0_cpu_4c9f47fd"
+  }
+}

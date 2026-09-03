@@ -618,3 +618,58 @@ def test_run_walk_forward_popula_shap_por_lado_de_fold_treinado(
         by_feature = fold0.shap_mean_abs_by_side[side]
         assert set(by_feature.keys()) == set(T1_FEATURE_IDS)
         assert all(v >= 0.0 for v in by_feature.values())  # |SHAP| nunca negativo
+
+
+# ============================================================================
+# Itens 2/3/6/7 do roadmap de correção do mecanismo de tau (2026-09-03) --
+# `target_signal_rate`/`tau_window_days` chegam em `alpha.run_fold` sem
+# alteração.
+# ============================================================================
+
+
+def test_run_walk_forward_repassa_target_signal_rate_e_tau_window_days(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    mf_data = _synthetic_mf_data()
+    captured_kwargs: list[dict[str, Any]] = []
+    fake = _make_fake_run_fold()
+
+    def _capturing_fake_run_fold(*args: Any, **kwargs: Any) -> _FakeFoldResult:
+        captured_kwargs.append(kwargs)
+        return fake(*args, **kwargs)
+
+    monkeypatch.setattr(alpha, "run_fold", _capturing_fake_run_fold)
+
+    wf.run_walk_forward_for_combo(
+        mf_data, target_signal_rate=0.03, tau_window_days=180, **_base_kwargs()
+    )
+
+    assert len(captured_kwargs) > 0
+    for kwargs in captured_kwargs:
+        assert kwargs["target_signal_rate"] == pytest.approx(0.03)
+        assert kwargs["tau_window_days"] == 180
+
+
+def test_run_walk_forward_target_signal_rate_e_tau_window_days_default_none(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Sem os 2 parâmetros novos, `run_fold` recebe `None` nos dois --
+    bit-exato ao comportamento anterior a esta correção (resolve de
+    `constants.yaml`/pool inteiro dentro de `run_fold`/`fit_side_model`,
+    não aqui)."""
+    mf_data = _synthetic_mf_data()
+    captured_kwargs: list[dict[str, Any]] = []
+    fake = _make_fake_run_fold()
+
+    def _capturing_fake_run_fold(*args: Any, **kwargs: Any) -> _FakeFoldResult:
+        captured_kwargs.append(kwargs)
+        return fake(*args, **kwargs)
+
+    monkeypatch.setattr(alpha, "run_fold", _capturing_fake_run_fold)
+
+    wf.run_walk_forward_for_combo(mf_data, **_base_kwargs())
+
+    assert len(captured_kwargs) > 0
+    for kwargs in captured_kwargs:
+        assert kwargs["target_signal_rate"] is None
+        assert kwargs["tau_window_days"] is None

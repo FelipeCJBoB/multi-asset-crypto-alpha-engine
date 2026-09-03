@@ -363,6 +363,8 @@ def run_walk_forward_for_combo(
     initial_train_years: int | None = None,
     model_id_prefix: str = "walk_forward",
     keep_predictions: bool = False,
+    target_signal_rate: float | None = None,
+    tau_window_days: int | None = None,
 ) -> WalkForwardResult:
     """Walk-forward real (RETREINO, um `alpha.run_fold` por fold ancorado)
     sobre `mf_data` já carregado pelo chamador — `build_modeling_frame`
@@ -378,6 +380,11 @@ def run_walk_forward_for_combo(
     antes desta opção existir) — `True` popula `WalkForwardFoldMetrics.
     predictions` com as predições OOS reais do fold (Meta F6b, §4.4);
     todo chamador do ADR-007/ADR-008 fica exatamente como estava.
+
+    `target_signal_rate`/`tau_window_days` (itens 2/3/6/7 do roadmap de
+    correção do mecanismo de tau, 2026-09-03) -- repassados sem alteração
+    a `alpha.run_fold` em cada fold ancorado, ver docstring de lá. `None`
+    (default) preserva bit-exato todo call site existente.
 
     Levanta `ValueError` se `generate_anchored_walk_forward_splits`
     devolver 0 folds (série curta demais) — falha alta, nunca um
@@ -488,6 +495,8 @@ def run_walk_forward_for_combo(
             calib_split_mode=calib_split_mode,
             class_balance_basis=class_balance_basis,
             calib_weight_basis=calib_weight_basis,
+            target_signal_rate=target_signal_rate,
+            tau_window_days=tau_window_days,
         )
         pending.append((wf_split, cpcv_split, fold_result))
         logger.info(

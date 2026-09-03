@@ -6733,3 +6733,54 @@ edição aditiva da sessão paralela (`986e527`, `keep_predictions`/
 `predictions` novos) entre minhas próprias edições — verificado via
 `git diff` antes de continuar (não conflitava com nada meu), não
 revertido.
+
+## 2026-09-03 — Mecanismo de tau corrigido (janela + taxa) + full Optuna — ainda 0/20, gargalo mudou de natureza (AG-427) <!-- check-sprint-log: skip -->
+
+Investigação ponta a ponta pedida pelo Manager (SOLUSDT/R3 × XRPUSDT/R3,
+8 combinações long/short × Camada1/Camada0) achou a causa real de tão
+poucos trades no walk-forward: não é execução (fill ~100%) nem falta de
+barra — é `tau` calibrado sobre o treino expansivo INTEIRO, cada vez
+mais dominado por regimes antigos. Diagnóstico (sem retreino):
+correlação +0,25 pooled (até +0,72 em XRPUSDT/R3) entre
+`signal_rate_realized` e volatilidade real do trimestre — o silêncio
+correlaciona com o mercado estar genuinamente calmo, mas `tau` não
+acompanhava isso.
+
+Manager aprovou 7 itens de correção. Discovery revelou custo/limitação
+reais em 2: item 4 (HMM k4 — código funcional mas ZERO artefato
+persistido, backfill de 1 símbolo/R1 já tinha levado ~39h e sido
+abortado pelo próprio Manager numa sessão anterior; escopo autorizado
+em `AG-114` era gate de risco binário, não condicionar `tau`) e item 5
+(`target_signal_rate` por candidato — `book_ticker` é inteiramente
+pré-RPI, obsoleto) — **descartados pelo Manager**. Item 6 virou "medir
+o necessário pro tau se comportar bem, usar esse valor" em vez de um
+número de tolerância de risco estipulado.
+
+Implementado (`src/models/alpha.py`, `walk_forward.py`,
+`config/constants.yaml`, `scripts/sweep_tau_mechanism.py` novo):
+`tau_calibration_window_days` (janela rolante de calibração de `tau`,
+nova constante) e `target_signal_rate` recalibrado, ambos MEDIDOS via
+2 sweeps reais sobre os 5 candidatos (nunca otimizados por edge/Sharpe,
+só fração de fold usável e estabilidade — B20). Estágio A (janela):
+180 dias vence claramente (empata com 90d em usabilidade, 44,03%, mas
+desvio-padrão quase 3x menor). Estágio B (taxa, janela já travada em
+180d): relação MONOTÔNICA em todo o range já declarado — sem ótimo
+interior — adotado 0,0284 (topo do `sweep_range` já sancionado),
+fração de fold usável foi de 44,03% pra 52,24%. `[PROMOVIDO A DEFAULT
+DE PRODUÇÃO]`, sem flag opt-in. 8 testes novos, suite ampla (170+
+testes) verde após o flip de default.
+
+Full run do Alpha Optuna (150 trials × 10 studies) sob o mecanismo
+novo, promovido a produção (`run_stamp=20260903T115158Z`). Run
+Canônico + walk-forward campaign + gates regenerados.
+
+**Resultado**: continua 0/20 — mas o gargalo mudou de natureza. Fração
+de fold usável melhorou muito (`SOLUSDT/R2/Camada0` de 0/12 pra 7/12;
+`XRPUSDT/R2/Camada1` de 4/12 pra 11/12; `BTCUSDT/R2/Camada0` chegou a
+10/12) e **2 células passam o gate Data pela 1ª vez** (`BTCUSDT/R2/C0`,
+`XRPUSDT/R2/C1`) — mas agora reprovam por edge sem significância
+estatística, não mais por falta de amostra. Detalhe completo:
+`audit/architecture_gaps_log.yaml::AG-427`, artefato "ADR-007 — Painel
+de Execução" (aba Run Canônico + ADR-008 Fase 4/6) atualizado. Fases
+5/7/8 da ADR-008 + as 2 auditorias (adversarial/engenharia) continuam
+não refeitas — análise ad-hoc extensa, fora do escopo desta correção.

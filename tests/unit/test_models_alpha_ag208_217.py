@@ -366,3 +366,131 @@ def test_tau_policy_rejeita_valor_desconhecido() -> None:
     """`run_fold` valida `tau_policy` ANTES de qualquer inferência — o
     erro precisa ser explícito, nunca um fallback silencioso pro legado."""
     assert alpha.TAU_POLICY_LEGACY_PER_SIDE != alpha.TAU_POLICY_TOTAL_COMMON_OOF
+
+
+# ============================================================================
+# Item 3 do roadmap de correção do mecanismo de tau (2026-09-03) --
+# `_select_tau_calibration_pool`
+# ============================================================================
+
+
+def test_select_tau_pool_janela_none_e_bit_exato_ao_pool_inteiro() -> None:
+    rng = np.random.default_rng(11)
+    calibrated = rng.random(500)
+    t0_ms = np.arange(500, dtype=np.int64) * 60_000
+
+    pool, is_windowed = alpha._select_tau_calibration_pool(
+        calibrated,
+        t0_ms,
+        tau_window_days=None,
+        target_signal_rate=0.02,
+        side=1,
+        variant=alpha.VARIANT_CAMADA1,
+    )
+    assert is_windowed is False
+    np.testing.assert_array_equal(pool, calibrated)
+
+
+def test_select_tau_pool_corta_pelo_tempo_certo() -> None:
+    # 400 dias de barras diárias, 1 barra/dia -- janela de 100 dias deve
+    # manter só as últimas 100 (índices 300..399).
+    n = 400
+    t0_ms = (np.arange(n, dtype=np.int64)) * alpha._MS_PER_DAY
+    calibrated = np.arange(n, dtype=np.float64)  # valor == índice, fácil de checar
+
+    pool, is_windowed = alpha._select_tau_calibration_pool(
+        calibrated,
+        t0_ms,
+        tau_window_days=100,
+        target_signal_rate=0.02,  # min_bars = ceil(10/0.02) = 500 > 101 -- ver teste de fallback
+        side=1,
+        variant=alpha.VARIANT_CAMADA1,
+    )
+    # amostra da janela (101 pontos, índices 299..399) é menor que
+    # min_bars=500 sob essa taxa-alvo -- cai pro fallback, não corta.
+    assert is_windowed is False
+    np.testing.assert_array_equal(pool, calibrated)
+
+    # mesma janela, taxa-alvo mais alta (min_bars = ceil(10/0.15) = 67 <=
+    # 101 pontos disponíveis) -- agora corta de verdade.
+    pool2, is_windowed2 = alpha._select_tau_calibration_pool(
+        calibrated,
+        t0_ms,
+        tau_window_days=100,
+        target_signal_rate=0.15,
+        side=1,
+        variant=alpha.VARIANT_CAMADA1,
+    )
+    assert is_windowed2 is True
+    assert pool2.shape[0] == 101  # dias 299..399 inclusive, âncora em max(t0_ms)
+    assert pool2.min() == 299.0
+    assert pool2.max() == 399.0
+
+
+def test_select_tau_pool_fallback_quando_janela_nao_comporta_amostra_minima() -> None:
+    n = 50
+    t0_ms = np.arange(n, dtype=np.int64) * alpha._MS_PER_DAY
+    calibrated = np.arange(n, dtype=np.float64)
+
+    pool, is_windowed = alpha._select_tau_calibration_pool(
+        calibrated,
+        t0_ms,
+        tau_window_days=5,  # só ~6 pontos na janela, muito abaixo de min_bars
+        target_signal_rate=0.02,
+        side=-1,
+        variant=alpha.VARIANT_CAMADA0,
+    )
+    assert is_windowed is False
+    np.testing.assert_array_equal(pool, calibrated)
+
+
+def test_select_tau_pool_sem_t0_cai_pro_pool_inteiro_sem_quebrar() -> None:
+    calibrated = np.random.default_rng(3).random(30)
+    pool, is_windowed = alpha._select_tau_calibration_pool(
+        calibrated,
+        None,
+        tau_window_days=180,
+        target_signal_rate=0.02,
+        side=1,
+        variant=alpha.VARIANT_CAMADA1,
+    )
+    assert is_windowed is False
+    np.testing.assert_array_equal(pool, calibrated)
+
+
+def test_select_tau_pool_historico_curto_nao_quebra() -> None:
+    """Símbolo com histórico curto (SOLUSDT/XRPUSDT-like) — janela de 180
+    dias pedida sobre um treino de só 60 dias não deve levantar exceção,
+    só cair pro fallback (a janela inteira já É o pool inteiro)."""
+    n = 60
+    t0_ms = np.arange(n, dtype=np.int64) * alpha._MS_PER_DAY
+    calibrated = np.random.default_rng(4).random(n)
+
+    pool, is_windowed = alpha._select_tau_calibration_pool(
+        calibrated,
+        t0_ms,
+        tau_window_days=180,
+        target_signal_rate=0.02,
+        side=1,
+        variant=alpha.VARIANT_CAMADA1,
+    )
+    assert is_windowed is False
+    assert pool.shape[0] == n
+
+
+def test_fit_side_model_tau_window_days_none_e_bit_exato_ao_legado() -> None:
+    """`fit_side_model` sem `tau_window_days` (default) precisa produzir
+    o MESMO `tau` de antes desta correção existir -- prova end-to-end,
+    não só do núcleo puro acima."""
+    df = _frame_com_alvos_divergentes(n=400)
+    hyper = alpha.LGBMHyperparams.from_constants()
+
+    result_default = alpha.fit_side_model(
+        df, side=1, variant=alpha.VARIANT_CAMADA0, hyper=hyper, seed=7,
+        target_signal_rate=0.05,
+    )
+    result_explicit_none = alpha.fit_side_model(
+        df, side=1, variant=alpha.VARIANT_CAMADA0, hyper=hyper, seed=7,
+        target_signal_rate=0.05, tau_window_days=None,
+    )
+    assert result_default.tau == pytest.approx(result_explicit_none.tau)

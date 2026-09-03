@@ -1,0 +1,569 @@
+{
+  "baseline_target_signal_rate": 0.0189,
+  "points": [
+    {
+      "frac_folds_usados_pooled": 0.291044776119403,
+      "n_folds_total_pooled": 134,
+      "n_folds_usados_pooled": 39,
+      "n_signal_rate_obs_pooled": 132,
+      "per_combo": [
+        {
+          "n_folds_degenerados": 9,
+          "n_folds_total": 19,
+          "n_folds_usados": 10,
+          "resolution_id": "R2",
+          "signal_rate_mean": 0.016892819364351313,
+          "signal_rate_std": 0.0377930572053543,
+          "symbol": "BTCUSDT",
+          "variant": "camada1"
+        },
+        {
+          "n_folds_degenerados": 13,
+          "n_folds_total": 19,
+          "n_folds_usados": 6,
+          "resolution_id": "R2",
+          "signal_rate_mean": 0.009675997731815596,
+          "signal_rate_std": 0.018252830965448507,
+          "symbol": "BTCUSDT",
+          "variant": "camada0"
+        },
+        {
+          "n_folds_degenerados": 9,
+          "n_folds_total": 12,
+          "n_folds_usados": 3,
+          "resolution_id": "R2",
+          "signal_rate_mean": 0.001994685040985543,
+          "signal_rate_std": 0.0029519055354473352,
+          "symbol": "SOLUSDT",
+          "variant": "camada1"
+        },
+        {
+          "n_folds_degenerados": 10,
+          "n_folds_total": 12,
+          "n_folds_usados": 2,
+          "resolution_id": "R2",
+          "signal_rate_mean": 0.0011203690345887695,
+          "signal_rate_std": 0.0020270415146780496,
+          "symbol": "SOLUSDT",
+          "variant": "camada0"
+        },
+        {
+          "n_folds_degenerados": 10,
+          "n_folds_total": 12,
+          "n_folds_usados": 2,
+          "resolution_id": "R3",
+          "signal_rate_mean": 0.00499376801337958,
+          "signal_rate_std": 0.008881382589661462,
+          "symbol": "SOLUSDT",
+          "variant": "camada1"
+        },
+        {
+          "n_folds_degenerados": 10,
+          "n_folds_total": 12,
+          "n_folds_usados": 2,
+          "resolution_id": "R3",
+          "signal_rate_mean": 0.005137080637238022,
+          "signal_rate_std": 0.008724534802823798,
+          "symbol": "SOLUSDT",
+          "variant": "camada0"
+        },
+        {
+          "n_folds_degenerados": 9,
+          "n_folds_total": 12,
+          "n_folds_usados": 3,
+          "resolution_id": "R2",
+          "signal_rate_mean": 0.0025167546783934802,
+          "signal_rate_std": 0.003865049440227952,
+          "symbol": "XRPUSDT",
+          "variant": "camada1"
+        },
+        {
+          "n_folds_degenerados": 6,
+          "n_folds_total": 12,
+          "n_folds_usados": 6,
+          "resolution_id": "R2",
+          "signal_rate_mean": 0.007310471291992836,
+          "signal_rate_std": 0.007978165041636684,
+          "symbol": "XRPUSDT",
+          "variant": "camada0"
+        },
+        {
+          "n_folds_degenerados": 10,
+          "n_folds_total": 12,
+          "n_folds_usados": 2,
+          "resolution_id": "R3",
+          "signal_rate_mean": 0.006859118999777122,
+          "signal_rate_std": 0.009707580659822057,
+          "symbol": "XRPUSDT",
+          "variant": "camada1"
+        },
+        {
+          "n_folds_degenerados": 9,
+          "n_folds_total": 12,
+          "n_folds_usados": 3,
+          "resolution_id": "R3",
+          "signal_rate_mean": 0.004978663029113509,
+          "signal_rate_std": 0.005925467847242272,
+          "symbol": "XRPUSDT",
+          "variant": "camada0"
+        }
+      ],
+      "signal_rate_mean_pooled": 0.006796739669974475,
+      "signal_rate_std_pooled": 0.017232336520881866,
+      "target_signal_rate": 0.0095,
+      "tau_window_days": 180
+    },
+    {
+      "frac_folds_usados_pooled": 0.35074626865671643,
+      "n_folds_total_pooled": 134,
+      "n_folds_usados_pooled": 47,
+      "n_signal_rate_obs_pooled": 132,
+      "per_combo": [
+        {
+          "n_folds_degenerados": 9,
+          "n_folds_total": 19,
+          "n_folds_usados": 10,
+          "resolution_id": "R2",
+          "signal_rate_mean": 0.019800296139119673,
+          "signal_rate_std": 0.038521783225725664,
+          "symbol": "BTCUSDT",
+          "variant": "camada1"
+        },
+        {
+          "n_folds_degenerados": 13,
+          "n_folds_total": 19,
+          "n_folds_usados": 6,
+          "resolution_id": "R2",
+          "signal_rate_mean": 0.009675997731815596,
+          "signal_rate_std": 0.018252830965448507,
+          "symbol": "BTCUSDT",
+          "variant": "camada0"
+        },
+        {
+          "n_folds_degenerados": 7,
+          "n_folds_total": 12,
+          "n_folds_usados": 5,
+          "resolution_id": "R2",
+          "signal_rate_mean": 0.004841681382931551,
+          "signal_rate_std": 0.00722941625653289,
+          "symbol": "SOLUSDT",
+          "variant": "camada1"
+        },
+        {
+          "n_folds_degenerados": 9,
+          "n_folds_total": 12,
+          "n_folds_usados": 3,
+          "resolution_id": "R2",
+          "signal_rate_mean": 0.004055586168374407,
+          "signal_rate_std": 0.009183769577420653,
+          "symbol": "SOLUSDT",
+          "variant": "camada0"
+        },
+        {
+          "n_folds_degenerados": 7,
+          "n_folds_total": 12,
+          "n_folds_usados": 5,
+          "resolution_id": "R3",
+          "signal_rate_mean": 0.008755764877307224,
+          "signal_rate_std": 0.010666960598944125,
+          "symbol": "SOLUSDT",
+          "variant": "camada1"
+        },
+        {
+          "n_folds_degenerados": 10,
+          "n_folds_total": 12,
+          "n_folds_usados": 2,
+          "resolution_id": "R3",
+          "signal_rate_mean": 0.005137080637238022,
+          "signal_rate_std": 0.008724534802823798,
+          "symbol": "SOLUSDT",
+          "variant": "camada0"
+        },
+        {
+          "n_folds_degenerados": 9,
+          "n_folds_total": 12,
+          "n_folds_usados": 3,
+          "resolution_id": "R2",
+          "signal_rate_mean": 0.00578852069709028,
+          "signal_rate_std": 0.01290354162657947,
+          "symbol": "XRPUSDT",
+          "variant": "camada1"
+        },
+        {
+          "n_folds_degenerados": 5,
+          "n_folds_total": 12,
+          "n_folds_usados": 7,
+          "resolution_id": "R2",
+          "signal_rate_mean": 0.008393212403603136,
+          "signal_rate_std": 0.008357004088166977,
+          "symbol": "XRPUSDT",
+          "variant": "camada0"
+        },
+        {
+          "n_folds_degenerados": 9,
+          "n_folds_total": 12,
+          "n_folds_usados": 3,
+          "resolution_id": "R3",
+          "signal_rate_mean": 0.009178706628643101,
+          "signal_rate_std": 0.011659750695270032,
+          "symbol": "XRPUSDT",
+          "variant": "camada1"
+        },
+        {
+          "n_folds_degenerados": 9,
+          "n_folds_total": 12,
+          "n_folds_usados": 3,
+          "resolution_id": "R3",
+          "signal_rate_mean": 0.007357690712344732,
+          "signal_rate_std": 0.01207957105617667,
+          "symbol": "XRPUSDT",
+          "variant": "camada0"
+        }
+      ],
+      "signal_rate_mean_pooled": 0.008883880392175941,
+      "signal_rate_std_pooled": 0.018625478824333446,
+      "target_signal_rate": 0.0142,
+      "tau_window_days": 180
+    },
+    {
+      "frac_folds_usados_pooled": 0.44029850746268656,
+      "n_folds_total_pooled": 134,
+      "n_folds_usados_pooled": 59,
+      "n_signal_rate_obs_pooled": 132,
+      "per_combo": [
+        {
+          "n_folds_degenerados": 9,
+          "n_folds_total": 19,
+          "n_folds_usados": 10,
+          "resolution_id": "R2",
+          "signal_rate_mean": 0.02093547749222653,
+          "signal_rate_std": 0.04109428921014138,
+          "symbol": "BTCUSDT",
+          "variant": "camada1"
+        },
+        {
+          "n_folds_degenerados": 12,
+          "n_folds_total": 19,
+          "n_folds_usados": 7,
+          "resolution_id": "R2",
+          "signal_rate_mean": 0.014121267736342265,
+          "signal_rate_std": 0.025049724481644307,
+          "symbol": "BTCUSDT",
+          "variant": "camada0"
+        },
+        {
+          "n_folds_degenerados": 7,
+          "n_folds_total": 12,
+          "n_folds_usados": 5,
+          "resolution_id": "R2",
+          "signal_rate_mean": 0.004841681382931551,
+          "signal_rate_std": 0.00722941625653289,
+          "symbol": "SOLUSDT",
+          "variant": "camada1"
+        },
+        {
+          "n_folds_degenerados": 9,
+          "n_folds_total": 12,
+          "n_folds_usados": 3,
+          "resolution_id": "R2",
+          "signal_rate_mean": 0.005936850673931769,
+          "signal_rate_std": 0.010657740787835036,
+          "symbol": "SOLUSDT",
+          "variant": "camada0"
+        },
+        {
+          "n_folds_degenerados": 7,
+          "n_folds_total": 12,
+          "n_folds_usados": 5,
+          "resolution_id": "R3",
+          "signal_rate_mean": 0.009455849920175771,
+          "signal_rate_std": 0.010839179066980377,
+          "symbol": "SOLUSDT",
+          "variant": "camada1"
+        },
+        {
+          "n_folds_degenerados": 8,
+          "n_folds_total": 12,
+          "n_folds_usados": 4,
+          "resolution_id": "R3",
+          "signal_rate_mean": 0.017724312740257566,
+          "signal_rate_std": 0.026318813950901312,
+          "symbol": "SOLUSDT",
+          "variant": "camada0"
+        },
+        {
+          "n_folds_degenerados": 6,
+          "n_folds_total": 12,
+          "n_folds_usados": 6,
+          "resolution_id": "R2",
+          "signal_rate_mean": 0.013963333763330811,
+          "signal_rate_std": 0.01585503714001033,
+          "symbol": "XRPUSDT",
+          "variant": "camada1"
+        },
+        {
+          "n_folds_degenerados": 3,
+          "n_folds_total": 12,
+          "n_folds_usados": 9,
+          "resolution_id": "R2",
+          "signal_rate_mean": 0.011721783329808883,
+          "signal_rate_std": 0.010146632398516521,
+          "symbol": "XRPUSDT",
+          "variant": "camada0"
+        },
+        {
+          "n_folds_degenerados": 6,
+          "n_folds_total": 12,
+          "n_folds_usados": 6,
+          "resolution_id": "R3",
+          "signal_rate_mean": 0.01970061929308022,
+          "signal_rate_std": 0.020304818646399984,
+          "symbol": "XRPUSDT",
+          "variant": "camada1"
+        },
+        {
+          "n_folds_degenerados": 8,
+          "n_folds_total": 12,
+          "n_folds_usados": 4,
+          "resolution_id": "R3",
+          "signal_rate_mean": 0.011364100968754988,
+          "signal_rate_std": 0.01767920339123342,
+          "symbol": "XRPUSDT",
+          "variant": "camada0"
+        }
+      ],
+      "signal_rate_mean_pooled": 0.013390331810465887,
+      "signal_rate_std_pooled": 0.023013178381091667,
+      "target_signal_rate": 0.0189,
+      "tau_window_days": 180
+    },
+    {
+      "frac_folds_usados_pooled": 0.4701492537313433,
+      "n_folds_total_pooled": 134,
+      "n_folds_usados_pooled": 63,
+      "n_signal_rate_obs_pooled": 132,
+      "per_combo": [
+        {
+          "n_folds_degenerados": 9,
+          "n_folds_total": 19,
+          "n_folds_usados": 10,
+          "resolution_id": "R2",
+          "signal_rate_mean": 0.023353820457651792,
+          "signal_rate_std": 0.041080190058623,
+          "symbol": "BTCUSDT",
+          "variant": "camada1"
+        },
+        {
+          "n_folds_degenerados": 12,
+          "n_folds_total": 19,
+          "n_folds_usados": 7,
+          "resolution_id": "R2",
+          "signal_rate_mean": 0.014121267736342265,
+          "signal_rate_std": 0.025049724481644307,
+          "symbol": "BTCUSDT",
+          "variant": "camada0"
+        },
+        {
+          "n_folds_degenerados": 6,
+          "n_folds_total": 12,
+          "n_folds_usados": 6,
+          "resolution_id": "R2",
+          "signal_rate_mean": 0.009332877449289673,
+          "signal_rate_std": 0.01386880294885307,
+          "symbol": "SOLUSDT",
+          "variant": "camada1"
+        },
+        {
+          "n_folds_degenerados": 9,
+          "n_folds_total": 12,
+          "n_folds_usados": 3,
+          "resolution_id": "R2",
+          "signal_rate_mean": 0.005936850673931769,
+          "signal_rate_std": 0.010657740787835036,
+          "symbol": "SOLUSDT",
+          "variant": "camada0"
+        },
+        {
+          "n_folds_degenerados": 7,
+          "n_folds_total": 12,
+          "n_folds_usados": 5,
+          "resolution_id": "R3",
+          "signal_rate_mean": 0.01710435107939506,
+          "signal_rate_std": 0.03194847157651839,
+          "symbol": "SOLUSDT",
+          "variant": "camada1"
+        },
+        {
+          "n_folds_degenerados": 6,
+          "n_folds_total": 12,
+          "n_folds_usados": 6,
+          "resolution_id": "R3",
+          "signal_rate_mean": 0.022891724752849913,
+          "signal_rate_std": 0.03062741168417675,
+          "symbol": "SOLUSDT",
+          "variant": "camada0"
+        },
+        {
+          "n_folds_degenerados": 6,
+          "n_folds_total": 12,
+          "n_folds_usados": 6,
+          "resolution_id": "R2",
+          "signal_rate_mean": 0.015864800469003976,
+          "signal_rate_std": 0.018308925318486626,
+          "symbol": "XRPUSDT",
+          "variant": "camada1"
+        },
+        {
+          "n_folds_degenerados": 3,
+          "n_folds_total": 12,
+          "n_folds_usados": 9,
+          "resolution_id": "R2",
+          "signal_rate_mean": 0.023713110221505292,
+          "signal_rate_std": 0.02690463930642736,
+          "symbol": "XRPUSDT",
+          "variant": "camada0"
+        },
+        {
+          "n_folds_degenerados": 6,
+          "n_folds_total": 12,
+          "n_folds_usados": 6,
+          "resolution_id": "R3",
+          "signal_rate_mean": 0.01970061929308022,
+          "signal_rate_std": 0.020304818646399984,
+          "symbol": "XRPUSDT",
+          "variant": "camada1"
+        },
+        {
+          "n_folds_degenerados": 7,
+          "n_folds_total": 12,
+          "n_folds_usados": 5,
+          "resolution_id": "R3",
+          "signal_rate_mean": 0.01567032106444877,
+          "signal_rate_std": 0.02281768087849016,
+          "symbol": "XRPUSDT",
+          "variant": "camada0"
+        }
+      ],
+      "signal_rate_mean_pooled": 0.016947935208590524,
+      "signal_rate_std_pooled": 0.027091702216286574,
+      "target_signal_rate": 0.0236,
+      "tau_window_days": 180
+    },
+    {
+      "frac_folds_usados_pooled": 0.5223880597014925,
+      "n_folds_total_pooled": 134,
+      "n_folds_usados_pooled": 70,
+      "n_signal_rate_obs_pooled": 132,
+      "per_combo": [
+        {
+          "n_folds_degenerados": 9,
+          "n_folds_total": 19,
+          "n_folds_usados": 10,
+          "resolution_id": "R2",
+          "signal_rate_mean": 0.02343649241532375,
+          "signal_rate_std": 0.04105256480650459,
+          "symbol": "BTCUSDT",
+          "variant": "camada1"
+        },
+        {
+          "n_folds_degenerados": 11,
+          "n_folds_total": 19,
+          "n_folds_usados": 8,
+          "resolution_id": "R2",
+          "signal_rate_mean": 0.017316478993147724,
+          "signal_rate_std": 0.028911817322895723,
+          "symbol": "BTCUSDT",
+          "variant": "camada0"
+        },
+        {
+          "n_folds_degenerados": 5,
+          "n_folds_total": 12,
+          "n_folds_usados": 7,
+          "resolution_id": "R2",
+          "signal_rate_mean": 0.015537052336689837,
+          "signal_rate_std": 0.01742019286944977,
+          "symbol": "SOLUSDT",
+          "variant": "camada1"
+        },
+        {
+          "n_folds_degenerados": 8,
+          "n_folds_total": 12,
+          "n_folds_usados": 4,
+          "resolution_id": "R2",
+          "signal_rate_mean": 0.006898685084519643,
+          "signal_rate_std": 0.010599211476829958,
+          "symbol": "SOLUSDT",
+          "variant": "camada0"
+        },
+        {
+          "n_folds_degenerados": 7,
+          "n_folds_total": 12,
+          "n_folds_usados": 5,
+          "resolution_id": "R3",
+          "signal_rate_mean": 0.01710435107939506,
+          "signal_rate_std": 0.03194847157651839,
+          "symbol": "SOLUSDT",
+          "variant": "camada1"
+        },
+        {
+          "n_folds_degenerados": 6,
+          "n_folds_total": 12,
+          "n_folds_usados": 6,
+          "resolution_id": "R3",
+          "signal_rate_mean": 0.027331615463232428,
+          "signal_rate_std": 0.032429666399172406,
+          "symbol": "SOLUSDT",
+          "variant": "camada0"
+        },
+        {
+          "n_folds_degenerados": 5,
+          "n_folds_total": 12,
+          "n_folds_usados": 7,
+          "resolution_id": "R2",
+          "signal_rate_mean": 0.020523328633546136,
+          "signal_rate_std": 0.01915387715872644,
+          "symbol": "XRPUSDT",
+          "variant": "camada1"
+        },
+        {
+          "n_folds_degenerados": 2,
+          "n_folds_total": 12,
+          "n_folds_usados": 10,
+          "resolution_id": "R2",
+          "signal_rate_mean": 0.035420597770637004,
+          "signal_rate_std": 0.03254050416756483,
+          "symbol": "XRPUSDT",
+          "variant": "camada0"
+        },
+        {
+          "n_folds_degenerados": 6,
+          "n_folds_total": 12,
+          "n_folds_usados": 6,
+          "resolution_id": "R3",
+          "signal_rate_mean": 0.020181388523849448,
+          "signal_rate_std": 0.01989686625281901,
+          "symbol": "XRPUSDT",
+          "variant": "camada1"
+        },
+        {
+          "n_folds_degenerados": 5,
+          "n_folds_total": 12,
+          "n_folds_usados": 7,
+          "resolution_id": "R3",
+          "signal_rate_mean": 0.023310245456595973,
+          "signal_rate_std": 0.028958225493313505,
+          "symbol": "XRPUSDT",
+          "variant": "camada0"
+        }
+      ],
+      "signal_rate_mean_pooled": 0.02067606558737934,
+      "signal_rate_std_pooled": 0.02932028605127152,
+      "target_signal_rate": 0.0284,
+      "tau_window_days": 180
+    }
+  ],
+  "producer_entrypoint": "scripts.sweep_tau_mechanism",
+  "seed": 42,
+  "stage": "B",
+  "tau_window_days_locked": 180
+}

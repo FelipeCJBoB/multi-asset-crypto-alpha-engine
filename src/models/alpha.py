@@ -1251,6 +1251,7 @@ def fit_side_model(
     ic_magnitude_floor_k: float | None = None,
     early_stopping_mode: str = EARLY_STOPPING_FIXED,
     monotone_screen_override: dict[str, monotonic.FeatureICResult] | None = None,
+    tau_window_days: int | None = None,
 ) -> SideModelResult:
     """Treina UM binário (`M_long` se `side=1`, `M_short` se `side=-1`)
     sobre `train_side_df` — já filtrado por `src.models.dataset.
@@ -1318,7 +1319,28 @@ def fit_side_model(
     Default `None` preserva bit-exato todo call site existente — não
     compatível com `null_permutation_seed` setado (o override reflete
     dado NÃO permutado; só `run_search_for_combo`, que nunca permuta,
-    passa isso)."""
+    passa isso).
+
+    `tau_window_days` (item 3 do roadmap de correção do mecanismo de tau,
+    2026-09-03, decisão do Manager) — `None` (default histórico) resolve
+    `tau` sobre `calibrated_train_all` INTEIRO (todo o treino expansivo,
+    cada vez mais dominado por regimes antigos conforme o walk-forward
+    avança). Setado (ex. 180 -- "últimos 6 meses", ROLANTE, âncora em
+    `max(t0_ms_all)` deste fold, não em `test_start` externo -- não
+    depende de calendário absoluto, funciona igual em todo fold, mesmo
+    nos símbolos com histórico curto, achado do discovery desta correção)
+    restringe a POPULAÇÃO QUE CALIBRA O LIMIAR à janela recente -- nunca
+    o `fit`/`stop`/`calib` do modelo em si (`X_fit`/`X_calib` continuam
+    sobre o expansivo inteiro; só o quantil de `tau`, um pós-processamento
+    puro sobre scores já calculados, é que passa a olhar só pro recente).
+    Reusa o MESMO guard de amostra mínima de `MIN_OCCURRENCES_ABOVE_TAU`
+    já usado por `_resolve_tau_on_common_bars` (AG-210) -- se a janela não
+    comportar `ceil(10/target_signal_rate)` pontos, cai pro treino inteiro
+    com aviso LOGADO, nunca silencioso. Purge/leakage: nenhum risco novo
+    -- é um SUBCONJUNTO do treino já purgado por `walk_forward.py`
+    (`train_idx` já garante `t1 < test_start` linha a linha antes de
+    chegar aqui), a garantia é por linha, não pela composição do
+    conjunto, então herda a purga automaticamente."""
     if null_permutation_seed is not None:
         train_side_df = _permute_label_and_ret_net(train_side_df, null_permutation_seed)
 
@@ -1711,7 +1733,15 @@ def fit_side_model(
 
     raw_train_all = np.asarray(model.predict_proba(X_all))[:, 1]
     calibrated_train_all = calibrator.predict(raw_train_all)
-    tau = float(np.quantile(calibrated_train_all, 1.0 - target_signal_rate))
+    tau_pool, _tau_pool_is_windowed = _select_tau_calibration_pool(
+        calibrated_train_all,
+        t0_ms_all,
+        tau_window_days=tau_window_days,
+        target_signal_rate=target_signal_rate,
+        side=side,
+        variant=variant,
+    )
+    tau = float(np.quantile(tau_pool, 1.0 - target_signal_rate))
 
     # D-08 (docs/alpha_model_design_doc_2026-08-22.md §4): API do LightGBM
     # substitui `booster.get_score(importance_type="total_gain")` (parsing
@@ -1893,6 +1923,74 @@ def unique_test_bars(
 # leitura com sentido), em vez de declarar um segundo "10" independente
 # que pudesse divergir deste com o tempo.
 MIN_OCCURRENCES_ABOVE_TAU = 10  # noqa: magic-number
+
+#: ms/dia -- conversão de unidade pura, não constante de domínio (mesma
+#: classe de `ms_per_hour` em `group_e.e05f_time_to_funding_h`).
+_MS_PER_DAY = 24 * 60 * 60 * 1000  # noqa: magic-number
+
+
+def _select_tau_calibration_pool(
+    calibrated_train_all: FloatArray,
+    t0_ms_all: IntArray | None,
+    *,
+    tau_window_days: int | None,
+    target_signal_rate: float,
+    side: int,
+    variant: str,
+) -> tuple[FloatArray, bool]:
+    """Item 3 do roadmap de correção do mecanismo de tau (2026-09-03) --
+    núcleo puro (zero IO) que decide QUAL subconjunto de `calibrated_
+    train_all` alimenta o quantil de `tau` em `fit_side_model`.
+
+    `tau_window_days=None` devolve `calibrated_train_all` inteiro,
+    inalterado -- bit-exato todo caller que não pede a janela nova.
+
+    `tau_window_days` setado: janela ROLANTE ancorada em `max(t0_ms_all)`
+    (o último instante de treino deste fold, não um `test_start` externo
+    -- funciona igual em todo fold/símbolo, mesmo histórico curto).
+    Guard de amostra mínima IDÊNTICO a `_resolve_tau_on_common_bars`
+    (AG-210): se a janela não comportar `ceil(MIN_OCCURRENCES_ABOVE_TAU /
+    target_signal_rate)` pontos, cai pro pool inteiro com aviso LOGADO --
+    nunca um `tau` estimado sobre amostra pequena demais, e nunca
+    silenciosamente diferente do que o log documenta.
+
+    Devolve `(pool, is_windowed)` -- `is_windowed=False` tanto no caso
+    `None` quanto no caso de fallback por amostra insuficiente, pra quem
+    chama poder registrar (`SideModelResult`/diagnostics) se a janela
+    pedida de fato foi aplicada."""
+    if tau_window_days is None:
+        return calibrated_train_all, False
+    if t0_ms_all is None:
+        logger.warning(
+            "models.alpha.tau_window_sem_t0_fallback_pool_inteiro",
+            side=side,
+            variant=variant,
+            tau_window_days=tau_window_days,
+            detail="train_side_df sem coluna t0 -- tau_window_days exige t0 pra ancorar a "
+            "janela rolante; caiu pro pool inteiro (mesmo comportamento de tau_window_days="
+            "None)",
+        )
+        return calibrated_train_all, False
+
+    cutoff_ms = int(np.max(t0_ms_all)) - tau_window_days * _MS_PER_DAY
+    in_window = t0_ms_all >= cutoff_ms
+    n_in_window = int(np.count_nonzero(in_window))
+    min_bars = int(np.ceil(MIN_OCCURRENCES_ABOVE_TAU / target_signal_rate))
+    if n_in_window < min_bars:
+        logger.warning(
+            "models.alpha.tau_window_amostra_insuficiente_fallback_pool_inteiro",
+            side=side,
+            variant=variant,
+            tau_window_days=tau_window_days,
+            n_in_window=n_in_window,
+            min_bars_required=min_bars,
+            n_pool_inteiro=int(calibrated_train_all.shape[0]),
+            detail="janela recente nao comporta o quantil 1-target_signal_rate com "
+            "ocorrencias suficientes acima do corte -- tau resolvido sobre o pool de "
+            "calibracao INTEIRO (mesmo criterio de _resolve_tau_on_common_bars, AG-210)",
+        )
+        return calibrated_train_all, False
+    return calibrated_train_all[in_window], True
 
 
 def _resolve_tau_on_common_bars(
@@ -2094,6 +2192,8 @@ def run_fold(
     enforce_r2: bool = True,
     monotone_screen_override_by_side: dict[int, dict[str, monotonic.FeatureICResult]]
     | None = None,
+    target_signal_rate: float | None = None,
+    tau_window_days: int | None = None,
 ) -> FoldResult:
     """`symbol`/`resolution_id` (D-03, `docs/alpha_model_design_doc_
     2026-08-22.md`) — colunas explícitas no schema de saída, mesma classe
@@ -2144,7 +2244,17 @@ def run_fold(
     `monotone_screen_override_by_side` (AG-380) -- repassado sem alteração
     pros dois `fit_side_model`, indexado por `side` (`1`/`-1`). Default
     `None` preserva bit-exato -- só `run_all_folds` chamado por
-    `hyperparams_optuna.run_search_for_combo` passa isso."""
+    `hyperparams_optuna.run_search_for_combo` passa isso.
+
+    `target_signal_rate`/`tau_window_days` (itens 2/3/6/7 do roadmap de
+    correção do mecanismo de tau, 2026-09-03) -- `None` (default) resolve
+    `target_signal_rate` de `constants.yaml` como sempre (bit-exato todo
+    call site existente); setado, sobrepõe a constante de produção SEM
+    tocar `constants.yaml` -- mesmo padrão sentinela de `hyper`/`tau_
+    policy`, existe pra permitir varrer valores candidatos (sweep) e medir
+    janela de calibração recente sem editar o arquivo de produção a cada
+    ponto. Repassado sem alteração aos dois `fit_side_model` e a `_resolve_
+    tau_on_common_bars`/`_resolve_lambda_on_common_bars` quando aplicável."""
     train_bars = df_all[split.train_idx]
     test_bars = df_all[split.test_idx]
 
@@ -2157,7 +2267,17 @@ def run_fold(
     train_short = ds.side_subset(
         train_bars, side=-1, feature_ids=feature_ids, enforce_r2=enforce_r2
     )
-    target_signal_rate = float(load_constant("target_signal_rate"))
+    if target_signal_rate is None:
+        target_signal_rate = float(load_constant("target_signal_rate"))
+    # Item 3 do roadmap de correção do mecanismo de tau (2026-09-03) --
+    # [PROMOVIDO A DEFAULT DE PRODUÇÃO] `None` resolve pra `constants.
+    # yaml::tau_calibration_window_days` (180 -- medido, ver proveniência
+    # da constante), não mais "sem janela". Mesmo padrão sentinela de
+    # `target_signal_rate` logo acima -- `tau_window_days` explícito
+    # continua disponível pra quem quer um valor DIFERENTE do default de
+    # produção (`scripts.sweep_tau_mechanism`, comparação lado-a-lado).
+    if tau_window_days is None:
+        tau_window_days = int(load_constant("tau_calibration_window_days"))
 
     perm_seed_long = (
         _derived_seed(null_permutation_seed, split.split_id, 1)
@@ -2192,6 +2312,7 @@ def run_fold(
             if monotone_screen_override_by_side is not None
             else None
         ),
+        tau_window_days=tau_window_days,
     )
     short_result = fit_side_model(
         train_short,
@@ -2215,6 +2336,7 @@ def run_fold(
             if monotone_screen_override_by_side is not None
             else None
         ),
+        tau_window_days=tau_window_days,
     )
 
     # AG-210 -- resolução de `tau`. No caminho legado, cada lado usa o
@@ -2399,6 +2521,8 @@ def run_all_folds(
         tuple[int, int], dict[str, monotonic.FeatureICResult]
     ]
     | None = None,
+    target_signal_rate: float | None = None,
+    tau_window_days: int | None = None,
 ) -> list[FoldResult]:
     """`feature_ids` (2026-08-24, `docs/t2_t1_promotion_ablation_design_doc_
     2026-08-24.md` §5.2) — default `T1_FEATURE_IDS` preserva bit-exato
@@ -2430,7 +2554,11 @@ def run_all_folds(
     pré-computado 1x fora do loop de trials do Optuna (a triagem de
     monotonicidade nunca depende de hiperparâmetro buscado, recalculá-la
     por trial é trabalho redundante puro -- ~39% do custo de um trial,
-    medido via `cProfile`)."""
+    medido via `cProfile`).
+
+    `target_signal_rate`/`tau_window_days` (itens 2/3/6/7 do roadmap de
+    correção do mecanismo de tau, 2026-09-03) -- repassados sem alteração
+    pra `run_fold` em cada split, ver docstring de lá."""
     hyper = hyper if hyper is not None else LGBMHyperparams.from_constants()
     seed = seed if seed is not None else int(load_constant("alpha_random_seed"))
 
@@ -2471,6 +2599,8 @@ def run_all_folds(
                 if monotone_screen_override_by_split_side is not None
                 else None
             ),
+            target_signal_rate=target_signal_rate,
+            tau_window_days=tau_window_days,
         )
         logger.info(
             "models.alpha.run_fold_done",

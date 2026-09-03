@@ -1405,6 +1405,19 @@ def test_e08f_e14f_e16f_e18f_sao_passthrough() -> None:
     np.testing.assert_array_equal(group_e.e18f_taker_ls_vol_ratio(values), values)
 
 
+def test_e21f_toptrader_ls_ratio_count_e_passthrough() -> None:
+    """AG-426 (2026-09-02) implementou `E21f` sem teste dedicado
+    (instrução explícita do Manager, "nada de testes" naquela rodada) --
+    `registry.yaml::E21f_toptrader_ls_ratio_count.parity_tested` ficou
+    `false` documentando a lacuna. Fechada aqui (autorização de teste
+    real restaurada, achado via `test_registry_parity_tested_true_em_
+    todas_as_entradas` -- mesma causalidade passthrough das 4 irmãs
+    acima, não separado por acidente, só nunca fechado até agora)."""
+    rng = np.random.default_rng(101)
+    values = rng.normal(0, 1, 50)
+    np.testing.assert_array_equal(group_e.e21f_toptrader_ls_ratio_count(values), values)
+
+
 def test_e15f_reproduz_expanding_zscore_strict() -> None:
     rng = np.random.default_rng(89)
     values = rng.uniform(1.0, 3.0, 150)

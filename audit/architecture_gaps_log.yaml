@@ -27943,3 +27943,117 @@ entries:
     resolved_by_commit: null
     resolution: "aplicado -- feature nova implementada em todos os pontos de producao necessarios (fonte/nucleo/registry/deteccao de carregamento), sem gate formal de step 5 isolado (override deliberado do Manager, mesmo precedente do Lote D/AG-372) -- o retreino que segue esta entrada funciona como o teste de valor incremental."
     status: "aplicado, NAO verificado por execucao -- pendente do usuario rodar o retreino real (scripts.run_walk_forward_with_predictions) pra confirmar que o vetor de 31 features carrega/treina sem erro e pra medir se E21f de fato agrega valor incremental. Reverter (tirar de T1_FEATURE_IDS, manter no registry como T2/L4) se a leitura mostrar que nao agrega."
+
+  - id: AG-427
+    date: "2026-09-03"
+    file: "src/models/alpha.py (_select_tau_calibration_pool nova, tau_window_days em fit_side_model/run_fold/run_all_folds); src/models/walk_forward.py (tau_window_days/target_signal_rate em run_walk_forward_for_combo); config/constants.yaml (target_signal_rate atualizado, tau_calibration_window_days novo); scripts/sweep_tau_mechanism.py (novo); tests/unit/test_models_alpha_ag208_217.py (+6 testes); tests/unit/test_models_walk_forward_driver.py (+2 testes)"
+    related_file: "investigacao SOLUSDT/R3 x XRPUSDT/R3 desta sessao (8 combinacoes long/short x C1/C0, achado que motivou a correcao); AG-114 (HMM k4, item 4 descartado); PLANO_MESTRE_PRINCE2.md SS15.20 (metodologia H0-H6, 2026-08-24, H4=variar target_signal_rate nunca executada ate agora)"
+    numeracao: "AG-427."
+    found_by: >-
+      Investigacao ponta-a-ponta pedida pelo Manager sobre SOLUSDT/R3 e
+      XRPUSDT/R3 (long/short x Camada1/Camada0, 8 combinacoes) achou que
+      o gargalo de poucos trades no walk-forward real nao e execucao
+      (fill rate ~100%) nem falta de barra (1000-1500 barras/trimestre)
+      -- e o modelo raramente cruzar `tau`, com a taxa de sinal realizada
+      oscilando de 0% a 6%+ entre trimestres do MESMO fold sequence.
+      Diagnostico (item 1, sem retreino): correlacao +0,25 pooled (ate
+      +0,72 em XRPUSDT/R3) entre `signal_rate_realized` e volatilidade
+      real do trimestre -- o silencio correlaciona com o mercado estar
+      genuinamente calmo, mas `tau` (quantil sobre TODO o treino
+      expansivo) nao acompanha isso, fica cada vez mais dominado por
+      regimes antigos. Manager aprovou 7 itens de correcao com adendos;
+      itens 4 (HMM k4 -- custo de horas/simbolo, zero artefato
+      persistido, escopo diferente do autorizado em AG-114) e 5
+      (target_signal_rate por candidato -- sem dado de spread real
+      atual, book_ticker e pre-RPI/obsoleto) descartados explicitamente
+      pelo Manager apos discovery revelar o custo/limitacao real.
+    gap: >
+      `tau` = quantil `1-target_signal_rate` sobre `calibrated_train_
+      all` INTEIRO (todo o treino expansivo do fold) -- sem sensibilidade
+      a regime/periodo recente. `target_signal_rate=0,0189` era `DERIVED`
+      de `fee_budget_monthly`, ela propria `ASSUMED` ("sem base;
+      inventado", confissao literal do autor original no PRD, SS18.5.1).
+      Consequencia medida: 30,60% dos folds walk-forward (41/134, 5
+      candidatos x 2 camadas x ate 12 trimestres) tinham >=10 trades --
+      o piso de amostra minima pro gate Data -- e 1 celula (SOLUSDT/R3/
+      Camada1/short) tinha ZERO trimestres usaveis em 12.
+    severity: "alta -- mecanismo central de decisao (todo treino de producao passa por aqui), consequencia direta e medida no gate de producao (fracao de fold usavel, base do veredito 0/20 ja reafirmado)"
+    layer: "models (mecanismo de calibracao de tau, usado por CPCV/run_layer1_sprint E walk-forward/run_walk_forward_for_combo E Optuna/hyperparams_optuna -- os 3 pontos de treino de producao herdam a correcao automaticamente via load_constant, nenhuma assinatura de chamador precisou mudar)"
+    consequence: >
+      2 sweeps reais (`scripts.sweep_tau_mechanism`, walk-forward
+      completo, 5 candidatos x 2 camadas, NUNCA otimizado por edge/
+      Sharpe/P&L -- so fracao de fold usavel e desvio-padrao de
+      `signal_rate_realized`, calibracao de instrumentacao, nao de
+      performance, B20):
+
+      Estagio A (`tau_calibration_window_days`, `target_signal_rate`
+      travado em 0,0189): sem janela (legado) 30,60% usaveis (std=
+      0,0135); 90d 44,03% (std=0,0399); 180d 44,03% (std=0,0230,
+      VENCEDOR -- empata em usabilidade, desvio-padrao quase 3x menor
+      que 90d); 270d 38,06% (std=0,0222).
+
+      Estagio B (`target_signal_rate`, `tau_calibration_window_days=180`
+      travado): 0,0095->29,10% (std=0,0172); 0,0142->35,07%
+      (std=0,0186); 0,0189->44,03% (std=0,0230); 0,0236->47,01%
+      (std=0,0271); 0,0284->52,24% (std=0,0293, ADOTADO). Relacao
+      MONOTONICA em todo o range ja declarado -- sem otimo interior;
+      adotado o topo do `sweep_range` ja sancionado (nao busca alem do
+      que ja estava governado), fracao de fold usavel e o problema que
+      esta correcao existe pra resolver.
+
+      `config/constants.yaml::target_signal_rate` 0,0189->0,0284
+      (MEASURED, sweep_required->false). `tau_calibration_window_days`
+      novo, 180, MEASURED, class B. `_select_tau_calibration_pool` novo
+      em `alpha.py` -- pool de calibracao filtrado por janela ROLANTE
+      (ancora em max(t0) do fold, nunca calendario absoluto), guard de
+      amostra minima identico a `_resolve_tau_on_common_bars`/AG-210
+      (`MIN_OCCURRENCES_ABOVE_TAU=10`), fallback LOGADO pro pool inteiro
+      se a janela nao comportar `ceil(10/target_signal_rate)` pontos.
+      `run_fold` resolve `tau_window_days=None`->constante, mesmo padrao
+      de `target_signal_rate` -- [PROMOVIDO A DEFAULT DE PRODUCAO],
+      nenhum flag opt-in (regra CLAUDE.md "correcao vira default").
+      8 testes novos (6 em test_models_alpha_ag208_217.py cobrindo o
+      nucleo puro + bit-exatidao do default antigo, 2 em test_models_
+      walk_forward_driver.py cobrindo o plumbing) -- 170+ testes da
+      suite ampla (alpha/walk_forward/pipeline/persistence/optuna/
+      hyperparams_by_combo) verdes apos o flip de default, 0 quebra.
+      Lint limpo: `banned_patterns.py --strict`, `check_constants_
+      provenance.py`, `check_unguarded_ratios.py`, `mypy --strict`,
+      `ruff check` -- todos rodados contra os arquivos tocados.
+    resolved_by_commit: null
+    resolution: "aplicado e promovido a default de producao -- itens 1 (diagnostico), 2/6/7 (sweep completo + adocao de target_signal_rate medido) e 3 (janela de calibracao de tau) implementados, testados, lintados. Itens 4 (HMM k4) e 5 (target_signal_rate por candidato) descartados por decisao explicita do Manager apos discovery revelar custo/limitacao reais -- nao reabrir sem nova autorizacao. N_lifetime nao incrementado nesta entrada -- Manager declarou irrelevante/nao mais usado nesta sessao. Full run do Alpha Optuna executado (`scripts.run_t0_cutoff_full_campaign --control --tag tau_fix_20260903`, 150 trials x 10 studies, 10/10 concluidos) e promovido a producao (`run_stamp=20260903T115158Z`, `scripts.promote_control_campaign_to_production`). Run Canonico + walk-forward campaign + gates consolidados REGENERADOS sob o mecanismo novo + hiperparametro novo juntos."
+    status: >
+      CONCLUIDO. Veredito final: continua 0/20 combo x camada x lado
+      (nenhuma celula passa os 3 gates simultaneamente) -- mas o quadro
+      mudou de forma real e mensuravel, nao so ruido de reexecucao.
+
+      Run Canonico (CPCV, `n_filled_trades>=10`): Sharpe C1 melhorou nos
+      5 candidatos (BTCUSDT 0,635->0,773; SOLUSDT/R2 -0,404->0,432,
+      voltou a positivo; SOLUSDT/R3 0,899->0,963; XRPUSDT/R2
+      0,178->1,008; XRPUSDT/R3 0,905->0,929). Trades totais quase
+      triplicaram (7.375->18.068).
+
+      Walk-forward real (Fase 4/6 da ADR-008): fracao de fold usavel
+      melhorou substancialmente em varios combos -- `SOLUSDT/R2/Camada0`
+      saiu de ZERO folds usaveis (0/12) pra 7/12; `XRPUSDT/R2/Camada1`
+      foi de 4 pra 11 de 12; `BTCUSDT/R2/Camada0` chegou a 10/12,
+      primeira celula desta serie de correcoes a atingir o piso de
+      producao. **2 celulas passam o gate Data pela primeira vez**
+      (`BTCUSDT/R2/C0` 10/10, `XRPUSDT/R2/C1` 11/10, contra ZERO antes).
+
+      O gargalo do veredito final MUDOU de natureza: era
+      predominantemente falta de amostra (gate Data reprovando quase
+      tudo); agora e majoritariamente falta de significancia estatistica
+      no edge/AUC (gate Alpha/Model) -- uma pergunta genuinamente
+      diferente (sinal fraco/ausente medido com poder estatistico real,
+      nao "nao da pra medir"). Nao isolado por ablation -- a melhora
+      de amostra (mecanismo de tau) e a mudanca de edge (hiperparametro
+      novo do full Optuna) foram medidas JUNTAS nesta passagem, nao
+      separadas uma da outra.
+
+      Artefato "ADR-007 -- Painel de Execucao" atualizado (aba Run
+      Canonico completa, aba ADR-008 com scorecard + Fase 4 + Fase 6):
+      https://claude.ai/code/artifact/ed42926f-90e2-4acd-bf61-58a9e05d9604
+      Fases 5/7/8 + as 2 auditorias (adversarial/engenharia) continuam
+      NAO refeitas -- seguem marcadas pendente no artefato, analise
+      ad-hoc extensa sem script dedicado, fora do escopo desta correcao.

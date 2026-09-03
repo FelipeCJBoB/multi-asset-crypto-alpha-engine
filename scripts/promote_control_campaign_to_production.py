@@ -74,12 +74,22 @@ def main(argv: list[str] | None = None) -> int:
             "study_name": entry["study_name"],
         }
 
+    # AG-427 (2026-09-03) -- texto passou a ser gerado a partir do nome do
+    # arquivo de resultados (via --tag) em vez de hardcoded pra uma unica
+    # rodada histórica (achado real: o texto anterior citava só AG-421/
+    # AG-422, ficou enganoso assim que uma campanha nova/tag diferente
+    # rodasse -- esta função é chamada de novo a cada promoção, não só
+    # uma vez). `stem` do arquivo já carrega o `--tag` (AG-422), suficiente
+    # pra rastrear qual campanha gerou o override sem reescrever este
+    # script a cada correção futura.
     overrides_novos: dict[str, str] = {}
     source_campaign = (
         f"{args.results_path.stem} -- seed corrigido (AG-399), SEM corte de data, "
-        "vetor T1 de 30 features (AG-421), objective com filtro anti-degeneracao "
-        "(AG-422), 1 seed, 150 trials -- NAO e confirmacao multi-seed como o "
-        "processo ADR-007 anterior"
+        "1 seed, 150 trials -- NAO e confirmacao multi-seed como o processo ADR-007 "
+        "anterior. Ver o --tag no nome do arquivo (se houver) pro contexto exato "
+        "desta campanha (vetor de features/mecanismo de tau/etc. vigentes no "
+        "momento em que rodou -- consultar audit/architecture_gaps_log.yaml pela "
+        "data)."
         if args.results_path != _CONTROL_RESULTS_PATH
         else "t0_cutoff_control_campaign (AG-419) -- seed corrigido (AG-399), SEM "
         "corte de data, 1 seed, 150 trials -- NAO e confirmacao multi-seed como o "

@@ -290,7 +290,13 @@ def test_load_metrics_series_deduped_sem_arquivos_retorna_vazio_com_schema(
     assert "_ts_ms" in out.columns
 
 
-def test_load_futures_positioning_aligned_alinha_as_4_colunas(metrics_dir: Path) -> None:
+def test_load_futures_positioning_aligned_alinha_as_5_colunas(metrics_dir: Path) -> None:
+    """AG-426 (2026-09-02) acrescentou `toptrader_ls_ratio_count` (E21f)
+    a `_FUTURES_POSITIONING_COLS` -- fixture desta rodada só tinha as 4
+    colunas antigas, faltava a coluna nova do schema real de
+    `metrics` (`count_toptrader_long_short_ratio`), achado ao rodar a
+    suite de testes cheia sob a correção do mecanismo de tau (AG-427),
+    não relacionado a ela."""
     df = pl.DataFrame(
         {
             "create_time": ["2024-01-01 00:00:00"],
@@ -298,6 +304,7 @@ def test_load_futures_positioning_aligned_alinha_as_4_colunas(metrics_dir: Path)
             "sum_toptrader_long_short_ratio": [1.25],
             "count_long_short_ratio": [0.9],
             "sum_taker_long_short_vol_ratio": [1.1],
+            "count_toptrader_long_short_ratio": [1.05],
         }
     )
     df.write_parquet(metrics_dir / "2024-01-01.parquet")
@@ -323,11 +330,13 @@ def test_load_futures_positioning_aligned_alinha_as_4_colunas(metrics_dir: Path)
         "toptrader_ls_ratio",
         "global_ls_ratio",
         "taker_ls_vol_ratio",
+        "toptrader_ls_ratio_count",
     }
     assert out["oi_notional"][0] == pytest.approx(5_000_000.0)
     assert out["toptrader_ls_ratio"][0] == pytest.approx(1.25)
     assert out["global_ls_ratio"][0] == pytest.approx(0.9)
     assert out["taker_ls_vol_ratio"][0] == pytest.approx(1.1)
+    assert out["toptrader_ls_ratio_count"][0] == pytest.approx(1.05)
 
 
 def test_load_futures_positioning_aligned_sem_arquivos_retorna_null(metrics_dir: Path) -> None:
