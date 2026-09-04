@@ -72,7 +72,11 @@ from src.labels._paths import labels_symbol_tf_dir
 from src.models._constants import load_constant
 from src.models._paths import EXPERIMENTS_DIR
 from src.monitoring.logging import configure_logging
-from src.risk.limits import ControlOutcome, control_13_orcamento_fees
+from src.risk.limits import (
+    ControlOutcome,
+    control_11_nocional_maximo,
+    control_13_orcamento_fees,
+)
 from src.risk.sizing import (
     NonPositiveEquityError,
     SizingResult,
@@ -123,6 +127,16 @@ class CelulaResult:
     custo_mensal_usd: float
     custo_mensal_frac_equity: float
     control_13_outcome: str
+    # AG-448 -- os controles 11 e 12 nunca tinham sido exercidos contra
+    # trade real em lugar nenhum do repositorio (grep fora de limits.py
+    # devolvia 1 linha de docstring). `max_notional_multiple` e classe A
+    # ASSUMED e so morde quando `atr_pct` fica muito baixo -- regime
+    # plausivel em BTC, cuja mediana medida e 0,27%.
+    control_11_outcome: str
+    control_11_frac_fail: float
+    control_12_outcome: str
+    leverage_eff_mediana: float
+    leverage_eff_p95: float
 
 
 def _labels_path(symbol: str, resolution_id: str) -> Path:
@@ -305,6 +319,29 @@ def _mede_celula(
         else float("nan")
     )
 
+    # AG-448 -- controle 11 sobre TODOS os sinais, nao so o primeiro:
+    # `leverage_eff` varia com `atr_pct`, entao o veredito e uma FRACAO,
+    # nao um booleano. Reportar so o primeiro esconderia exatamente o
+    # regime de baixa volatilidade em que o controle morde.
+    lev = np.array(
+        [float(x.leverage_eff) if x is not None else np.nan for x in sizings], dtype=np.float64
+    )
+    fails_11 = [
+        control_11_nocional_maximo(x) == ControlOutcome.FAIL for x in sizings if x is not None
+    ]
+    frac_fail_11 = float(np.mean(fails_11)) if fails_11 else float("nan")
+    outcome_11 = (
+        ControlOutcome.NOT_COMPUTABLE
+        if not fails_11
+        else (ControlOutcome.FAIL if any(fails_11) else ControlOutcome.PASS)
+    )
+    # Controle 12: `im_required_usd` e INJETADO pelo chamador por desenho
+    # (`limits.py` documenta que margem inicial depende de leverage/MMR da
+    # exchange, fora do escopo de `risk/`), e nenhum caller de producao
+    # existe. Nao invento o valor -- declaro NOT_COMPUTABLE, que e a
+    # verdade, e o motivo fica no artefato em vez de virar um PASS falso.
+    outcome_12 = ControlOutcome.NOT_COMPUTABLE
+
     outcome = ControlOutcome.NOT_COMPUTABLE
     primeiro_ok = next((s for s in sizings if s is not None), None)
     if primeiro_ok is not None and np.isfinite(custo_mes):
@@ -340,6 +377,11 @@ def _mede_celula(
             custo_mes / float(equity) if np.isfinite(custo_mes) else float("nan")  # noqa: unguarded-ratio -- equity>0 garantido pelo argparse
         ),
         control_13_outcome=outcome.name,
+        control_11_outcome=outcome_11.name,
+        control_11_frac_fail=frac_fail_11,
+        control_12_outcome=outcome_12.name,
+        leverage_eff_mediana=float(np.nanmedian(lev)) if lev.size else float("nan"),
+        leverage_eff_p95=float(np.nanpercentile(lev, 95)) if lev.size else float("nan"),  # noqa: magic-number -- quantil de relatorio
     )
 
 
@@ -387,6 +429,8 @@ def main() -> None:
                 edge_bps_ponderado=round(r.edge_bps_ponderado_por_nocional, 2),
                 custo_mensal_frac_equity=round(r.custo_mensal_frac_equity, 4),
                 control_13=r.control_13_outcome,
+                control_11=r.control_11_outcome,
+                leverage_mediana=round(r.leverage_eff_mediana, 3),
             )
 
     payload = {

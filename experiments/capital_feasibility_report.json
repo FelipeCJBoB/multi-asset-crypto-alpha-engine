@@ -21,7 +21,12 @@
       "trades_por_mes": 70.5873685550262,
       "custo_mensal_usd": 48.77912390688318,
       "custo_mensal_frac_equity": 0.04877912390688318,
-      "control_13_outcome": "FAIL"
+      "control_13_outcome": "FAIL",
+      "control_11_outcome": "FAIL",
+      "control_11_frac_fail": 0.0006951685783802572,
+      "control_12_outcome": "NOT_COMPUTABLE",
+      "leverage_eff_mediana": 1.252485,
+      "leverage_eff_p95": 2.009421279999998
     },
     {
       "symbol": "BTCUSDT",
@@ -42,7 +47,12 @@
       "trades_por_mes": 95.92193101591668,
       "custo_mensal_usd": 64.6198452092621,
       "custo_mensal_frac_equity": 0.06461984520926209,
-      "control_13_outcome": "FAIL"
+      "control_13_outcome": "FAIL",
+      "control_11_outcome": "PASS",
+      "control_11_frac_fail": 0.0,
+      "control_12_outcome": "NOT_COMPUTABLE",
+      "leverage_eff_mediana": 1.2209940000000001,
+      "leverage_eff_p95": 1.7886088899999997
     },
     {
       "symbol": "SOLUSDT",
@@ -63,7 +73,12 @@
       "trades_por_mes": 52.214488483820034,
       "custo_mensal_usd": 11.586908158552484,
       "custo_mensal_frac_equity": 0.011586908158552484,
-      "control_13_outcome": "PASS"
+      "control_13_outcome": "PASS",
+      "control_11_outcome": "PASS",
+      "control_11_frac_fail": 0.0,
+      "control_12_outcome": "NOT_COMPUTABLE",
+      "leverage_eff_mediana": 0.4022,
+      "leverage_eff_p95": 0.700633215
     },
     {
       "symbol": "SOLUSDT",
@@ -84,7 +99,12 @@
       "trades_por_mes": 22.782163388286612,
       "custo_mensal_usd": 5.115556621842267,
       "custo_mensal_frac_equity": 0.005115556621842267,
-      "control_13_outcome": "PASS"
+      "control_13_outcome": "PASS",
+      "control_11_outcome": "PASS",
+      "control_11_frac_fail": 0.0,
+      "control_12_outcome": "NOT_COMPUTABLE",
+      "leverage_eff_mediana": 0.40697099999999997,
+      "leverage_eff_p95": 0.66598911
     },
     {
       "symbol": "SOLUSDT",
@@ -105,7 +125,12 @@
       "trades_por_mes": 15.652730766449787,
       "custo_mensal_usd": 3.0481825409318914,
       "custo_mensal_frac_equity": 0.0030481825409318913,
-      "control_13_outcome": "PASS"
+      "control_13_outcome": "PASS",
+      "control_11_outcome": "PASS",
+      "control_11_frac_fail": 0.0,
+      "control_12_outcome": "NOT_COMPUTABLE",
+      "leverage_eff_mediana": 0.3529526,
+      "leverage_eff_p95": 0.6348195
     },
     {
       "symbol": "SOLUSDT",
@@ -126,7 +151,12 @@
       "trades_por_mes": 11.751152443274952,
       "custo_mensal_usd": 2.364443934478002,
       "custo_mensal_frac_equity": 0.0023644439344780023,
-      "control_13_outcome": "PASS"
+      "control_13_outcome": "PASS",
+      "control_11_outcome": "PASS",
+      "control_11_frac_fail": 0.0,
+      "control_12_outcome": "NOT_COMPUTABLE",
+      "leverage_eff_mediana": 0.3646818,
+      "leverage_eff_p95": 0.7523627799999999
     },
     {
       "symbol": "XRPUSDT",
@@ -147,7 +177,12 @@
       "trades_por_mes": 65.37579407574279,
       "custo_mensal_usd": 22.38559138972198,
       "custo_mensal_frac_equity": 0.02238559138972198,
-      "control_13_outcome": "PASS"
+      "control_13_outcome": "PASS",
+      "control_11_outcome": "PASS",
+      "control_11_frac_fail": 0.0,
+      "control_12_outcome": "NOT_COMPUTABLE",
+      "leverage_eff_mediana": 0.62060765,
+      "leverage_eff_p95": 1.3529148539999998
     },
     {
       "symbol": "XRPUSDT",
@@ -168,7 +203,12 @@
       "trades_por_mes": 64.05838740046119,
       "custo_mensal_usd": 22.74050268181397,
       "custo_mensal_frac_equity": 0.022740502681813973,
-      "control_13_outcome": "PASS"
+      "control_13_outcome": "PASS",
+      "control_11_outcome": "PASS",
+      "control_11_frac_fail": 0.0,
+      "control_12_outcome": "NOT_COMPUTABLE",
+      "leverage_eff_mediana": 0.64341264,
+      "leverage_eff_p95": 1.4137727159999998
     },
     {
       "symbol": "XRPUSDT",
@@ -189,7 +229,12 @@
       "trades_por_mes": 36.63412230190265,
       "custo_mensal_usd": 6.621618485287841,
       "custo_mensal_frac_equity": 0.00662161848528784,
-      "control_13_outcome": "PASS"
+      "control_13_outcome": "PASS",
+      "control_11_outcome": "PASS",
+      "control_11_frac_fail": 0.0,
+      "control_12_outcome": "NOT_COMPUTABLE",
+      "leverage_eff_mediana": 0.3276,
+      "leverage_eff_p95": 0.70867302
     },
     {
       "symbol": "XRPUSDT",
@@ -210,7 +255,12 @@
       "trades_por_mes": 19.74056244006797,
       "custo_mensal_usd": 3.557672055195136,
       "custo_mensal_frac_equity": 0.0035576720551951362,
-      "control_13_outcome": "PASS"
+      "control_13_outcome": "PASS",
+      "control_11_outcome": "PASS",
+      "control_11_frac_fail": 0.0,
+      "control_12_outcome": "NOT_COMPUTABLE",
+      "leverage_eff_mediana": 0.32664192,
+      "leverage_eff_p95": 0.6384556849999993
     }
   ]
 }
