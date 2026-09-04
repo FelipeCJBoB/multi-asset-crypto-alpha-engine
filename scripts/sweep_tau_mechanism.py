@@ -62,7 +62,24 @@ _VARIANTS: tuple[str, ...] = (alpha.VARIANT_CAMADA1, alpha.VARIANT_CAMADA0)
 # Eixo do experimento em si (pontos varridos), não constante de domínio --
 # 90/270 são +-90d ao redor do candidato de 180d (item 3, "últimos 6
 # meses"); None é o baseline sem janela (mecanismo legado).
-_STAGE_A_TAU_WINDOW_DAYS: tuple[int | None, ...] = (None, 90, 180, 270)  # noqa: magic-number
+#
+# AG-434 (auditoria externa 2026-09-03, achado N10): a grade original era
+# (None, 90, 180, 270) -- 4 pontos, 1 seed, e o vencedor (180) ficou no
+# MEIO de uma grade cujo maior ponto finito era 270. Uma grade que não
+# testa nenhum ponto >=365 não consegue distinguir "180 é ótimo" de "180 é
+# o melhor DENTRE os curtos, e um ano seria melhor ainda" -- e a janela
+# escolhida ali governa todo o mecanismo de tau em produção. 365 e 540
+# adicionados pra que exista pelo menos 1 ponto de 1 ano e 1 ponto claramente
+# além dele; a dispersão entre seeds passou a ser medida via `--seed`
+# (>=5 execuções), não mais uma única.
+_STAGE_A_TAU_WINDOW_DAYS: tuple[int | None, ...] = (
+    None,
+    90,  # noqa: magic-number
+    180,  # noqa: magic-number
+    270,  # noqa: magic-number
+    365,  # noqa: magic-number -- AG-434, 1 ano
+    540,  # noqa: magic-number -- AG-434, além de 1 ano
+)
 # RODADA 1 (2026-09-03): 5 pontos igualmente espaçados dentro do
 # sweep_range então declarado ([0.0095, 0.0284]) -- adotado 0.0284.
 # RODADA 2 (2026-09-03, AG-428, autorização do Manager sobre o teto

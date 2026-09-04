@@ -28371,3 +28371,170 @@ entries:
     resolved_by_commit: null
     resolution: "CONTROLS_MANDATORY = frozenset com o controle 19, mais RejectionReason.MANDATORY_CONTROL_NOT_COMPUTABLE (deliberadamente distinta de AGGREGATE_RISK_LIMIT: 'nao consegui medir' e diagnostico diferente de 'medi e estourou'). evaluate_all rejeita com log de warning explicando o que ligar. NAO ficou atras de flag opt-in (CLAUDE.md §Diretrizes: correcao pedida e comportamento DEFAULT). Custo operacional hoje: zero (sem camada live). Ganho: por construcao, a camada live futura nao consegue aprovar ordem nenhuma antes de ligar rastreador de posicoes abertas e matriz de correlacao. 3 testes que codificavam a premissa insegura foram reescritos; 2 testes novos travam a regressao (rejeita quando nao computavel; usa a razao ESPECIFICA quando computavel e estourado)."
     status: "fechado -- aplicado, 60 testes do arquivo verdes. Fica ABERTO como trabalho separado (nao deste AG): implementar o rastreador de posicoes abertas e a serie de correlacao causal que alimentam o #19, sem os quais a camada live nao podera operar."
+
+  - id: AG-432
+    date: "2026-09-03"
+    file: "src/labels/triple_barrier.py (adverse_selection_bps e cost_policy_id novos em LabelConfig e no payload de config_hash; custo cobrado em ret_net; docstring do modulo item 4 reescrita); src/labels/barrier_sweep.py (mesma politica no motor vetorizado, adverse_selection_bps virou parametro obrigatorio); src/analysis/s1_tp_sl_sensitivity.py; src/analysis/faixa2_caminho_b.py; tests/unit/test_labels_barrier_sweep.py"
+    related_file: "AG-205 (_gap_aware_sl_fill, a assimetria TP/SL que a auditoria leu errado); constants.yaml::adverse_selection_bps (classe A ASSUMED, sweep_range [0,0; 5,0])"
+    numeracao: "AG-432."
+    found_by: >-
+      Auditoria externa adversarial (achado N8), com a especificacao
+      CORRIGIDA nesta sessao. O revisor pediu duas coisas juntas: (a)
+      subtrair adverse_selection_bps de ret_net e (b) adicionar
+      gap-through no fill de TP, "simetrico ao SL". A parte (b) foi
+      REJEITADA por leitura do codigo: a assimetria TP/SL e fisicamente
+      correta e ja estava documentada -- TP e LIMIT/GTC, ordem passiva que
+      executa no preco de repouso (gap-through e irrelevante pra ela); SL
+      e STOP_MARKET, dispara e executa a mercado, dai _gap_aware_sl_fill.
+      Aplicar a simetria pedida daria um fill MELHOR que o nominal no TP e
+      INFLARIA o edge -- o oposto do que o proprio achado queria corrigir.
+      A parte (a) sobrevive e e real.
+    gap: >
+      adverse_selection_bps era calculado, gravado numa coluna e lido por
+      NENHUM gate. A decisao original (documentada no item 4 da docstring
+      do modulo) foi "nao fabricar um desconto que a Label Engine nao pode
+      medir sozinha". O argumento estava certo sobre a impossibilidade de
+      MEDIR e errado sobre a consequencia: nao medir nao torna o custo
+      zero, torna-o desconhecido, e uma coluna que nenhum gate le equivale
+      na pratica a assumir zero. Todo edge_bps publicado, o gate Alpha e o
+      teto economico do AG-428 foram decididos sobre um ret_net que
+      assumia selecao adversa nula.
+    severity: "alta -- vies sistematico PRO edge em toda metrica de promocao do projeto, incluindo a celula XRPUSDT/R3/C1 que passou o gate Alpha pela primeira vez no AG-428. Nao invalida a direcao do achado (o haircut medido e de ~2,24 bps sobre um edge de +22,75 bps naquela celula), mas o numero publicado estava otimista e ninguem sabia de quanto."
+    layer: "labels (motor escalar e vetorizado) -- muda ret_net, portanto invalida todo artefato a jusante"
+    consequence: >
+      Um candidato com edge real entre 0 e ~2,2 bps apareceria como
+      positivo e poderia ser promovido, quando na verdade nao paga o
+      proprio custo de execucao. Nenhum dos 5 candidatos atuais esta nessa
+      faixa, mas o gate nao tinha como saber disso.
+    resolved_by_commit: null
+    resolution: "Cobrado so nas pernas PASSIVAS: entrada (LIMIT/post-only, sempre) e saida por TP (LIMIT/GTC). SL e TIME saem a mercado (taker) -- sem fila, sem selecao adversa, e o custo adverso do SL ja e modelado por _gap_aware_sl_fill; cobrar la contaria o mesmo efeito duas vezes. Verificado no artefato reconstruido (BTCUSDT/R1): TP paga 3,0 bps (2 pernas x 1,5), SL/TIME paga 1,5 (so entrada), ret_net medio caiu exatamente 2,24 bps -- a media ponderada correta pro mix de barreiras. config_hash ganhou adverse_selection_bps + cost_policy_id no payload (mesmo papel de barrier_fill_policy_id pra logica de fill); o guardrail B15 disparou como esperado e forcou o rebuild completo de labels. ACHADO DE TABELA: existiam DUAS implementacoes de custo (escalar em triple_barrier, vetorizada em barrier_sweep); o teste de paridade sobre BTCUSDT 2024 inteiro pegou a divergencia de exatamente 3 bps quando so o escalar tinha sido corrigido. adverse_selection_bps virou parametro OBRIGATORIO de resolve_barriers_vectorized (sem default) pra que o type-checker ache todo caller -- achou 2 em src/analysis/."
+    status: "fechado -- codigo, teste de politica de custo, teste de config_hash e rebuild de labels aplicados. O valor da constante (1,5 bps) segue ASSUMED classe A com sweep obrigatorio: assumir 1,5 declarado e mais honesto que assumir 0,0 sem declarar, mas continua sendo um placeholder ate o markout real ser medido ao vivo (§9.5.1, Paper)."
+
+  - id: AG-433
+    date: "2026-09-03"
+    file: "src/analysis/walk_forward_gates.py (gate Model decide por auc_full; apply_fdr_to_model_gates migrado junto; 4 campos auc_full_* novos em GateVerdict); src/analysis/stability_matrix.py (roc_auc_full/n_trades_full em StabilityRow e em _METRICS); tests/unit/test_analysis_walk_forward_gates.py; tests/unit/test_analysis_model_card.py"
+    related_file: "AG-394 (compute_score_quality_full_population, que ja existia e so era reportada ao lado)"
+    numeracao: "AG-433."
+    found_by: >-
+      Auditoria externa adversarial (achado N13): compute_score_quality_
+      full_population era reportada AO LADO do gate Model, nunca no lugar
+      dele -- o gate continuava decidindo pela populacao so-de-sinal.
+    gap: >
+      O eixo Model decidia sobre a AUC das barras com confidence>tau que
+      ainda venceram a competicao de lado: mediana de ~20 trades por
+      fold-lado. Pela formula de Hanley-McNeil sob H0, SE(AUC) nessa
+      amostra fica entre 0,13 e 0,19 -- o teste-t do gate nao tinha poder
+      pra distinguir sinal de ruido, e o proprio modulo ja documentava
+      esse calculo sem tirar a conclusao. Pior: a pergunta estava errada.
+      O eixo Model pergunta "este modelo DISCRIMINA?", que e propriedade
+      do modelo, nao da cauda que ele mesmo ja selecionou.
+    severity: "alta -- um gate de promocao sem poder estatistico nao e conservador, e ruidoso: pode reprovar um modelo bom e aprovar um ruim, com igual facilidade. E era 1 dos 3 gates que governam a promocao."
+    layer: "analysis (gates de promocao) -- nao muda treino, muda a decisao"
+    consequence: >
+      Os vereditos "0/10" e "0/20" de todas as rodadas anteriores foram
+      produzidos com o eixo Model efetivamente aleatorio. Isso NAO
+      significa que os candidatos eram bons -- significa que o eixo Model
+      daqueles vereditos nao carregava informacao, e o veredito real vinha
+      so dos eixos Data e Alpha.
+    resolved_by_commit: null
+    resolution: "Gate Model passou a decidir por score_quality_full_population (populacao completa de barras de teste com outcome realizado). A AUC de sinal continua calculada, persistida e reportada -- nunca some do artefato, e a comparacao entre as duas populacoes e ela mesma um diagnostico. apply_fdr_to_model_gates migrou junto: a familia corrigida por FDR tem que ser a MESMA estatistica que governa a promocao, senao a correcao ajusta hipoteses diferentes das que decidem."
+    status: "fechado -- codigo e testes aplicados (224 testes de gate/stability/model_card verdes). O EFEITO no veredito so aparece apos o retreino desta rodada."
+
+  - id: AG-434
+    date: "2026-09-03"
+    file: "scripts/sweep_tau_mechanism.py (_STAGE_A_TAU_WINDOW_DAYS estendida com 365 e 540)"
+    related_file: "AG-427 (escolha original de tau_calibration_window_days=180)"
+    numeracao: "AG-434."
+    found_by: >-
+      Auditoria externa adversarial (achado N10): a grade do Estagio A era
+      (None, 90, 180, 270) -- 4 pontos, 1 seed.
+    gap: >
+      O vencedor (180 dias) ficou no MEIO de uma grade cujo maior ponto
+      finito era 270. Uma grade que nao testa nenhum ponto >=365 nao
+      consegue distinguir "180 e otimo" de "180 e o melhor DENTRE os
+      curtos, e um ano seria melhor ainda". E a janela escolhida ali
+      governa todo o mecanismo de calibracao de tau em producao -- inclui
+      a divergencia nominal-vs-realizado do AG-428/AG-429.
+    severity: "media -- nao ha evidencia de que 180 esteja errado; ha ausencia de evidencia de que esteja certo, sobre um parametro que governa producao."
+    layer: "scripts (eixo de experimento), efeito sobre models (mecanismo de tau)"
+    consequence: >
+      Se a janela otima for >=365 dias, o mecanismo atual esta calibrando
+      tau sobre uma janela curta demais, o que e uma explicacao candidata
+      pra propria deriva que o AG-428 mediu -- e a grade original nao
+      tinha como revelar isso.
+    resolved_by_commit: null
+    resolution: "Grade estendida pra (None, 90, 180, 270, 365, 540) -- pelo menos 1 ponto de 1 ano e 1 claramente alem dele. A dispersao entre seeds passa a ser medida via --seed (>=5 execucoes) em vez de 1 unica, reusando o mesmo mecanismo que scripts/measure_seed_sensitivity.py ja consome."
+    status: "aberto -- grade corrigida no codigo, execucao multi-seed pendente (depende do retreino desta rodada terminar; e a medicao mais cara da lista)."
+
+  - id: AG-435
+    date: "2026-09-03"
+    file: "scripts/measure_capital_feasibility.py (novo)"
+    related_file: "src/risk/sizing.py::compute_sizing_asof; src/risk/limits.py::control_13_orcamento_fees; src/models/backtest_lite.py (o modulo que a auditoria pediu pra mudar, e que NAO foi mudado)"
+    numeracao: "AG-435."
+    found_by: >-
+      Auditoria externa adversarial (achados N9 e N2/B1), com a
+      especificacao CORRIGIDA nesta sessao. O revisor pediu "aplicar
+      floor_to_step no backtest_lite". Leitura do modulo mostrou que a
+      especificacao esta errada: backtest_lite opera inteiramente em
+      espaco de RETORNO (ret_net, fracao por trade) -- nao existe qty,
+      notional nem mark_price no arquivo inteiro, entao nao ha nada ali
+      pra quantizar. O erro de quantizacao nao enviesa edge_bps (retorno
+      por trade e livre de escala); ele limita QUANTO desse edge e
+      capturavel com R$ 1.000. Sao perguntas diferentes.
+    gap: >
+      Dois furos reais, fechados juntos por serem a mesma pergunta.
+      (1) Nenhuma camada do projeto media quanto do edge sobrevive a
+      quantizacao real da exchange no capital de referencia -- o PRD
+      documenta 16,2% de erro de quantizacao pra BTC a R$ 1.000, numero
+      que nunca entrou em nenhuma decisao de promocao.
+      (2) Nenhum script do AG-427/AG-428 chamou o codigo real de risco: o
+      teto economico de 5,88%/mes que o Manager autorizou foi calculado
+      replicando a formula de control_13_orcamento_fees a mao, num
+      calculo ad-hoc nunca commitado. A formula estava certa (conferida
+      linha a linha), mas "conferi que copiei certo" nao e o mesmo que
+      "chamei a funcao de producao".
+    severity: "media -- nao ha erro conhecido nos numeros publicados; ha uma cadeia de verificacao que nunca foi fechada contra o codigo que de fato vai executar."
+    layer: "scripts (medicao nova), consumindo risk (sizing/limits) pela primeira vez fora do proprio modulo de risco"
+    consequence: >
+      Um candidato pode ter edge_bps aprovado no gate e ser inexecutavel
+      a R$ 1.000 (qty quantiza pra zero, ou nocional abaixo do minimo da
+      exchange) -- e nada no processo de promocao perguntaria isso.
+    resolved_by_commit: null
+    resolution: "Camada NOVA (nao mudanca no backtest_lite): scripts/measure_capital_feasibility.py junta as predicoes OOF aos labels e roda compute_sizing_asof de producao sinal a sinal, com os filtros vigentes NA DATA (B01-safe), reportando frac_abaixo_min_qty, frac_abaixo_min_notional, frac_executavel, quant_error mediano/p95, edge_bps nominal vs ponderado por nocional, e o veredito de control_13_orcamento_fees chamado de verdade."
+    status: "aberto -- script escrito e lint-limpo; execucao pendente do retreino desta rodada (precisa das predicoes novas)."
+
+  - id: AG-436
+    date: "2026-09-03"
+    file: "src/models/alpha.py (TAU_POLICY_TOTAL_COMMON_OOF_NO_NOFILL novo; exclude_nofill_from_pool em _resolve_tau_on_common_bars); scripts/run_walk_forward_campaign.py (nova escolha de --tau-policy); scripts/ag428_signal_rate_decomposition.py (corte por trimestre)"
+    related_file: "AG-428 (overshoot de 2,3-3,0x medido em TAU_POLICY_TOTAL_COMMON_OOF); AG-210 (origem da politica)"
+    numeracao: "AG-436."
+    found_by: >-
+      Auditoria externa adversarial (achado N5 e itens 2/3 da Parte IV),
+      confirmado por leitura da docstring da propria funcao: a populacao
+      out-of-fit e composta pelas barras de calibracao de cada lado "mais
+      as descartadas por NOFILL de ambos os lados". Nao e acidente de
+      implementacao, e consequencia estrutural -- side_subset (treino)
+      descarta NOFILL, unique_test_bars (a pool de tau) nao descarta,
+      entao TODA barra NOFILL e garantidamente out-of-fit.
+    gap: >
+      Se a distribuicao de probabilidade das barras NOFILL diferir da das
+      preenchiveis (plausivel: NOFILL e falha de execucao, concentrada em
+      regime), o quantil 1-r de TAU_POLICY_TOTAL_COMMON_OOF e tirado de
+      uma populacao contaminada e o tau sai deslocado -- hipotese
+      candidata pro overshoot de 2,3-3,0x que essa politica mediu no
+      AG-428, e que fez ela ser descartada como nao promovivel. Segundo
+      furo, independente: a decomposicao do gap do AG-428 (93,9% deriva /
+      6,1% exclusividade mutua) e AGREGADA sobre toda a janela OOF -- nao
+      distingue deriva uniforme (propriedade do mecanismo) de deriva
+      concentrada num regime (sensibilidade a regime). Sao diagnosticos
+      diferentes e pedem correcoes diferentes.
+    severity: "media -- nenhuma das duas afeta producao hoje (producao usa TAU_POLICY_LEGACY_PER_SIDE), mas as duas bloqueiam a investigacao da causa-raiz do AG-428, que segue formalmente ABERTA."
+    layer: "models (mecanismo de tau) + scripts (diagnostico)"
+    consequence: >
+      A conclusao do AG-428 de que TOTAL_COMMON_OOF "nao e promovivel"
+      pode estar atribuindo a politica um defeito que e da POPULACAO que
+      ela usa. Descartar a politica sem testar isso descarta junto a unica
+      correcao conhecida pro tau in-sample (AG-210).
+    resolved_by_commit: null
+    resolution: "TAU_POLICY_TOTAL_COMMON_OOF_NO_NOFILL: identica a TOTAL_COMMON_OOF exceto por remover as barras NOFILL da pool antes do quantil, selecionavel por --tau-policy. Implementada como PAR DE COMPARACAO, nao como correcao direta -- sem o par nao ha como atribuir a diferenca a uma variavel so (CLAUDE.md permite: comparacao lado-a-lado pedida pelo Manager). Levanta se barrier_hit nao existir no frame: pedido de excluir NOFILL nunca e ignorado em silencio. Em paralelo, ag428_signal_rate_decomposition ganhou corte por trimestre (razao realizado/nominal por ano x trimestre), que e o que separa deriva estrutural de deriva temporal continua."
+    status: "aberto -- codigo aplicado e lint-limpo; as 2 medicoes (comparacao de politica e corte trimestral) pendentes do retreino desta rodada."

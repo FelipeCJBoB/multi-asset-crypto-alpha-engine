@@ -213,6 +213,62 @@ def main() -> int:
         emit(f"  -> gap_drift / gap_total     = {gap_drift / gap_total * 100:.1f}%")
         emit(f"  -> gap_exclusion / gap_total = {gap_exclusion / gap_total * 100:.1f}%")
     emit(f"checagem soma = {_fmt(gap_drift + gap_exclusion)} (deve bater com gap_total)")
+    emit("")
+
+    # ------------------------------------------------------------------
+    # AG-436 (auditoria externa 2026-09-03, achado N3 + item 3 da Parte IV)
+    # ------------------------------------------------------------------
+    # A decomposicao acima e AGREGADA sobre toda a janela OOF. Ela prova
+    # QUE a deriva domina (~94%), mas nao diz se a deriva e UNIFORME no
+    # tempo ou concentrada num regime especifico. A diferenca importa pra
+    # decisao: deriva uniforme e propriedade estrutural do mecanismo de
+    # calibracao (e se corrige mexendo no mecanismo); deriva concentrada e
+    # sensibilidade a regime (e se corrige condicionando a regime, ou nao
+    # se corrige e vira restricao de operacao).
+    #
+    # O revisor externo levantou, junto, que a razao realizado/nominal
+    # saltou ~2,5x entre o regime pre-janela e o pos-janela (~25,6% ->
+    # ~62,6-72,8%) -- confundindo dois efeitos (janela e taxa) que mudaram
+    # no mesmo dia. Este corte por trimestre e o que permite separar: se a
+    # razao for estavel trimestre a trimestre DENTRO do regime atual, o
+    # salto veio da mudanca de mecanismo, nao de deriva temporal continua.
+    emit("=== POR TRIMESTRE (pooled, is_oof == True) -- AG-436 ===")
+    emit("razao = rate_actual / target_signal_rate (1,0 = nominal entregue)")
+    if "t0" not in pooled.columns:
+        emit("t0 ausente no schema -- corte temporal impossivel neste artefato.")
+    else:
+        por_trimestre = (
+            pooled.with_columns(
+                pl.col("t0").dt.year().alias("_ano"),
+                pl.col("t0").dt.quarter().alias("_tri"),
+            )
+            .group_by("_ano", "_tri")
+            .agg(pl.len().alias("n"))
+            .sort("_ano", "_tri")
+        )
+        for row in por_trimestre.iter_rows(named=True):
+            ano, tri = row["_ano"], row["_tri"]
+            bloco = pooled.filter(
+                (pl.col("t0").dt.year() == ano) & (pl.col("t0").dt.quarter() == tri)
+            )
+            rb = _analyze(bloco)
+            ra = float(rb["rate_actual"])
+            razao = ra / target if target else float("nan")
+            emit(
+                f"{ano}Q{tri}  n_oof={rb['n_oof']:>7}  "
+                f"long_alone={_fmt(float(rb['rate_long_alone']))}  "
+                f"short_alone={_fmt(float(rb['rate_short_alone']))}  "
+                f"naive_or={_fmt(float(rb['rate_naive_or']))}  "
+                f"actual={_fmt(ra)}  razao={_fmt(razao)}"
+            )
+        emit("")
+        emit(
+            "LEITURA: razao ESTAVEL entre trimestres => a deriva e estrutural do "
+            "mecanismo de calibracao de tau, nao deriva temporal continua (e o "
+            "salto de ~2,5x apontado pelo revisor veio da troca de mecanismo). "
+            "razao com TENDENCIA monotonica => deriva temporal real, e a janela "
+            "de calibracao precisa acompanhar o regime."
+        )
 
     _OUT_TXT.write_text("\n".join(lines), encoding="utf-8")
     emit("")

@@ -136,11 +136,17 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--tau-policy",
         default=alpha.TAU_POLICY_LEGACY_PER_SIDE,
-        choices=[alpha.TAU_POLICY_LEGACY_PER_SIDE, alpha.TAU_POLICY_TOTAL_COMMON_OOF],
+        choices=[
+            alpha.TAU_POLICY_LEGACY_PER_SIDE,
+            alpha.TAU_POLICY_TOTAL_COMMON_OOF,
+            alpha.TAU_POLICY_TOTAL_COMMON_OOF_NO_NOFILL,
+        ],
         help="AG-210/AG-395 (audit/architecture_gaps_log.yaml) -- legacy_per_side "
         "reproduz o comportamento que gerou os artefatos atuais; total_common_oof "
         "testa a correção já implementada pra tau in-sample, nunca aplicada aos 5 "
-        "candidatos reais.",
+        "candidatos reais; total_common_oof_no_nofill (AG-436) é a MESMA política "
+        "sem as barras NOFILL na população out-of-fit -- par de comparação pra "
+        "atribuir o overshoot de 2,3-3,0x medido no AG-428 a uma variável só.",
     )
     parser.add_argument("--device-type", default="cpu", choices=["cpu", "cuda"])
     parser.add_argument(

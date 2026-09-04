@@ -441,6 +441,16 @@ CALIB_WEIGHT_UNIQUENESS = "uniqueness"
 # `run_fold`.
 TAU_POLICY_LEGACY_PER_SIDE = "legacy_per_side"
 TAU_POLICY_TOTAL_COMMON_OOF = "total_common_oof"
+# AG-436 (2026-09-03) -- variante de MEDIÇÃO de `total_common_oof`, idêntica
+# a ela exceto por remover as barras NOFILL da população out-of-fit antes do
+# quantil. Existe porque `TOTAL_COMMON_OOF` mediu overshoot de 2,3-3,0x no
+# AG-428 e a contaminação por NOFILL é a hipótese candidata pro mecanismo
+# (`side_subset` descarta NOFILL do treino, `unique_test_bars` não descarta
+# da pool -- então toda barra NOFILL é garantidamente out-of-fit, por
+# construção). Não é política de produção: produção segue
+# `TAU_POLICY_LEGACY_PER_SIDE`. É o par de comparação que permite atribuir a
+# diferença a UMA variável.
+TAU_POLICY_TOTAL_COMMON_OOF_NO_NOFILL = "total_common_oof_no_nofill"
 
 
 def _temporal_purged_calib_split(
@@ -2055,6 +2065,7 @@ def _resolve_tau_on_common_bars(
     *,
     feature_ids: tuple[str, ...],
     target_signal_rate: float,
+    exclude_nofill_from_pool: bool = False,
 ) -> tuple[float, float, float]:
     """Ponto de entrada com IO-zero (recebe frame em memória) do modo
     `TAU_POLICY_TOTAL_COMMON_OOF` — resolve `(tau_long, tau_short)` sobre
@@ -2083,7 +2094,26 @@ def _resolve_tau_on_common_bars(
     out-of-fit não comportar o quantil `1 - r` com pelo menos
     `MIN_OCCURRENCES_ABOVE_TAU` ocorrências acima do corte, cai para a
     população comum inteira — um `tau` levemente otimista é melhor que um
-    `tau` estimado sobre uma dezena de pontos."""
+    `tau` estimado sobre uma dezena de pontos.
+
+    **`exclude_nofill_from_pool` (AG-436, medição 2026-09-03).** Repare no
+    parêntese do item (2): a população out-of-fit é composta pelas barras
+    de calibração de cada lado **mais as descartadas por NOFILL dos dois
+    lados**. Isso não é acidente de implementação, é consequência
+    estrutural — `side_subset` (treino) descarta NOFILL, `unique_test_bars`
+    (esta pool) não, então toda barra NOFILL é, por construção, garantida
+    out-of-fit. Se a distribuição de probabilidade das barras NOFILL for
+    diferente da das preenchíveis (plausível: NOFILL é falha de execução,
+    concentrada em regime), o quantil `1 - r` é tirado de uma população
+    contaminada e o `tau` sai deslocado — hipótese candidata pro overshoot
+    de 2,3-3,0x que esta política mediu no AG-428.
+
+    `False` (default) preserva bit-exato o comportamento medido no AG-428.
+    `True` remove as barras NOFILL da pool antes do quantil. Existe como
+    parâmetro, e não como correção direta, porque é uma COMPARAÇÃO
+    lado-a-lado pedida pelo Manager (item 3 da lista de 2026-09-03) — sem
+    o par não há como atribuir a diferença. Requer a coluna `barrier_hit`
+    no frame; sem ela, levanta (nunca ignora o pedido em silêncio)."""
     common = unique_test_bars(train_bars, feature_ids=feature_ids)
     if common.height == 0:
         raise ValueError(
@@ -2105,7 +2135,31 @@ def _resolve_tau_on_common_bars(
         )
     t0_common = common["t0"].dt.epoch(time_unit="ms").to_numpy().astype(np.int64)
     seen_in_fit = np.isin(t0_common, fit_t0_long) | np.isin(t0_common, fit_t0_short)
-    oof_idx = np.flatnonzero(~seen_in_fit)
+    elegivel = ~seen_in_fit
+
+    if exclude_nofill_from_pool:
+        # AG-436 -- ver docstring. `unique_test_bars` deduplica por `side=1`,
+        # entao `barrier_hit` aqui e o do lado LONG daquela barra; e o mesmo
+        # criterio de "barra que o lado long nao conseguiu executar".
+        if "barrier_hit" not in common.columns:
+            raise ValueError(
+                "_resolve_tau_on_common_bars: exclude_nofill_from_pool=True exige a coluna "
+                "'barrier_hit' no frame (AG-436) -- pedido de excluir NOFILL nunca e "
+                "ignorado em silencio"
+            )
+        is_nofill = common["barrier_hit"].cast(pl.Utf8).fill_null("").to_numpy() == "NOFILL"
+        n_nofill_na_pool = int(np.count_nonzero(elegivel & is_nofill))
+        elegivel = elegivel & ~is_nofill
+        logger.info(
+            "models.alpha.tau_oof_nofill_excluido",
+            n_nofill_removidas=n_nofill_na_pool,
+            n_pool_antes=int(np.count_nonzero(~seen_in_fit)),
+            n_pool_depois=int(np.count_nonzero(elegivel)),
+            detail="AG-436 -- medicao da hipotese de contaminacao por NOFILL na pool "
+            "out-of-fit de TAU_POLICY_TOTAL_COMMON_OOF",
+        )
+
+    oof_idx = np.flatnonzero(elegivel)
 
     min_bars = int(np.ceil(MIN_OCCURRENCES_ABOVE_TAU / target_signal_rate))
     if oof_idx.shape[0] < min_bars:
@@ -2405,18 +2459,21 @@ def run_fold(
     # sinal TOTAL bata `target_signal_rate`. Ver `resolve_joint_tau`.
     tau_long, tau_short = long_result.tau, short_result.tau
     tau_realized_rate = float("nan")
-    if tau_policy == TAU_POLICY_TOTAL_COMMON_OOF:
+    if tau_policy in (TAU_POLICY_TOTAL_COMMON_OOF, TAU_POLICY_TOTAL_COMMON_OOF_NO_NOFILL):
         tau_long, tau_short, tau_realized_rate = _resolve_tau_on_common_bars(
             train_bars,
             long_result,
             short_result,
             feature_ids=feature_ids,
             target_signal_rate=target_signal_rate,
+            # AG-436 -- única diferença entre as 2 políticas.
+            exclude_nofill_from_pool=(tau_policy == TAU_POLICY_TOTAL_COMMON_OOF_NO_NOFILL),
         )
     elif tau_policy != TAU_POLICY_LEGACY_PER_SIDE:
         raise ValueError(
             f"run_fold: tau_policy desconhecido {tau_policy!r} (esperado "
-            f"{TAU_POLICY_LEGACY_PER_SIDE!r} ou {TAU_POLICY_TOTAL_COMMON_OOF!r})"
+            f"{TAU_POLICY_LEGACY_PER_SIDE!r}, {TAU_POLICY_TOTAL_COMMON_OOF!r} ou "
+            f"{TAU_POLICY_TOTAL_COMMON_OOF_NO_NOFILL!r})"
         )
 
     test_bars_unique = unique_test_bars(test_bars, feature_ids=feature_ids)
