@@ -136,7 +136,8 @@ round_trip_cost_bps_maker_prob:
     corrigido 2026-08-24 (achado do usuário, validação de governança em
     sessão -- constante já existia declarada aqui desde AG-027, mas
     round_trip_cost_bps nunca a lia, permanecia com 0.5/0.5 hardcoded no
-    corpo). Ruína do apostador (tp_atr_mult=2.0/sl_atr_mult=1.5) prevê
+    corpo). Ruína do apostador sob a geometria que ERA vigente à época
+    (tp_atr_mult era 2.0 e sl_atr_mult 1.5, assimétrica) previa
     P(maker, TP primeiro)=1,5/3,5=42,9% analítico; medição empírica real
     (tools/diagnostics/measure_barrier_touch_probability.py, 5 ativos,
     labels.parquet, contagem direta de qual barreira toca primeiro) confirma

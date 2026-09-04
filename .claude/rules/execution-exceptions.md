@@ -31,3 +31,10 @@ parar e reportar, não presumir que a exceção ainda vale.
 
 Motivo/detalhe: histórico em `git log -- CLAUDE.md`, usado por
 `.claude/skills/audit_engineering/` e `.claude/skills/project_assurance/`.
+
+## Adendo 2026-09-04 — 8º comando liberado
+
+`python tools/lint/check_provenance_numbers.py` entra na lista das exceções
+mecânicas de auditoria (AG-440). Mesma categoria dos outros 7: só leitura,
+sem efeito em dado/exchange/trial — lê `config/constants.yaml` e compara
+números citados na prosa de `source:` contra o `value:` vigente.
