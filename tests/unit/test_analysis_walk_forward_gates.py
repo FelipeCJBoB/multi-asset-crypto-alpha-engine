@@ -238,15 +238,26 @@ def _stability_result(
         n_folds_usados=8,  # noqa: magic-number
         rows=(),
         dispersion_by_metric_and_side={
+            # AG-433 -- `roc_auc_full` (população completa) é o que DECIDE o
+            # gate Model desde 2026-09-03; `roc_auc` (população de sinal)
+            # segue reportado. Os parâmetros deste helper alimentam OS DOIS
+            # com os mesmos números de propósito: cada teste deste arquivo
+            # afirma sobre a ESTATÍSTICA (teste-t, FDR, NaN), não sobre qual
+            # das duas populações a produziu -- então a intenção original de
+            # todos eles fica intacta.
             "long": {
                 "ic_spearman_pooled": _nan_stat(),
                 "roc_auc": _auc_stat(auc_long, std=std_long, n=n_long),
+                "roc_auc_full": _auc_stat(auc_long, std=std_long, n=n_long),
+                "n_trades_full": _nan_stat(),
                 "log_loss": _nan_stat(),
                 "q10_minus_q1_bps": _nan_stat(),
             },
             "short": {
                 "ic_spearman_pooled": _nan_stat(),
                 "roc_auc": _auc_stat(auc_short, std=std_short, n=n_short),
+                "roc_auc_full": _auc_stat(auc_short, std=std_short, n=n_short),
+                "n_trades_full": _nan_stat(),
                 "log_loss": _nan_stat(),
                 "q10_minus_q1_bps": _nan_stat(),
             },
@@ -399,6 +410,13 @@ def _minimal_gate_verdict(*, combo: str, p_long: float, p_short: float) -> wfg.G
         n_folds_auc_by_side={"long": 10, "short": 10},  # noqa: magic-number
         auc_p_value_by_side={"long": p_long, "short": p_short},
         model_gate_pass_by_side={"long": p_long < 0.05, "short": p_short < 0.05},  # noqa: magic-number
+        # AG-433 -- `apply_fdr_to_model_gates` consome os p-valores de
+        # POPULAÇÃO COMPLETA (os mesmos que decidem o gate), então são
+        # estes que os testes de FDR deste arquivo precisam alimentar.
+        auc_full_mean_by_side={"long": 0.6, "short": 0.6},  # noqa: magic-number
+        auc_full_std_by_side={"long": 0.1, "short": 0.1},  # noqa: magic-number
+        n_folds_auc_full_by_side={"long": 10, "short": 10},  # noqa: magic-number
+        auc_full_p_value_by_side={"long": p_long, "short": p_short},
     )
 
 

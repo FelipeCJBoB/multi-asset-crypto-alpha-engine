@@ -243,6 +243,17 @@ class GateVerdict:
     # GateVerdict com BH+BY (correção 2026-08-31, rodada 2).
     auc_p_value_by_side: dict[str, float]
     model_gate_pass_by_side: dict[str, bool]
+    # AG-433 (auditoria externa 2026-09-03, achado N13) -- o gate Model
+    # passou a DECIDIR pela AUC de população COMPLETA
+    # (`score_quality_full_population`, AG-394). `auc_mean_by_side` e
+    # `auc_p_value_by_side` acima continuam existindo e continuam sendo a
+    # AUC de população SÓ-DE-SINAL, agora informativos: não decidem mais
+    # nada, mas nunca somem do artefato (a comparação entre as duas
+    # populações é ela mesma um diagnóstico).
+    auc_full_mean_by_side: dict[str, float]
+    auc_full_std_by_side: dict[str, float]
+    n_folds_auc_full_by_side: dict[str, int]
+    auc_full_p_value_by_side: dict[str, float]
 
 
 def evaluate_gates(
@@ -292,17 +303,41 @@ def evaluate_gates(
     n_folds_auc_by_side: dict[str, int] = {}
     auc_p_value_by_side: dict[str, float] = {}
     model_gate_pass_by_side: dict[str, bool] = {}
+    auc_full_mean_by_side: dict[str, float] = {}
+    auc_full_std_by_side: dict[str, float] = {}
+    n_folds_auc_full_by_side: dict[str, int] = {}
+    auc_full_p_value_by_side: dict[str, float] = {}
     for side in _SIDES:
+        # População SÓ-DE-SINAL -- informativa desde AG-433, não decide.
         disp = stability.dispersion_by_metric_and_side[side]["roc_auc"]
         auc_mean = disp["mean"]
         auc_std = disp["std"]
         n_folds_auc = int(disp["n"])
-        p_value = model_gate_p_value(auc_mean, auc_std, n_folds_auc)
         auc_mean_by_side[side] = auc_mean
         auc_std_by_side[side] = auc_std
         n_folds_auc_by_side[side] = n_folds_auc
-        auc_p_value_by_side[side] = p_value
-        model_gate_pass_by_side[side] = not math.isnan(p_value) and p_value < significance_level
+        auc_p_value_by_side[side] = model_gate_p_value(auc_mean, auc_std, n_folds_auc)
+
+        # AG-433 -- população COMPLETA: é esta que decide o gate Model.
+        # Motivo: o eixo Model pergunta "este modelo DISCRIMINA?", que é
+        # uma propriedade do modelo, não da cauda que ele já selecionou.
+        # Medida sobre a população de sinal, a AUC tinha mediana de ~20
+        # trades por fold-lado -- `SE(AUC|H0)` de Hanley-McNeil entre 0,13
+        # e 0,19, sem poder pra distinguir sinal de ruído (ver docstring
+        # do módulo). Sobre a população completa o n é ordens de grandeza
+        # maior e o mesmo teste-t passa a ter poder real.
+        disp_full = stability.dispersion_by_metric_and_side[side]["roc_auc_full"]
+        auc_full_mean = disp_full["mean"]
+        auc_full_std = disp_full["std"]
+        n_folds_auc_full = int(disp_full["n"])
+        p_value_full = model_gate_p_value(auc_full_mean, auc_full_std, n_folds_auc_full)
+        auc_full_mean_by_side[side] = auc_full_mean
+        auc_full_std_by_side[side] = auc_full_std
+        n_folds_auc_full_by_side[side] = n_folds_auc_full
+        auc_full_p_value_by_side[side] = p_value_full
+        model_gate_pass_by_side[side] = (
+            not math.isnan(p_value_full) and p_value_full < significance_level
+        )
 
     return GateVerdict(
         combo=f"{stability.symbol}/{stability.resolution_id}",
@@ -326,6 +361,10 @@ def evaluate_gates(
         n_folds_auc_by_side=n_folds_auc_by_side,
         auc_p_value_by_side=auc_p_value_by_side,
         model_gate_pass_by_side=model_gate_pass_by_side,
+        auc_full_mean_by_side=auc_full_mean_by_side,
+        auc_full_std_by_side=auc_full_std_by_side,
+        n_folds_auc_full_by_side=n_folds_auc_full_by_side,
+        auc_full_p_value_by_side=auc_full_p_value_by_side,
     )
 
 
@@ -354,11 +393,17 @@ def apply_fdr_to_model_gates(
     Retorna `{f"{combo}/{variant}/{side}": FdrResult}` — chame com o
     resultado `.significant_bh`/`.significant_by` no lugar de
     `GateVerdict.model_gate_pass_by_side` bruto pra qualquer
-    consolidação real de mais de 1 célula."""
+    consolidação real de mais de 1 célula.
+
+    **AG-433 (2026-09-03)** — consome `auc_full_p_value_by_side` (população
+    completa), NÃO o `auc_p_value_by_side` (população só-de-sinal). Tem que
+    ser a MESMA estatística que `model_gate_pass_by_side` usa pra decidir,
+    senão a correção de FDR estaria ajustando uma família de hipóteses
+    diferente da que de fato governa a promoção."""
     p_values: dict[str, float] = {}
     for verdict in verdicts:
         for side in _SIDES:
-            p_one_sided = verdict.auc_p_value_by_side[side]
+            p_one_sided = verdict.auc_full_p_value_by_side[side]
             if math.isnan(p_one_sided):
                 continue
             label = f"{verdict.combo}/{verdict.variant}/{side}"

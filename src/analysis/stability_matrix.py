@@ -38,7 +38,19 @@ from typing import Any
 
 import numpy as np
 
-_METRICS: tuple[str, ...] = ("ic_spearman_pooled", "roc_auc", "log_loss", "q10_minus_q1_bps")
+_METRICS: tuple[str, ...] = (
+    "ic_spearman_pooled",
+    "roc_auc",
+    "log_loss",
+    "q10_minus_q1_bps",
+    # AG-433 (auditoria externa 2026-09-03, achado N13) -- AUC sobre a
+    # POPULAÇÃO COMPLETA de barras de teste com outcome realizado
+    # (`score_quality_full_population_by_side`, AG-394), ao lado do
+    # `roc_auc` de sempre (população só-de-sinal). Não substitui: as duas
+    # respondem perguntas diferentes e ambas ficam no artefato.
+    "roc_auc_full",
+    "n_trades_full",
+)
 _SIDES: tuple[str, ...] = ("long", "short")
 _MIN_FOLDS_FOR_STD = 2  # noqa: magic-number -- desvio-padrão amostral (ddof=1) exige >=2 pontos
 
@@ -59,6 +71,17 @@ class StabilityRow:
     top_feature_gain_share: float
     top_feature_by_shap: str | None
     top_feature_shap_share: float
+    # AG-433 -- MESMA métrica que `roc_auc` acima, população COMPLETA (toda
+    # barra de teste com outcome realizado, sem filtro por `tau`/competição
+    # de lado). O `roc_auc` é medido sobre a cauda que o modelo já
+    # selecionou -- mediana de ~20 trades por fold-lado, amostra pequena
+    # demais pro gate Model ter poder estatístico. Este aqui tem a
+    # população inteira e é o que passou a DECIDIR o gate; o de cima
+    # continua reportado, nunca some. Defaults por serem campos aditivos
+    # (artefato pré-AG-394 não tem a fonte); o caminho real sempre passa os
+    # dois explicitamente.
+    roc_auc_full: float = float("nan")
+    n_trades_full: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -197,6 +220,10 @@ def build_stability_matrix(
                 continue
             shap_importance = fr.get("shap_mean_abs_by_side", {}).get(side)
             sq = fr["score_quality_by_side"].get(side)
+            # AG-433 -- `.get(...)` em vez de indexação: artefatos gerados
+            # antes do AG-394 não têm esta chave, e um KeyError aqui
+            # quebraria a leitura de histórico por um campo aditivo.
+            sq_full = fr.get("score_quality_full_population_by_side", {}).get(side)
             decile = fr["decile_profile_by_side"].get(side)
             top_feature_gain, top_share_gain = _top_feature(gain)
             top_feature_shap, top_share_shap = (
@@ -221,6 +248,11 @@ def build_stability_matrix(
                     top_feature_gain_share=top_share_gain,
                     top_feature_by_shap=top_feature_shap,
                     top_feature_shap_share=top_share_shap,
+                    # AG-433 -- população completa, ao lado da de sinal.
+                    roc_auc_full=(
+                        _float_or_nan(sq_full["roc_auc"]) if sq_full else float("nan")
+                    ),
+                    n_trades_full=int(sq_full["n_trades"]) if sq_full else 0,
                 )
             )
 

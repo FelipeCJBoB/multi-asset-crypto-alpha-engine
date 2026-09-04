@@ -43,14 +43,37 @@ deixadas implícitas** (task explícita: reportar toda interpretação):
    este cenário e, antes desta correção, afirmava que o fill acontecia no
    nível nominal apesar do crash — auditável em
    `audit/architecture_gaps_log.yaml::AG-205`.
-4. **`adverse_selection_bps` é reportado, NÃO subtraído de `ret_net`.** A
-   fórmula literal do §3.4 (`ret_net = ret_gross - c_entry - c_exit -
+4. **`adverse_selection_bps` é COBRADO de `ret_net` nas pernas maker**
+   (AG-432, 2026-09-03 — reverte a decisão anterior deste mesmo item).
+   A fórmula literal do §3.4 (`ret_net = ret_gross - c_entry - c_exit -
    funding/notional`) não tem termo de seleção adversa; o §3.5 chama
    `ret_net` de "líquido de tudo", o que é ambíguo com a fórmula do §3.4.
-   Escolha conservadora: reportar o placeholder (`constants.yaml
-   adverse_selection_bps`, classe A ASSUMED) como coluna informativa, não
-   fabricar um desconto que a Label Engine não pode medir sozinha a partir
-   de `mark_1m` — o markout real só é medível ao vivo (§9.5.1, Paper).
+   Até 2026-09-03 a ambiguidade foi resolvida a favor de só REPORTAR o
+   placeholder, com o argumento de "não fabricar um desconto que a Label
+   Engine não pode medir sozinha a partir de `mark_1m`".
+
+   **O que mudou de opinião** (auditoria externa adversarial, achado N8):
+   o argumento estava certo sobre a impossibilidade de MEDIR e errado
+   sobre a consequência. Não medir não torna o custo zero — torna-o
+   desconhecido, e reportá-lo numa coluna que nenhum gate lê equivale, na
+   prática, a assumir zero. Toda decisão de promoção do projeto (gate
+   Alpha, `edge_bps`, o teto econômico do AG-428) foi tomada sobre um
+   `ret_net` que assume seleção adversa nula. Assumir 1,5 bps declarado
+   ASSUMED, com `sweep_range: [0.0, 5.0]` e sensibilidade obrigatória, é
+   estritamente mais honesto do que assumir 0,0 sem declarar nada — e o
+   custo de estar errado é conservador (subestima o edge), não o inverso.
+
+   **Onde é cobrado, e por quê só ali**: entrada (`LIMIT`/post-only) e
+   saída por TP (`LIMIT`/`GTC`) são as pernas PASSIVAS — ordem em repouso
+   no book, preenchida quando alguém quis negociar contra ela, que é a
+   definição de seleção adversa. SL é `STOP_MARKET` (taker): não há fila,
+   e seu custo adverso já é modelado fisicamente por `_gap_aware_sl_fill`
+   (item 3 abaixo) — cobrar seleção adversa ali contaria o mesmo efeito
+   duas vezes. Saída por TIME também é taker, mesma lógica.
+
+   O markout REAL continua só medível ao vivo (§9.5.1, Paper); quando
+   existir, substitui a constante e o `config_hash` invalida os labels
+   sozinho (`cost_policy_id`).
 5. **Ambiguidade TP-e-SL-no-mesmo-candle-de-1m** (residual de B11 em escala
    menor — 1 minuto em vez de 15): resolvida por proximidade ao `open` do
    candle (assume que o preço viajou do open em direção à barreira mais
@@ -424,6 +447,29 @@ class LabelConfig:
     real de `build_modeling_frame` contra os `labels.parquet` já
     persistidos (pré-D4), disciplina de falhar alto, não silenciar."""
 
+    adverse_selection_bps: float = 0.0
+    """AG-432 (auditoria externa 2026-09-03, achado N8) — seleção adversa
+    agora COBRADA de `ret_net`, não só reportada. Ver item 4 da docstring
+    do módulo para o raciocínio completo e para o que mudou de opinião.
+
+    `0.0` é o default TÉCNICO (preserva bit-exato um `LabelConfig(...)`
+    construído à mão em teste sintético que não passa o campo); o caminho
+    de PRODUÇÃO é `from_constants`, que carrega o valor real de
+    `constants.yaml` (`adverse_selection_bps`, classe A ASSUMED,
+    `sweep_range: [0.0, 5.0]`). Não é flag opt-in: nenhum caller de
+    produção constrói `LabelConfig` sem `from_constants`."""
+
+    cost_policy_id: str = "adverse_selection_charged_v1"
+    """AG-432 — mesmo papel e mesma justificativa de
+    `barrier_fill_policy_id` logo acima, mas para a POLÍTICA DE CUSTO:
+    marcador de versão puro (nenhuma bifurcação de comportamento por
+    valor), existente só pra que `config_hash` enxergue que a fórmula de
+    `ret_net` mudou. Sem ele, um `labels.parquet` gerado sob a fórmula
+    antiga (`ret_net` sem seleção adversa) passaria por
+    `verify_config_hash` como se nada tivesse mudado — o mesmo ponto cego
+    do B15 que o `barrier_fill_policy_id` fechou para a lógica de fill.
+    O valor default força divergência contra TODO artefato pré-AG-432."""
+
     def __post_init__(self) -> None:
         # AG-221 -- falha alta em fonte desconhecida. Diferente de
         # `barrier_fill_policy_id` (marcador livre de versão), este campo
@@ -604,6 +650,9 @@ class LabelConfig:
             atr_window_ms=atr_window_ms,
             maker_fee=float(load_constant("maker_fee")),
             taker_fee=float(load_constant("taker_fee")),
+            # AG-432 -- caminho de producao carrega o valor real; o default
+            # 0.0 do dataclass existe so pra teste sintetico.
+            adverse_selection_bps=float(load_constant("adverse_selection_bps")),
             estimator_id=resolved_estimator_id,
             entry_fill_source=str(load_constant("label_entry_fill_source")),
             tf=tf,
@@ -688,6 +737,12 @@ class LabelConfig:
             "horizon_bars": self.horizon_bars,
             "barrier_fill_policy_id": self.barrier_fill_policy_id,
             "entry_fill_source": self.entry_fill_source,
+            # AG-432 -- os dois entram sempre (mesmo padrao de
+            # barrier_fill_policy_id, NAO o omitido-quando-None de
+            # bars_calibration_hash): a formula de `ret_net` mudou, todo
+            # labels.parquet anterior tem que divergir.
+            "adverse_selection_bps": self.adverse_selection_bps,
+            "cost_policy_id": self.cost_policy_id,
         }
         if self.bars_calibration_hash is not None:
             payload["bars_calibration_hash"] = self.bars_calibration_hash
@@ -1469,7 +1524,11 @@ def build_labels_with_stats(
     fund_time = fund["calc_time"].cast(pl.Int64).to_numpy().astype(np.int64)
     fund_rate = fund["last_funding_rate"].cast(pl.Float64).to_numpy()
 
-    adverse_selection_bps_const = float(load_constant("adverse_selection_bps"))
+    # AG-432 -- vem do `cfg` (e portanto do `config_hash`), nao mais de um
+    # `load_constant` solto: o valor agora ENTRA em `ret_net`, entao mudar a
+    # constante tem que invalidar o artefato, nao alterar o custo em silencio
+    # sobre labels que dizem ter sido gerados com outro numero.
+    adverse_selection_frac = cfg.adverse_selection_bps / _BPS_PER_UNIT
 
     filters_cache: dict[date, _ResolvedFilters] = {}
     # Núcleo funcional, casca imperativa (2026-08-23) -- decidido UMA vez
@@ -1651,8 +1710,18 @@ def build_labels_with_stats(
         label = _LABEL_BY_BARRIER[barrier]
 
         ret_gross = side * (exit_price / fill_px - 1.0)  # noqa: unguarded-ratio -- fill_px é preço real de mercado, nunca <=0
-        cost_entry_frac = cfg.maker_fee
-        cost_exit_frac = cfg.maker_fee if barrier == "TP" else cfg.taker_fee
+        # AG-432 -- seleção adversa cobrada nas pernas PASSIVAS, e só nelas.
+        # A entrada é sempre `LIMIT`/post-only (maker) e o TP é `LIMIT`/`GTC`
+        # (maker): são exatamente as pernas em que a ordem fica em repouso
+        # no book e é preenchida QUANDO alguém quis negociar contra ela --
+        # a definição de seleção adversa. O SL é `STOP_MARKET` (taker): não
+        # há fila nem repouso, e o custo adverso dele já é modelado
+        # fisicamente por `_gap_aware_sl_fill` (D4/AG-205) -- cobrar
+        # seleção adversa ali seria contar o mesmo efeito duas vezes.
+        adverse_entry = adverse_selection_frac
+        adverse_exit = adverse_selection_frac if barrier == "TP" else 0.0
+        cost_entry_frac = cfg.maker_fee + adverse_entry
+        cost_exit_frac = (cfg.maker_fee + adverse_exit) if barrier == "TP" else cfg.taker_fee
 
         f_lo = int(np.searchsorted(fund_time, t_entry, side="left"))
         f_hi = int(np.searchsorted(fund_time, t1, side="right"))
@@ -1749,7 +1818,10 @@ def build_labels_with_stats(
         cols["cost_entry_bps"].append(cost_entry_frac * _BPS_PER_UNIT)
         cols["cost_exit_bps"].append(cost_exit_frac * _BPS_PER_UNIT)
         cols["funding_bps"].append(funding_frac * _BPS_PER_UNIT)
-        cols["adverse_selection_bps"].append(adverse_selection_bps_const)
+        # AG-432 -- a coluna agora reporta o que foi de fato COBRADO neste
+        # trade (entrada + saida, so as pernas maker), nao a constante crua:
+        # um trade que saiu por SL/TIME paga so a perna de entrada.
+        cols["adverse_selection_bps"].append((adverse_entry + adverse_exit) * _BPS_PER_UNIT)
         cols["ret_net"].append(ret_net)
         cols["atr_at_t0"].append(atr_pct_i)
         cols["mfe_atr_units"].append(mfe_atr_units)

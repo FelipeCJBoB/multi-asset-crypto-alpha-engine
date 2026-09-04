@@ -854,6 +854,8 @@ def compute_fase2_e1(
                     time_stop_ms=cfg.time_stop_ms,
                     maker_fee=cfg.maker_fee,
                     taker_fee=cfg.taker_fee,
+                    # AG-432 -- mesma politica de custo do motor escalar.
+                    adverse_selection_bps=cfg.adverse_selection_bps,
                 )
                 cell_trades = _cell_trades(filled_side, resolved, side=side)
 

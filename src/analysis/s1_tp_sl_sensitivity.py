@@ -167,6 +167,9 @@ def _cell_result(
         time_stop_ms=cfg.time_stop_ms,
         maker_fee=cfg.maker_fee,
         taker_fee=cfg.taker_fee,
+        # AG-432 -- mesma politica de custo do motor escalar; vem do `cfg`
+        # (e portanto do `config_hash`), nunca de um default local.
+        adverse_selection_bps=cfg.adverse_selection_bps,
         decision_bar_close_time_ms=decision_bar_close_time_ms,
         tf=cfg.resolution_id if cfg.resolution_id is not None else cfg.tf,
         horizon_end_ms=horizon_end_ms,

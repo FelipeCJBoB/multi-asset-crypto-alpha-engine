@@ -108,6 +108,7 @@ def _scalar_and_vectorized(
         time_stop_ms=_CFG.time_stop_ms,
         maker_fee=_CFG.maker_fee,
         taker_fee=_CFG.taker_fee,
+        adverse_selection_bps=_CFG.adverse_selection_bps,
         decision_bar_close_time_ms=_synthetic_bars_close_time(),
     )
     return filled.row(0, named=True), vec_out
@@ -145,6 +146,101 @@ def test_reproduz_build_labels_tp_long() -> None:
     # motores.
     assert vec.exit_price[0] == pytest.approx(scalar_row["tp_price"])
     assert not bool(vec.gap_fill_used[0])
+
+
+def test_selecao_adversa_cobrada_so_nas_pernas_maker() -> None:
+    """AG-432 (auditoria externa 2026-09-03, achado N8) — `adverse_
+    selection_bps` deixou de ser coluna informativa e passou a ser COBRADO
+    de `ret_net`, mas só nas pernas PASSIVAS: entrada (`LIMIT`/post-only,
+    sempre) e saída por TP (`LIMIT`/`GTC`). SL e TIME saem a mercado
+    (taker) — não há ordem em repouso pra ser adversamente selecionada, e
+    o custo adverso do SL já é modelado por `_gap_aware_sl_fill`; cobrar
+    ali contaria o mesmo efeito duas vezes.
+
+    Trava as DUAS metades: quanto foi cobrado, e em que pernas. Os dois
+    motores (escalar e vetorizado) são checados no mesmo teste, porque foi
+    justamente a divergência entre eles que revelou que existiam duas
+    implementações de custo pra manter em sincronia."""
+    t0 = _t0()
+    adv_bps = 1.5  # noqa: magic-number -- valor de produção de constants.yaml, fixado aqui pra o teste ser legível
+    cfg_com_adv = dataclasses.replace(_CFG, adverse_selection_bps=adv_bps)
+
+    cenarios = {
+        "TP": [
+            (t0 + 1 * 60_000, 99.9, 100.0, 99.8, 99.9),
+            (t0 + 5 * 60_000, 145.0, 150.0, 140.0, 148.0),
+        ],
+        "SL": [
+            (t0 + 1 * 60_000, 99.9, 100.0, 99.8, 99.9),
+            (t0 + 5 * 60_000, 60.0, 65.0, 50.0, 55.0),
+        ],
+    }
+    # TP paga selecao adversa nas 2 pernas (entrada maker + saida maker);
+    # SL paga so na entrada (saida e STOP_MARKET, taker).
+    esperado_bps = {"TP": 2.0 * adv_bps, "SL": 1.0 * adv_bps}
+
+    for barreira, rows in cenarios.items():
+        mark = _mark(_with_horizon_coverage(rows))
+        escalar = tb.build_labels(
+            _synthetic_bars(), mark, _EMPTY_FUNDING, side=1, config=cfg_com_adv
+        )
+        filled = escalar.filter(pl.col("barrier_hit").cast(pl.Utf8) != "NOFILL")
+        assert filled.height == 1
+        row = filled.row(0, named=True)
+        assert row["barrier_hit"] == barreira
+
+        # 1. quanto foi cobrado, e em quais pernas
+        assert row["adverse_selection_bps"] == pytest.approx(esperado_bps[barreira])
+        assert row["cost_entry_bps"] == pytest.approx(
+            _CFG.maker_fee * 10_000 + adv_bps  # noqa: magic-number -- bps por unidade
+        )
+        if barreira == "TP":
+            assert row["cost_exit_bps"] == pytest.approx(_CFG.maker_fee * 10_000 + adv_bps)  # noqa: magic-number
+        else:
+            # saida taker: NENHUMA selecao adversa somada ao fee
+            assert row["cost_exit_bps"] == pytest.approx(_CFG.taker_fee * 10_000)  # noqa: magic-number
+
+        # 2. `ret_net` de fato encolheu exatamente o cobrado (contraprova
+        #    contra "cobrei na coluna mas esqueci de subtrair")
+        sem_adv = tb.build_labels(_synthetic_bars(), mark, _EMPTY_FUNDING, side=1, config=_CFG)
+        row_sem = sem_adv.filter(pl.col("barrier_hit").cast(pl.Utf8) != "NOFILL").row(
+            0, named=True
+        )
+        delta_bps = (row_sem["ret_net"] - row["ret_net"]) * 10_000  # noqa: magic-number
+        assert delta_bps == pytest.approx(esperado_bps[barreira])
+
+        # 3. o motor vetorizado cobra igual
+        vec = bs.resolve_barriers_vectorized(
+            filled,
+            mark,
+            _EMPTY_FUNDING,
+            side=1,
+            tp_atr_mult=cfg_com_adv.tp_atr_mult,
+            sl_atr_mult=cfg_com_adv.sl_atr_mult,
+            time_stop_ms=cfg_com_adv.time_stop_ms,
+            maker_fee=cfg_com_adv.maker_fee,
+            taker_fee=cfg_com_adv.taker_fee,
+            adverse_selection_bps=cfg_com_adv.adverse_selection_bps,
+            decision_bar_close_time_ms=_synthetic_bars_close_time(),
+        )
+        assert vec.ret_net[0] == pytest.approx(row["ret_net"], rel=1e-9)
+        assert vec.cost_entry_bps[0] == pytest.approx(row["cost_entry_bps"], rel=1e-9)
+        assert vec.cost_exit_bps[0] == pytest.approx(row["cost_exit_bps"], rel=1e-9)
+
+
+def test_config_hash_muda_quando_politica_de_custo_muda() -> None:
+    """AG-432 — o furo que `cost_policy_id`/`adverse_selection_bps` no
+    payload fecham: sem eles, um `labels.parquet` gerado sob a fórmula
+    antiga de `ret_net` passaria por `verify_config_hash` (B15) como se
+    nada tivesse mudado. Mesmo papel que `barrier_fill_policy_id` cumpre
+    pra lógica de fill."""
+    base = _CFG
+    outra_taxa = dataclasses.replace(base, adverse_selection_bps=1.5)  # noqa: magic-number
+    outra_politica = dataclasses.replace(base, cost_policy_id="hipotetica_v2")
+
+    assert base.config_hash != outra_taxa.config_hash
+    assert base.config_hash != outra_politica.config_hash
+    assert outra_taxa.config_hash != outra_politica.config_hash
 
 
 def test_reproduz_build_labels_sl_long() -> None:
@@ -294,6 +390,7 @@ def test_vetorizado_processa_multiplos_trades_de_uma_vez() -> None:
         time_stop_ms=_CFG.time_stop_ms,
         maker_fee=_CFG.maker_fee,
         taker_fee=_CFG.taker_fee,
+        adverse_selection_bps=_CFG.adverse_selection_bps,
     )
     assert vec.barrier_hit == ["TP", "SL", "TIME"]
 
@@ -328,6 +425,7 @@ def test_resolve_barriers_vectorized_tf_default_bate_bit_exato_com_explicito() -
         time_stop_ms=_CFG.time_stop_ms,
         maker_fee=_CFG.maker_fee,
         taker_fee=_CFG.taker_fee,
+        adverse_selection_bps=_CFG.adverse_selection_bps,
     )
     out_explicit = bs.resolve_barriers_vectorized(
         filled,
@@ -339,6 +437,7 @@ def test_resolve_barriers_vectorized_tf_default_bate_bit_exato_com_explicito() -
         time_stop_ms=_CFG.time_stop_ms,
         maker_fee=_CFG.maker_fee,
         taker_fee=_CFG.taker_fee,
+        adverse_selection_bps=_CFG.adverse_selection_bps,
         tf="15m",
     )
     assert out_default.barrier_hit == out_explicit.barrier_hit
@@ -364,6 +463,7 @@ def test_resolve_barriers_vectorized_tf_invalido_levanta_unsupportedtimeframeerr
             time_stop_ms=4 * _BAR_MS,
             maker_fee=0.0002,
             taker_fee=0.0005,
+            adverse_selection_bps=0.0,  # AG-432 -- ver nota nos outros casos sintéticos
             tf="45m",
         )
 
@@ -413,6 +513,11 @@ def test_resolve_barriers_vectorized_horizon_e_invariante_a_tf_nao_escala_mais()
         time_stop_ms=time_stop_ms,
         maker_fee=0.0002,
         taker_fee=0.0005,
+        # AG-432 -- 0,0 explicito: estes casos sinteticos afirmam sobre
+        # RESOLUCAO DE BARREIRA, nao sobre politica de custo. A cobranca de
+        # selecao adversa tem teste proprio
+        # (`test_selecao_adversa_cobrada_so_nas_pernas_maker`).
+        adverse_selection_bps=0.0,
         tf="15m",
     )
     vec_30m = bs.resolve_barriers_vectorized(
@@ -425,6 +530,11 @@ def test_resolve_barriers_vectorized_horizon_e_invariante_a_tf_nao_escala_mais()
         time_stop_ms=time_stop_ms,
         maker_fee=0.0002,
         taker_fee=0.0005,
+        # AG-432 -- 0,0 explicito: estes casos sinteticos afirmam sobre
+        # RESOLUCAO DE BARREIRA, nao sobre politica de custo. A cobranca de
+        # selecao adversa tem teste proprio
+        # (`test_selecao_adversa_cobrada_so_nas_pernas_maker`).
+        adverse_selection_bps=0.0,
         tf="30m",
     )
     assert vec_15m.barrier_hit == ["TIME"]
@@ -486,6 +596,11 @@ def test_resolve_barriers_vectorized_n_bars_held_contagem_real_detecta_gap() -> 
         time_stop_ms=time_stop_ms,
         maker_fee=0.0002,
         taker_fee=0.0005,
+        # AG-432 -- 0,0 explicito: estes casos sinteticos afirmam sobre
+        # RESOLUCAO DE BARREIRA, nao sobre politica de custo. A cobranca de
+        # selecao adversa tem teste proprio
+        # (`test_selecao_adversa_cobrada_so_nas_pernas_maker`).
+        adverse_selection_bps=0.0,
         tf="15m",
         decision_bar_close_time_ms=decision_bar_close_time_ms,
     )
@@ -548,6 +663,11 @@ def test_reproduz_distribuicao_real_2024_long() -> None:
         time_stop_ms=cfg.time_stop_ms,
         maker_fee=cfg.maker_fee,
         taker_fee=cfg.taker_fee,
+        # AG-432 -- vem do MESMO `cfg` que gerou os labels escalares acima.
+        # Foi exatamente esta linha faltando que fez o teste pegar a
+        # divergencia de 3 bps (2 x 1,5) quando so o motor escalar tinha
+        # sido corrigido: a paridade entre os 2 motores e o guarda-corpo.
+        adverse_selection_bps=cfg.adverse_selection_bps,
         decision_bar_close_time_ms=decision_bar_close_time_ms,
     )
     scalar_barrier = scalar_filled["barrier_hit"].cast(pl.Utf8).to_list()

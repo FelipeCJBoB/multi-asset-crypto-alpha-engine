@@ -78,6 +78,14 @@ def _gate_verdict(
         n_folds_auc_by_side={"long": 8, "short": 0},  # noqa: magic-number
         auc_p_value_by_side={"long": 0.03, "short": float("nan")},  # noqa: magic-number
         model_gate_pass_by_side={"long": model_long_pass, "short": False},
+        # AG-433 -- população completa (a que decide o gate desde
+        # 2026-09-03). Mesmos números da de sinal: este arquivo afirma
+        # sobre a COMPOSIÇÃO do model card, não sobre qual população
+        # produziu a AUC.
+        auc_full_mean_by_side={"long": 0.55, "short": float("nan")},  # noqa: magic-number
+        auc_full_std_by_side={"long": 0.10, "short": float("nan")},  # noqa: magic-number
+        n_folds_auc_full_by_side={"long": 8, "short": 0},  # noqa: magic-number
+        auc_full_p_value_by_side={"long": 0.03, "short": float("nan")},  # noqa: magic-number
     )
 
 

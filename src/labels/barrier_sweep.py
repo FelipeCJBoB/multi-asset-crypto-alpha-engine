@@ -201,6 +201,7 @@ def resolve_barriers_vectorized(
     time_stop_ms: int,
     maker_fee: float,
     taker_fee: float,
+    adverse_selection_bps: float,
     tf: str = "15m",
     decision_bar_close_time_ms: IntArray | None = None,
     horizon_end_ms: IntArray | None = None,
@@ -387,8 +388,20 @@ def resolve_barriers_vectorized(
     gap_fill_used = (barrier_code == 2) & (sl_exit_price != sl_price)
 
     ret_gross = side * (exit_price / fill_px - 1.0)  # noqa: unguarded-ratio -- fill_px é preço real de mercado, nunca <=0
-    cost_entry_frac = np.full(n, maker_fee, dtype=np.float64)
-    cost_exit_frac = np.where(barrier_hit == _TP, maker_fee, taker_fee)
+    # AG-432 -- MESMA politica de custo do motor escalar
+    # (`triple_barrier.build_labels`): selecao adversa cobrada so nas pernas
+    # PASSIVAS (entrada `LIMIT`/post-only sempre; saida so quando TP, que e
+    # `LIMIT`/`GTC`). SL/TIME saem a mercado -- taker, sem fila, custo
+    # adverso ja modelado pelo fill gap-aware. A paridade entre os 2 motores
+    # e testada (`test_labels_barrier_sweep.py::
+    # test_reproduz_distribuicao_real_2024_long`, tolerancia 1e-6) e foi
+    # exatamente ela que pegou esta divergencia quando so o motor escalar
+    # tinha sido corrigido -- os 2 tem que mudar juntos, sempre.
+    adverse_selection_frac = adverse_selection_bps / _BPS_PER_UNIT
+    cost_entry_frac = np.full(n, maker_fee + adverse_selection_frac, dtype=np.float64)
+    cost_exit_frac = np.where(
+        barrier_hit == _TP, maker_fee + adverse_selection_frac, taker_fee
+    )
 
     fund = funding.sort("calc_time")
     fund_time = fund["calc_time"].cast(pl.Int64).to_numpy().astype(np.int64)
