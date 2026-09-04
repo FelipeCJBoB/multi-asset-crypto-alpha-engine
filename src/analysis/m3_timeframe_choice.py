@@ -194,6 +194,7 @@ def compute_timeframe_choice_for_symbol(symbol: str) -> list[TimeframeChoiceMetr
                 sl_atr_mult=sl_atr_mult,
                 maker_fee=maker_fee,
                 taker_fee=taker_fee,
+                adverse_selection_bps=float(load_risk_constant("adverse_selection_bps")),
             )
             if n_valid
             else float("nan")

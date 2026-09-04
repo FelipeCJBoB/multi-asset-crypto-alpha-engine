@@ -203,6 +203,9 @@ def _cell_result(
         sl_atr_mult=sl_atr_mult,
         maker_fee=cfg.maker_fee,
         taker_fee=cfg.taker_fee,
+        # AG-439 -- vem do `cfg` (e portanto do `config_hash`), igual ao
+        # que `triple_barrier` cobra de `ret_net`.
+        adverse_selection_bps=cfg.adverse_selection_bps,
     )
     collision_rate = (
         float(np.mean(resolved.tie_break_used)) if resolved.tie_break_used.size else float("nan")

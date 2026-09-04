@@ -28742,3 +28742,65 @@ entries:
       dezenas de milhares. A campanha multi-seed em curso testa se alguma
       celula tem edge distinguivel de zero; se nenhuma tiver, o mecanismo
       de tau e uma questao secundaria por definicao.
+
+  - id: AG-439
+    date: "2026-09-04"
+    file: "src/analysis/feasibility.py (breakeven_win_rate ganha adverse_selection_bps OBRIGATORIO); src/analysis/s1_tp_sl_sensitivity.py e src/analysis/m3_timeframe_choice.py (callers); tests/unit/test_analysis_feasibility.py (2 testes novos); experiments/s1_tp_sl_sensitivity_report_R2.json e _R3.json (regerados)"
+    related_file: "AG-432 (cobranca de selecao adversa em ret_net, a mudanca que tornou este calculo inconsistente); AG-429 (mesma familia: numero publicado que nao corresponde ao que o codigo faz)"
+    numeracao: "AG-439."
+    found_by: >-
+      Agente CETICO despachado pelo Manager (2026-09-04) com a ordem
+      explicita de "encontrar o que voce nao esta vendo". Achado dele,
+      verificado e confirmado por leitura de codigo e medicao propria antes
+      de aceitar -- junto com outros 3 achados validos e 2 que a verificacao
+      REFUTOU (ver `nota`).
+    gap: >
+      `breakeven_win_rate` (`src/analysis/feasibility.py`) calculava
+      `c_win = 2 x maker_fee` e `c_lose = maker_fee + taker_fee`, sem
+      NENHUM termo de selecao adversa. Mas desde o AG-432
+      `triple_barrier.build_labels` COBRA `adverse_selection_bps` de
+      `ret_net` nas pernas passivas (entrada sempre; saida so quando TP).
+      Resultado: o breakeven canonico do projeto era medido contra um custo
+      que o `ret_net` do proprio label nao usa -- publicava um alvo mais
+      FACIL do que o real.
+      E exatamente a mesma classe de defeito que o AG-432 corrigiu na Label
+      Engine: a constante existe, esta declarada, e um consumidor a ignora.
+      A diferenca e que aqui o consumidor e o numero que decide GEOMETRIA
+      DE BARREIRA, uma constante classe A.
+    severity: "alta -- 2,1 pontos percentuais de folga ficticia (0,5500 publicado vs 0,5714 consistente, BTCUSDT/R2 long) num numero que gateia decisao de classe A. Nao ha decisao passada errada conhecida por causa disto (a varredura de geometria do mesmo dia foi decidida por edge liquido em bps, nao por este campo), mas qualquer decisao futura de geometria lida do artefato herdaria o vies."
+    layer: "analysis (feasibility/s1/m3) -- nao toca treino nem labels"
+    consequence: >
+      Um sweep de geometria comparado contra um breakeven 2pp facil demais
+      aprovaria celulas que na verdade nao pagam o custo real. Como o
+      artefato S1 e a fonte que o Manager le pra decidir tp_atr_mult/
+      sl_atr_mult, o vies seria herdado silenciosamente.
+    resolved_by_commit: null
+    resolution: "adverse_selection_bps virou parametro OBRIGATORIO (sem default) de breakeven_win_rate -- mesmo precedente de barrier_sweep.resolve_barriers_vectorized no AG-432, pra que o type-checker encontre todo caller em vez de deixar algum herdar o comportamento antigo em silencio; achou os 2 (s1_tp_sl_sensitivity, m3_timeframe_choice). Cobrado nas pernas passivas exatamente como triple_barrier cobra: c_win = 2x(maker+adv), c_lose = (maker+adv)+taker. 2 testes novos: um reproduz a celula de producao real e trava os dois valores (0,550 -> 0,571), outro prova que adverse_selection_bps=0,0 reproduz bit-exato a formula anterior. Artefatos S1 R2/R3 regerados: breakeven de producao subiu de 0,5500 para 0,5714 (R2) e de 0,5352 para 0,5500 (R3)."
+    status: >
+      fechado. NOTA SOBRE O PROCESSO, que vale mais que o bug: este AG saiu
+      de um agente cetico despachado pelo Manager especificamente pra atacar
+      a analise que EU tinha acabado de apresentar. Das 7 afirmacoes que
+      submeti, a verificacao posterior derrubou 3 minhas -- (a) apresentei
+      como medicao uma tautologia ja catalogada em AG-122 ("distancia
+      realizada = 1,50 ATR" e a definicao de tp_price, nao um achado);
+      (b) meu suposto vazamento de regime do CPCV (+0,025 de AUC) comparava
+      alvo e score DIFERENTES (b4 usa TP-vs-resto com score cru;
+      score_quality usa ret_net>0 com score calibrado) -- segurando os dois
+      eixos, CPCV da 0,4976 e walk-forward 0,5023, ou seja o sinal do gap se
+      INVERTE; (c) minha magnitude de dispersao de duracao de barra estava
+      errada por ~1 ordem, porque multipliquei quantis de UMA barra por 48
+      em vez de usar a distribuicao da soma de 48.
+      E a verificacao tambem REFUTOU 2 achados do proprio cetico, que eu nao
+      aceitei de boca: (i) ele previu ESS de Kish ABAIXO do reportado
+      (inflando N_lifetime); medido da 0,5925 contra 0,3885 reportado, ou
+      seja o reportado e CONSERVADOR, 1,53x menor que o real; (ii) ele
+      alegou que eu tinha descartado TIME e que a fracao real e 1,68%; nos
+      labels de producao TIME e 0,115% -- o 1,68% vem da re-resolucao do
+      proprio S1, com convencao de horizonte diferente.
+      Achados dele que sobreviveram a verificacao e que eu NAO tinha visto:
+      o vies deterministico de `sample_weight` (classe negativa carrega 30%
+      mais peso, medido: 1,1474 no SL contra 0,8843 no TP, por artefato do
+      modelo de custo); a seletividade como alavanca de 1a ordem (subir
+      target_signal_rate de 0,0284 pra 0,10 ENCARECEU a AUC exigida de
+      0,5395 pra 0,5515); e a anomalia de AUC estar em R1 (BTC 0,6428,
+      BNB 0,6358), nao no R2 que eu persegui.

@@ -75,13 +75,29 @@ def breakeven_win_rate(
     sl_atr_mult: float,
     maker_fee: float,
     taker_fee: float,
+    adverse_selection_bps: float,
 ) -> float:
     """Versão correta por desfecho — TP sempre sai maker, SL/TIME sempre
     saem taker (§9.1, `triple_barrier.py` item 8 da docstring do módulo,
     `cost_exit_frac`). Entrada é SEMPRE maker (GTX/post-only, B12).
 
-        c_win  = maker_fee + maker_fee   (entrada + saída em TP)
-        c_lose = maker_fee + taker_fee   (entrada + saída em SL/TIME)
+    **[CORRIGIDO 2026-09-04, `AG-439`]** `adverse_selection_bps` era
+    OMITIDO deste cálculo. Desde o `AG-432`, `triple_barrier.build_labels`
+    COBRA seleção adversa de `ret_net` nas pernas passivas (entrada
+    sempre; saída só quando TP) — então este breakeven era medido contra
+    um custo que o `ret_net` do label não usa, e publicava um alvo mais
+    fácil do que o real. Medido em `BTCUSDT/R2` long: 0,5500 antes,
+    0,5714 depois — 2,1 pontos percentuais de folga fictícia num número
+    que decide geometria de barreira (classe A). Mesma classe de defeito
+    que o próprio `AG-432` corrigiu na Label Engine: o custo estava
+    declarado e um consumidor não o aplicava. Parâmetro OBRIGATÓRIO (sem
+    default) de propósito — mesmo precedente de
+    `barrier_sweep.resolve_barriers_vectorized`, pra que o type-checker
+    encontre todo caller em vez de deixar algum herdar silenciosamente o
+    valor antigo.
+
+        c_win  = (maker_fee + adv) + (maker_fee + adv)   (TP: 2 pernas passivas)
+        c_lose = (maker_fee + adv) + taker_fee           (SL/TIME: saída taker)
         R      = tp_atr_mult * atr_pct * 10000   (ganho em bps se TP)
         Risk   = sl_atr_mult * atr_pct * 10000   (perda em bps se SL)
 
@@ -96,8 +112,10 @@ def breakeven_win_rate(
     leitura mais simples"). `cost_surface.py` já mediu que a saída real
     é ~53% taker, não 50% -- esta versão não precisa dessa suposição
     porque separa o custo por desfecho de forma exata, não probabilística."""
-    c_win_bps = (maker_fee + maker_fee) * 10000.0
-    c_lose_bps = (maker_fee + taker_fee) * 10000.0
+    # AG-439 -- seleção adversa entra nas pernas PASSIVAS, exatamente como
+    # `triple_barrier` cobra: entrada sempre, saída só quando TP.
+    c_win_bps = (maker_fee + maker_fee) * 10000.0 + 2.0 * adverse_selection_bps
+    c_lose_bps = (maker_fee + taker_fee) * 10000.0 + adverse_selection_bps
     reward_bps = tp_atr_mult * atr_pct * 10000.0
     risk_bps = sl_atr_mult * atr_pct * 10000.0
     denom = reward_bps + risk_bps + c_lose_bps - c_win_bps

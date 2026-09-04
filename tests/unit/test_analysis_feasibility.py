@@ -95,7 +95,12 @@ def test_breakeven_win_rate_refinada_proxima_da_naive_para_geometria_atual() -> 
     fórmula, mas não deveriam divergir muito nesta geometria específica."""
     atr_pct = 0.003  # 0,3%, ordem de grandeza real medida em M1 (GK)
     wr_refined = fe.breakeven_win_rate(
-        atr_pct=atr_pct, tp_atr_mult=2.0, sl_atr_mult=1.5, maker_fee=0.0002, taker_fee=0.0005
+        atr_pct=atr_pct,
+        tp_atr_mult=2.0,
+        sl_atr_mult=1.5,
+        maker_fee=0.0002,
+        taker_fee=0.0005,
+        adverse_selection_bps=0.0,  # AG-439 -- 0,0 preserva a comparacao historica contra a naive
     )
     custo = fe.custo_atr(atr_pct=atr_pct, maker_fee=0.0002, taker_fee=0.0005)
     wr_naive = fe.breakeven_win_rate_naive(custo_atr=custo, tp_atr_mult=2.0, sl_atr_mult=1.5)
@@ -109,7 +114,12 @@ def test_breakeven_win_rate_refinada_mais_alta_que_naive() -> None:
     barato) para compensar que perder custa relativamente mais caro."""
     atr_pct = 0.003
     wr_refined = fe.breakeven_win_rate(
-        atr_pct=atr_pct, tp_atr_mult=2.0, sl_atr_mult=1.5, maker_fee=0.0002, taker_fee=0.0005
+        atr_pct=atr_pct,
+        tp_atr_mult=2.0,
+        sl_atr_mult=1.5,
+        maker_fee=0.0002,
+        taker_fee=0.0005,
+        adverse_selection_bps=0.0,  # AG-439 -- 0,0 preserva a comparacao historica contra a naive
     )
     custo = fe.custo_atr(atr_pct=atr_pct, maker_fee=0.0002, taker_fee=0.0005)
     wr_naive = fe.breakeven_win_rate_naive(custo_atr=custo, tp_atr_mult=2.0, sl_atr_mult=1.5)
@@ -175,3 +185,53 @@ def test_frac_tp_sl_from_labels_vazio_da_nan_nao_zero() -> None:
     assert out.n == 0
     assert math.isnan(out.frac_tp)
     assert math.isnan(out.frac_sl)
+
+
+# ============================================================================
+# AG-439 -- selecao adversa no breakeven (achado da auditoria cetica)
+# ============================================================================
+
+
+def test_breakeven_win_rate_cobra_selecao_adversa_nas_pernas_maker() -> None:
+    """AG-439: `adverse_selection_bps` era OMITIDO daqui, enquanto
+    `triple_barrier` (AG-432) COBRA de `ret_net` nas pernas passivas.
+    O breakeven publicado media contra um custo que o label nao usa --
+    alvo mais facil que o real, num numero classe A que decide geometria.
+
+    Reproduz a celula de producao real (BTCUSDT/R2 long, `atr_median_side`
+    do artefato S1): o valor sobe de 55,0% para 57,1% -- 2,1 pontos
+    percentuais de folga ficticia."""
+    atr_pct = 0.0035666  # atr_median_side real, experiments/s1_..._R2.json
+    comum = {
+        "atr_pct": atr_pct,
+        "tp_atr_mult": 1.5,
+        "sl_atr_mult": 1.5,
+        "maker_fee": 0.0002,
+        "taker_fee": 0.0005,
+    }
+    sem_adv = fe.breakeven_win_rate(**comum, adverse_selection_bps=0.0)
+    com_adv = fe.breakeven_win_rate(**comum, adverse_selection_bps=1.5)  # noqa: magic-number -- valor de producao
+
+    assert sem_adv == pytest.approx(0.550, abs=0.002)  # noqa: magic-number -- o que o artefato publicava
+    assert com_adv == pytest.approx(0.571, abs=0.002)  # noqa: magic-number -- o consistente com ret_net
+    assert com_adv > sem_adv, "cobrar custo a mais so pode SUBIR o breakeven"
+
+
+def test_breakeven_win_rate_selecao_adversa_zero_e_bit_exato_ao_legado() -> None:
+    """Contraprova: com `adverse_selection_bps=0,0` a funcao reproduz
+    exatamente a formula anterior a AG-439 -- a correcao nao mexeu em
+    mais nada."""
+    comum = {
+        "atr_pct": 0.003,
+        "tp_atr_mult": 2.0,
+        "sl_atr_mult": 1.5,
+        "maker_fee": 0.0002,
+        "taker_fee": 0.0005,
+    }
+    c_win = (0.0002 + 0.0002) * 10000.0
+    c_lose = (0.0002 + 0.0005) * 10000.0
+    reward = 2.0 * 0.003 * 10000.0
+    risk = 1.5 * 0.003 * 10000.0
+    esperado = (risk + c_lose) / (reward + risk + c_lose - c_win)
+
+    assert fe.breakeven_win_rate(**comum, adverse_selection_bps=0.0) == pytest.approx(esperado)
