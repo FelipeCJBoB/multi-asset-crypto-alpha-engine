@@ -29539,3 +29539,52 @@ entries:
       anterior nao foi perdida -- fica no historico do git junto com a
       prova de que os dois baselines sao o mesmo `cpcv.py` sobre insumos
       diferentes.
+
+  - id: AG-456
+    date: "2026-09-04"
+    file: "audit/n_lifetime.yaml (ids 45-50, counter 5530 -> 10060)"
+    related_file: "AG-077 (o que substitui DSR/Gate 6 depois que N_lifetime foi descontinuado como orcamento bloqueante); AG-449; AG-453"
+    numeracao: "AG-456."
+    found_by: >-
+      Divida que eu mesmo sinalizei 3 vezes ao Manager nesta sessao sem
+      fechar. Fechada agora.
+    gap: >
+      O ledger estava parado no id 44 (2026-09-01) enquanto 6 eventos
+      rodavam -- ~4 dias de defasagem. `N_lifetime` foi descontinuado como
+      ORCAMENTO bloqueante em 2026-08-17, mas NAO como insumo: o
+      `counter` segue sendo lido por `src/validation/dsr.py` (docstring
+      linha 136). Um contador desatualizado ali nao trava nada -- produz
+      uma regua FROUXA demais em silencio, que e pior.
+    severity: >-
+      media -- nao ha decisao passada errada conhecida (nada passou os
+      gates nem sob a regua antiga), mas a regua estava 82% defasada.
+    layer: "governanca / validation (DSR)"
+    consequence: >
+      counter 5530 -> 10060 (+4530, +82%). Cada evento MEDIDO no artefato
+      que ele mesmo escreveu, nunca estimado: os 4.500 trials de Optuna
+      saem de `alpha_optuna_confirmation_*.json::{camada0,camada1}.
+      n_trials` (3 campanhas x 10 celulas x 150), e as 20 rodadas
+      multi-seed da contagem de `*_seed4*.json` em disco.
+      EFEITO MEDIDO, porque contador que so cresce sem ninguem olhar a
+      consequencia e teatro: `expected_max_sharpe_under_n_trials` sobe
+      +4,0% -- 1,8566 -> 1,9311 sob sigma_sr=0,5; 3,7133 -> 3,8621 sob
+      sigma_sr=1,0. E o Sharpe obtido POR ACASO dado o numero de
+      tentativas. Nada passava sob a regua antiga (gates 0/20, AG-453),
+      entao a reconciliacao nao reprova nada que passava -- mas o proximo
+      candidato encara uma regua 4% mais alta, e essa e a honesta.
+    resolved_by_commit: null
+    resolution: >-
+      6 entradas novas (ids 45-50) + counter reconciliado; soma dos deltas
+      bate com o counter, sem id duplicado.
+      DECISAO DE CONVENCAO DECLARADA, porque muda o numero: o REBUILD de
+      labels em si NAO conta como trial. E recomputo deterministico do
+      alvo sob configuracao declarada -- nao ha grau de liberdade sendo
+      escolhido POR RESULTADO, que e o que `N_lifetime` existe pra contar.
+      O que conta e o AJUSTE que roda em cima (ids 49 e 50). Se o Manager
+      discordar da convencao, os 2 relabels desta janela (AG-432 e AG-451,
+      15 combinacoes cada) somariam 30.
+    status: >
+      fechado. Bloco de reconciliacao escrito no proprio
+      `audit/n_lifetime.yaml` pra que a proxima leitura encontre o metodo
+      junto do numero, nao so o numero.
+

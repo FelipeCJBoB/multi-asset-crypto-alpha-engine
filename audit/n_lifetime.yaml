@@ -59,7 +59,7 @@
 
 schema_version: 1
 status: "descontinuado_2026_08_17 -- nao bloqueia mais trabalho, ver AG-077 pro que substitui DSR/Gate 6"
-counter: 5530
+counter: 10060
 
 log:
   - id: 1
@@ -1294,3 +1294,97 @@ log:
       independente convergente da mesma janela (ids 41/42 Alpha, Gate
       E0 `AG-404`, F6 id 43).
     delta: 5
+
+  - id: 45
+    date: "2026-09-02"
+    type: campanha_optuna_t0_cutoff_control_5_combos_x_2_camadas
+    description: >
+      Campanha Optuna completa, `run_stamp=20260902T213701Z`, 10 celulas
+      (5 candidatos x camada0/camada1) x 150 trials. Contagem MEDIDA a
+      partir de `experiments/alpha_optuna_confirmation_*_20260902T213701Z.
+      json::{camada0,camada1}.n_trials`, nao estimada.
+      1 seed por celula (`AG-399` corrigido), sem corte de data -- NAO e
+      confirmacao multi-seed.
+    delta: 1500
+
+  - id: 46
+    date: "2026-09-03"
+    type: campanha_optuna_t0_cutoff_control_5_combos_x_2_camadas
+    description: >
+      Idem, `run_stamp=20260903T115158Z`. 10 celulas x 150 trials, medido
+      do mesmo campo.
+    delta: 1500
+
+  - id: 47
+    date: "2026-09-03"
+    type: campanha_optuna_rate010_5_combos_x_2_camadas
+    description: >
+      Idem, `run_stamp=20260903T192150Z` -- a campanha sob
+      `target_signal_rate=0,10` (commit `6ae5eb2`). 10 celulas x 150
+      trials, medido do mesmo campo.
+    delta: 1500
+
+  - id: 48
+    date: "2026-09-04"
+    type: confirmacao_multi_seed_5_candidatos_x_4_seeds_extras
+    description: >
+      Campanha multi-seed que fechou a pergunta do `AG-428`/`AG-449`:
+      seeds 43/44/45/46 sobre os 5 candidatos, artefatos
+      `experiments/alpha_walk_forward_*_seed4*.json` (20 arquivos,
+      contados em disco). Cada arquivo cobre camada0 e camada1, mesma
+      convencao dos ids 41/42 (1 por combo-rodada, nao 1 por camada).
+      **Resultado**: 0 de 10 celulas com edge distinguivel de zero ao p
+      bruto, melhor p = 0,197 -- `AG-449`.
+    delta: 20
+
+  - id: 49
+    date: "2026-09-04"
+    type: retreino_5_candidatos_pos_relabel_ag432
+    description: >
+      Retreino dos 5 candidatos depois do relabel do `AG-432` (selecao
+      adversa cobrada em `ret_net`). Hiperparametros FIXOS -- nao ha busca
+      aqui -- mas e ajuste novo sobre dado novo, mesma convencao dos ids
+      32/33 (`retreino_real_producao`), que tambem contam retreino sem
+      busca.
+    delta: 5
+
+  - id: 50
+    date: "2026-09-04"
+    type: walk_forward_5_candidatos_pos_fase_a_ag451
+    description: >
+      Campanha de walk-forward sobre os labels reconstruidos da Fase A
+      (`AG-451`/`AG-452`: toque do TP na serie negociada, peso sobre
+      `ret_gross`, coluna de MAE). `scripts/run_walk_forward_campaign.py
+      --overwrite`, 5 combos, hiperparametros da busca ANTERIOR de
+      proposito -- pra isolar o efeito do label novo de uma busca nova.
+      **Resultado**: gates 0/20 antes e 0/20 depois (`AG-453`).
+
+      NOTA DE CONVENCAO, declarada porque afeta o numero: o REBUILD de
+      labels em si (15 combinacoes, `run_and_write_labels_dollar_bar_
+      parkinson`) NAO entra como trial. Ele e recomputo deterministico do
+      alvo sob configuracao declarada -- nao ha grau de liberdade sendo
+      escolhido por resultado, que e o que `N_lifetime` existe pra contar.
+      O que conta e o AJUSTE que roda em cima (id 49 e este).
+    delta: 5
+
+# ============================================================================
+# RECONCILIACAO 2026-09-04 (AG-456)
+# ============================================================================
+# O ledger estava parado no id 44 (2026-09-01) enquanto 6 eventos rodavam --
+# ~4 dias de defasagem num contador que `src/validation/dsr.py` LE
+# (`audit/n_lifetime.yaml::counter`, docstring linha 136). Reconciliado
+# medindo cada evento no artefato que ele mesmo escreveu, nunca estimando:
+# os 4.500 trials de Optuna saem de
+# `alpha_optuna_confirmation_*.json::{camada0,camada1}.n_trials`, e as 20
+# rodadas multi-seed da contagem de arquivos `*_seed4*.json` em disco.
+#
+#   counter 5530 -> 10060 (+4530, +82%)
+#
+# EFEITO MEDIDO no DSR, porque um contador que so cresce sem ninguem olhar o
+# efeito e teatro de governanca: `expected_max_sharpe_under_n_trials` sobe
+# +4,0% -- de 1,8566 para 1,9311 sob sigma_sr=0,5, de 3,7133 para 3,8621 sob
+# sigma_sr=1,0. Ou seja o Sharpe que se obtem POR ACASO, dado o numero de
+# tentativas, subiu 4%. Nada estava passando sob o limiar antigo (gates 0/20,
+# AG-453), entao a reconciliacao nao reprova nada que passava -- mas o
+# proximo candidato tem uma regua 4% mais alta, e essa regua e a honesta.
+
