@@ -38,7 +38,7 @@ from src.labels.barrier_geometry import (
     resolve_geometry,
 )
 from src.labels.barrier_sweep import resolve_barriers_vectorized
-from src.labels.triple_barrier import LabelConfig
+from src.labels.triple_barrier import TP_TOUCH_SOURCE_MARK_1M, LabelConfig
 from src.models._constants import load_constant
 
 logger = structlog.get_logger(__name__)
@@ -149,6 +149,7 @@ def _cell_result(
     funding: pl.DataFrame,
     decision_bar_close_time_ms: np.ndarray,
     *,
+    last_1m: pl.DataFrame | None,
     side: int,
     reward_risk_ratio: Fraction,
     sl_mult: Fraction,
@@ -170,6 +171,10 @@ def _cell_result(
         # AG-432 -- mesma politica de custo do motor escalar; vem do `cfg`
         # (e portanto do `config_hash`), nunca de um default local.
         adverse_selection_bps=cfg.adverse_selection_bps,
+        # AG-454 -- o TP resolve na serie NEGOCIADA, igual ao motor escalar
+        # depois do AG-451. Sem isto o sweep de geometria compararia celulas
+        # sob um modelo de execucao que os labels de producao nao usam mais.
+        last_1m=last_1m,
         decision_bar_close_time_ms=decision_bar_close_time_ms,
         tf=cfg.resolution_id if cfg.resolution_id is not None else cfg.tf,
         horizon_end_ms=horizon_end_ms,
@@ -354,6 +359,13 @@ def run_s1_tp_sl_sensitivity(
         mark_1m = lake.query_bars(
             symbol, "1m", start, end, source="mark_price_klines_1m", cast_prices=True
         )
+        # AG-454 -- mesma janela do mark; `None` quando a config nao pede a
+        # serie negociada (preserva o caminho legado bit-exato).
+        last_1m = (
+            lake.query_bars(symbol, "1m", start, end, source="klines_1m", cast_prices=True)
+            if cfg.tp_touch_source != TP_TOUCH_SOURCE_MARK_1M
+            else None
+        )
         funding = lake.query_funding(symbol, start, end)
         # AG-232 -- barras de DECISÃO da grade real, não 15m fixo.
         bars_decisao = (
@@ -415,6 +427,7 @@ def run_s1_tp_sl_sensitivity(
                     mark_1m,
                     funding,
                     decision_bar_close_time_ms,
+                    last_1m=last_1m,
                     side=side,
                     reward_risk_ratio=reward_risk_ratio,
                     sl_mult=sl_mult,

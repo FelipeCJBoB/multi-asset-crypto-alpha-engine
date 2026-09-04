@@ -202,6 +202,7 @@ def resolve_barriers_vectorized(
     maker_fee: float,
     taker_fee: float,
     adverse_selection_bps: float,
+    last_1m: pl.DataFrame | None = None,
     tf: str = "15m",
     decision_bar_close_time_ms: IntArray | None = None,
     horizon_end_ms: IntArray | None = None,
@@ -286,7 +287,10 @@ def resolve_barriers_vectorized(
     # decisão nenhuma (`bars_per_decision_bar` não existe mais aqui).
     window_bars = -(-time_stop_ms // _MINUTE_MS) + _WINDOW_SAFETY_MARGIN_BARS  # noqa: unguarded-ratio -- _MINUTE_MS é Final[int]=60_000, nunca 0
     start_idx = np.searchsorted(mark_open_time, t_entry, side="left")
-    if start_idx.size and int(np.max(start_idx)) + window_bars > mark_open_time.shape[0]:
+    precisa_pad = bool(
+        start_idx.size and int(np.max(start_idx)) + window_bars > mark_open_time.shape[0]
+    )
+    if precisa_pad:
         # janela tocaria além do fim do array disponível -- preenche com
         # sentinelas seguros (tempo no "futuro distante", preço que nunca
         # dispara TP/SL) em vez de deixar sliding_window_view estourar.
@@ -302,7 +306,51 @@ def resolve_barriers_vectorized(
         mark_open_time_p, mark_open_p = mark_open_time, mark_open
         mark_high_p, mark_low_p, mark_close_p = mark_high, mark_low, mark_close
 
+    # AG-454 -- serie que decide o toque de TAKE PROFIT, espelhando
+    # `triple_barrier` (AG-451): o TP e `LIMIT`/`GTC` em repouso e so
+    # executa onde ha NEGOCIACAO; o SL e `STOP_MARKET`/`MARK_PRICE` e
+    # dispara no mark. `last_1m=None` (default) usa o mark nos dois, que e
+    # o comportamento anterior bit-exato -- e o que os testes de
+    # equivalencia escalar-vs-vetorizado precisam, porque o motor escalar
+    # tambem roda sob `tp_touch_source="mark_1m"` neles.
+    if last_1m is None:
+        tp_high_p, tp_low_p = mark_high_p, mark_low_p
+    else:
+        _l = (
+            pl.DataFrame({"open_time": mark_open_time})
+            .join(
+                last_1m.sort("open_time")
+                .select(["open_time", "high", "low"])
+                .with_columns(pl.col("open_time").cast(pl.Int64)),
+                on="open_time",
+                how="left",
+            )
+            .sort("open_time")
+        )
+        # Minuto ausente na serie negociada NAO pode virar "TP tocado" nem
+        # "TP impossivel" por acidente: `-inf`/`+inf` sao os mesmos
+        # sentinelas que o padding usa, e significam "esta barra nunca
+        # dispara TP". Diferente de `triple_barrier`, aqui o trade nao e
+        # excluido -- `barrier_sweep` e ANALISE comparativa entre celulas,
+        # e excluir mudaria o denominador de uma celula so. A consequencia
+        # (leve subestimacao de frac_tp nos ~0,3% de minutos com gap) fica
+        # DECLARADA, igual em todas as celulas, e nao inverte ranking.
+        _th = _l["high"].cast(pl.Float64).to_numpy()
+        _tl = _l["low"].cast(pl.Float64).to_numpy()
+        _th = np.where(np.isfinite(_th), _th, -np.inf)
+        _tl = np.where(np.isfinite(_tl), _tl, np.inf)
+        # MESMA condicao de padding do bloco acima -- se divergir, os
+        # arrays de TP ficam com comprimento diferente dos de mark e o
+        # `sliding_window_view` alinha janelas erradas em silencio.
+        if precisa_pad:
+            tp_high_p = _pad_for_windows(_th, pad_bars=window_bars, fill_value=float("-inf"))
+            tp_low_p = _pad_for_windows(_tl, pad_bars=window_bars, fill_value=float("inf"))
+        else:
+            tp_high_p, tp_low_p = _th, _tl
+
     time_w = sliding_window_view(mark_open_time_p, window_bars)[start_idx]
+    tp_high_w = sliding_window_view(tp_high_p, window_bars)[start_idx]
+    tp_low_w = sliding_window_view(tp_low_p, window_bars)[start_idx]
     open_w = sliding_window_view(mark_open_p, window_bars)[start_idx]
     high_w = sliding_window_view(mark_high_p, window_bars)[start_idx]
     low_w = sliding_window_view(mark_low_p, window_bars)[start_idx]
@@ -321,10 +369,10 @@ def resolve_barriers_vectorized(
     sl_price = fill_px * (1 - side * sl_atr_mult * atr_pct)
 
     if side == 1:
-        tp_touch = (high_w >= tp_price[:, None]) & valid_mask
+        tp_touch = (tp_high_w >= tp_price[:, None]) & valid_mask
         sl_touch = (low_w <= sl_price[:, None]) & valid_mask
     else:
-        tp_touch = (low_w <= tp_price[:, None]) & valid_mask
+        tp_touch = (tp_low_w <= tp_price[:, None]) & valid_mask
         sl_touch = (high_w >= sl_price[:, None]) & valid_mask
 
     tp_any = tp_touch.any(axis=1)

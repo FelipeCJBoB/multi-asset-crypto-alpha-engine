@@ -635,9 +635,17 @@ def test_reproduz_distribuicao_real_2024_long() -> None:
     # barreira do motor escalar, não sobre a fonte do fill. Declarar
     # `mark_1m` explicitamente mantém o que o teste sempre testou; herdar o
     # default de produção o faria falhar por um motivo que não é o dele.
+    # `AG-454` -- MESMO raciocinio de `AG-257` acima, agora pro toque do TP.
+    # `from_constants()` resolve `tp_touch_source` de `constants.yaml`, hoje
+    # "klines_1m" (`AG-451`). Este teste afirma que o motor VETORIZADO
+    # reproduz o ESCALAR; `resolve_barriers_vectorized` e chamado aqui sem
+    # `last_1m`, entao ele resolve o TP no mark. Deixar o escalar herdar o
+    # default de producao compararia dois modelos de execucao diferentes e
+    # o teste falharia por um motivo que nao e o dele.
     cfg = dataclasses.replace(
         tb.LabelConfig.from_constants(),
         entry_fill_source=tb.ENTRY_FILL_SOURCE_MARK_1M,
+        tp_touch_source=tb.TP_TOUCH_SOURCE_MARK_1M,
     )
     start, end = "2024-01-01", "2024-12-31"
     bars_15m = lake.query_bars("BTCUSDT", "15m", start, end, source="klines_1m", cast_prices=True)

@@ -29398,3 +29398,144 @@ entries:
       minha: gastar ~4h de Optuna sobre os labels novos, sabendo que a
       dispersao entre seeds excede o efeito procurado, ou aceitar que o
       AG-449 subordina esta pergunta tambem.
+
+  - id: AG-454
+    date: "2026-09-04"
+    file: "src/labels/barrier_sweep.py (resolve_barriers_vectorized ganha last_1m); src/analysis/s1_tp_sl_sensitivity.py (carrega e repassa a serie negociada); tests/unit/test_labels_barrier_sweep.py (tp_touch_source explicito); experiments/s1_tp_sl_sensitivity_report_{R2,R3}.json (regerados)"
+    related_file: "AG-451 (a correcao que este AG propaga); AG-450 (a conclusao que este AG CORRIGE); AG-439 (mesma classe: consumidor ignorando o que o Label Engine passou a fazer); AG-445 (edge por unidade de tempo)"
+    numeracao: "AG-454."
+    found_by: >-
+      Falha real da suite COMPLETA (`pytest` sem filtro, 23 min) depois de
+      eu ter commitado com verificacao PARCIAL. O teste
+      `test_reproduz_distribuicao_real_2024_long` quebrou porque
+      `from_constants()` passou a resolver `tp_touch_source="klines_1m"` e
+      ele so oferece `mark_1m`. Consertar o teste expos o furo de verdade,
+      que era maior que ele.
+    gap: >
+      `barrier_sweep.resolve_barriers_vectorized` resolvia o toque de TP em
+      `high_w`/`low_w` -- as janelas do MARK -- e nao recebeu a correcao do
+      AG-451. E o motor que produz o artefato S1, que e a base do AG-450,
+      ou seja da minha propria recomendacao de nao gastar a Fase B.
+      A conclusao de geometria estava sendo tirada sobre um modelo de
+      execucao que os labels de producao nao usam mais desde o rebuild da
+      mesma sessao.
+      Mesma classe do AG-439: a constante/politica existe, o Label Engine a
+      aplica, e um consumidor a ignora.
+    severity: >-
+      alta -- INVERTE o ranking de geometria nas duas grades, que era o
+      insumo de uma recomendacao ja entregue ao Manager.
+    layer: "labels (barrier_sweep) / analysis (S1)"
+    consequence: >
+      Ranking por edge liquido/trade, estrato comum, ANTES -> DEPOIS:
+        R2:  1,50/0,75  1o -> 4o     |  2,25/2,25  5o -> 1o
+             1,00/0,75  2o -> 5o     |  producao   4o -> 3o
+        R3:  1,50/0,75  1o -> 3o     |  2,25/2,25  4o -> 1o
+             1,00/0,75  2o -> 4o     |  producao   3o -> 2o
+      O GRADIENTE INVERTEU DE SENTIDO. Antes: apertar o SL melhorava, e as
+      2 melhores celulas eram as 2 do PISO de sl. Agora: BARREIRA LARGA
+      vence, e a melhor celula e INTERIOR a grade.
+      Mecanismo: com o TP lido na serie negociada (~20% mais larga por
+      minuto, AG-451), um TP largo passa a ser alcancavel com frequencia
+      muito maior, entao a penalidade que a celula larga pagava era em boa
+      parte artefato de ler o TP no mark.
+      Os dois eixos que o AG-445 mostrou apontando para direcoes OPOSTAS
+      agora CONCORDAM -- por trade e por unidade de tempo, a producao perde
+      nos dois:
+        R2: 2,25/2,25 = -5,92/trade e -1,97/barra; producao -6,45 e -6,45
+        R3: 2,25/2,25 = -5,89/trade e -1,86/barra; producao -6,27 e -6,27
+    resolved_by_commit: null
+    resolution: >-
+      `last_1m` opcional em `resolve_barriers_vectorized` (default `None` =
+      mark nos dois, bit-exato ao anterior -- e o que os testes de
+      equivalencia escalar-vs-vetorizado precisam, porque la o motor
+      escalar tambem roda sob `tp_touch_source="mark_1m"`).
+      DIFERENCA DELIBERADA em relacao ao `triple_barrier`: la um minuto sem
+      cobertura na serie negociada EXCLUI o trade (`n_tp_source_gap`); aqui
+      ele vira sentinela "esta barra nunca dispara TP". O motivo e que
+      `barrier_sweep` e analise COMPARATIVA entre celulas -- excluir
+      mudaria o denominador de uma celula so e quebraria a comparacao. A
+      consequencia (leve subestimacao de frac_tp nos ~0,3% de minutos com
+      gap) fica DECLARADA, e incide igual em todas as celulas.
+      BUG MEU, pego antes de rodar: escrevi a condicao de padding da serie
+      de TP como `window_bars > 1` quando a condicao real do bloco acima e
+      outra (`start_idx` + janela excedendo o array). Divergindo, os arrays
+      de TP ficariam com comprimento diferente dos de mark e o
+      `sliding_window_view` alinharia janelas erradas EM SILENCIO. As duas
+      agora saem da mesma variavel `precisa_pad`.
+    status: >
+      fechado quanto ao codigo. CORRECAO AO AG-450, declarada em vez de
+      silenciada:
+      (a) A afirmacao DIRECIONAL do AG-450 -- "apertar o SL melhora, o otimo
+          esta na FRONTEIRA da regiao buscada" -- esta REFUTADA. O otimo e
+          interior (2,25/2,25) nas duas grades.
+      (b) Com isso cai tambem o argumento que eu usei contra estender a
+          grade ("exigiria alargar o sweep_range declarado de tp_atr_mult
+          DEPOIS de ver o otimo encostar na borda"). Nao ha mais borda
+          encostada, entao nao ha o que estender: o otimo ja esta dentro da
+          grade declarada a priori e ja esta medido.
+      (c) A conclusao QUANTITATIVA do AG-450 SOBREVIVE, e e o que decide: a
+          vantagem da melhor celula sobre a producao e de 0,53 bps (R2) e
+          0,38 bps (R3), contra 0,60 e 0,28 antes -- mesma ordem. Geometria
+          segue comprando fracao de 1 bps contra deficit de ~6 bps.
+      (d) E a vantagem NAO e estatisticamente distinguivel: R2 -5,92 +-0,42
+          contra -6,45 +-0,28 (diferenca 0,53, erro da diferenca ~0,50);
+          R3 -5,89 +-0,45 contra -6,27 +-0,30 (0,38 contra ~0,54). Menos de
+          1 sigma nas duas.
+      RECOMENDACAO AO MANAGER MANTIDA (nao gastar a Fase B), agora por
+      fundamento mais limpo: o otimo e interior, ja medido, e a diferenca
+      nao passa da propria barra de erro. Mudar producao de 1,50/1,50 para
+      2,25/2,25 custaria um relabel + retreino inteiros para comprar 0,4-0,5
+      bps que nao se distinguem de zero.
+      RESSALVA sobre o eixo por-barra, ja declarada no AG-445 e que vale
+      repetir porque agora ele CONCORDA com o outro eixo e fica tentador
+      usa-lo como confirmacao: ele presume que capital liberado mais cedo
+      encontra outro sinal imediatamente. Sob `target_signal_rate` de 0,03
+      a 0,10 isso nao esta garantido, entao a vantagem de 3,3x por barra da
+      celula larga e um TETO, nao um valor realizavel.
+
+  - id: AG-455
+    date: "2026-09-04"
+    file: "tests/golden/fixtures/cpcv_single_symbol_baseline.json (recapturado)"
+    related_file: "AG-451 (a mudanca de dado que venceu o baseline); AG-454"
+    numeracao: "AG-455."
+    found_by: >-
+      9 de 15 combos do golden de nao-regressao do CPCV falharam na suite
+      COMPLETA depois do rebuild da Fase A.
+    gap: >
+      O baseline commitado deixou de bater. A pergunta que importa nao e
+      "como faco passar" -- e "o `cpcv.py` regrediu, ou o INSUMO mudou?".
+      O proprio golden declara a doutrina: "um golden que se auto-regenera
+      em silencio quando falha nao e um golden, e um carimbo", e a escrita
+      e travada atras de `CPCV_GOLDEN_WRITE=1`.
+    severity: >-
+      media -- nenhuma regressao de codigo, mas recapturar sem provar isso
+      teria destruido a unica evidencia de nao-regressao do CPCV.
+    layer: "validation (golden) -- nenhuma mudanca de codigo"
+    consequence: >
+      DIAGNOSTICO, antes de tocar no baseline:
+      (1) `cpcv.py` esta INTOCADO nesta sessao (ultimo commit a toca-lo e
+          `cc83208`, de outro trabalho) -- verificado por `git diff`.
+      (2) O padrao de falha NAO e explicado por contagem de linhas. SOL e
+          XRP perderam linhas (gaps de cobertura, `n_tp_source_gap`), mas
+          BTCUSDT/R3, ETHUSDT/R3 e BNBUSDT/R2 falharam com contagem
+          IDENTICA -- e BTCUSDT/R2, tambem identica, PASSOU.
+      (3) Causa real: `t0` e identico e `t1` MUDOU (1.011 a 3.202 barreiras
+          diferentes por combo). O purge/embargo do CPCV depende de `t1`
+          por desenho -- e o proposito do purge. Se algum `t1` alterado
+          cruza fronteira de purge, os indices mudam; se nenhum cruza, nao
+          mudam. Isso explica por que combos com a MESMA contagem se
+          comportam diferente.
+      (4) PROVA DECISIVA: alimentando os labels ANTIGOS (backup
+          `data/labels_pre_AG451/`) no `cpcv.py` de hoje, os 6 combos
+          testados reproduzem o baseline commitado BIT A BIT --
+          `group_id_sha256` e todos os `train_idx`/`test_idx` batem.
+          Ou seja: o codigo nao mudou de comportamento; o dado mudou.
+    resolved_by_commit: null
+    resolution: >-
+      Baseline recapturado com `CPCV_GOLDEN_WRITE=1`, em COMMIT PROPRIO,
+      depois da prova (4) e nao antes. 16 goldens passam.
+      O que o golden garante muda de referencia, e isso fica dito: ele
+      passa a provar nao-regressao contra os labels PoS-Fase-A. A garantia
+      anterior nao foi perdida -- fica no historico do git junto com a
+      prova de que os dois baselines sao o mesmo `cpcv.py` sobre insumos
+      diferentes.
