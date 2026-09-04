@@ -29074,3 +29074,95 @@ entries:
       todos os outros: qualquer AG futuro que prometa ganho de edge sem
       tocar no vetor de features deve citar este e explicar por que escapa
       da conclusao acima.
+
+  - id: AG-450
+    date: "2026-09-04"
+    file: "experiments/s1_tp_sl_sensitivity_report_{R2,R3}.json (releitura por estrato comum); src/labels/barrier_geometry.py (REWARD_RISK_GRID/SL_MULT_GRID, nao alterado); config/constants.yaml::tp_atr_mult.sweep_range (nao alterado)"
+    related_file: "AG-437 (artefato de pooling: media sobre conjuntos de estratos diferentes); AG-445 (edge por unidade de tempo); AG-449 (o vetor nao discrimina -- esta e a confirmacao independente); AG-441 (a retratacao anterior, mesma familia de erro meu)"
+    numeracao: "AG-450."
+    found_by: >-
+      Passo 1 do roadmap MFE/MAE, autorizado pelo Manager. A hipotese que
+      eu levei pra medicao estava ERRADA e a propria medicao a derrubou --
+      ver `gap`.
+    gap: >
+      TRES achados, em ordem de importancia.
+
+      (1) MEU ERRO, retratado: eu afirmei ao Manager, e publiquei no
+      artefato do roadmap, que "a grade do S1 nunca testou tp_atr_mult
+      abaixo de 1,50". FALSO. A grade e parametrizada como
+      (REWARD_RISK_GRID x SL_MULT_GRID) com tp = R*S, e a celula
+      `R4/3_S3/4` da tp=1,00 / sl=0,75 -- testada, presente no artefato
+      desde 2026-08-22. Eu li a lista de tp que EU MESMO tinha resumido em
+      4 linhas na conversa, em vez de ler a grade no codigo. E a mesma
+      falha que a memoria de trabalho ja registra ("verificar mecanismo
+      contra codigo, nao contra prosa antiga") e que o AG-437 ja tinha
+      cobrado uma vez nesta sessao.
+
+      (2) ARTEFATO DE POOLING nas celulas de sl=0,75 em R2. Elas agregam
+      6 estratos (3 simbolos x 2 lados); as demais agregam 10. O controle
+      R2 (lote minimo) exclui sl=0,75 pra BTCUSDT (piso 0,773) e BNBUSDT
+      (0,787), cujos ATR medianos sao os menores da grade. Ou seja: o
+      ranking publicado comparava a celula candidata contra a de producao
+      sobre CONJUNTOS DE SIMBOLOS DIFERENTES. Recomputado sobre estrato
+      comum, a vantagem de 1,50/0,75 sobre producao passa de 0,39 pra 0,60
+      bps em R2 -- deslocamento da mesma ordem do proprio efeito medido.
+
+      (3) O OTIMO ESTA NA FRONTEIRA DA REGIAO BUSCADA, e isso e o que
+      importa. Sobre estrato comum, com erro-padrao:
+        R2 (6 estratos):  1,50/0,75 = -7,76 +-0,20  <- melhor
+                          1,00/0,75 = -8,04 +-0,21
+                          1,50/1,50 = -8,36 +-0,21  <- PRODUCAO
+                          3,00/2,25 = -9,94 +-0,25  <- pior
+        R3 (10 estratos): 1,50/0,75 = -8,12 +-0,14  <- melhor
+                          1,00/0,75 = -8,21 +-0,12
+                          1,50/1,50 = -8,40 +-0,15  <- PRODUCAO
+                          3,00/1,50 = -14,40 +-0,51 <- pior
+      As DUAS melhores celulas de cada grade sao exatamente as duas do piso
+      de sl (0,75), e o gradiente e monotono nas duas grades: apertar o SL
+      melhora, alargar o TP piora.
+    severity: >-
+      alta -- nao pelo tamanho do efeito, mas porque QUANTIFICA O TETO do
+      que a geometria pode comprar, e o teto derruba a Fase B do roadmap
+      que o Manager tinha aprovado horas antes.
+    layer: "analysis (S1) -- nenhuma mudanca de codigo de producao"
+    consequence: >
+      O gradiente medido e de ~0,3 a 0,5 bps por HALVING de sl_atr_mult
+      (melhor celula por nivel de sl: R2 -8,42 -> -8,30 -> -7,76;
+      R3 -8,50 -> -8,40 -> -8,12). O deficit a fechar e de 7,8 a 8,4 bps.
+      Extrapolando o proprio gradiente medido, fechar o deficit exigiria da
+      ordem de 20 halvings sucessivos de SL -- fisicamente impossivel, e o
+      controle R2 ja barra o primeiro deles em BTCUSDT/R2 (piso 0,773 > 0,75).
+      GEOMETRIA NAO E A ALAVANCA. Toda a grade e negativa, a melhor celula
+      e -7,76 bps, e a diferenca entre a melhor e a de producao (0,60 bps
+      em R2, 0,28 em R3) e ~7% do deficit.
+      Isto e uma confirmacao INDEPENDENTE do AG-449, por outro caminho: la
+      o vetor nao separa; aqui, mesmo com o alvo redesenhado da melhor
+      forma que a grade permite, o resultado segue negativo.
+      Espaco fisico restante abaixo de 0,75, por candidato (piso do
+      controle R2, medido): SOLUSDT/R3 0,328 | XRPUSDT/R3 0,410 |
+      SOLUSDT/R2 0,470 | XRPUSDT/R2 0,592 | BTCUSDT/R2 0,773 (ja bloqueado).
+      Existe espaco em 4 dos 5 -- e o gradiente diz que nao vale gasta-lo.
+    resolved_by_commit: null
+    resolution: >-
+      RECOMENDACAO AO MANAGER, contraria ao plano que eu mesmo propus e que
+      ele aprovou: NAO estender a grade pra baixo e NAO executar a Fase B.
+      Estender exigiria alargar o `sweep_range` declarado de `tp_atr_mult`
+      ([1,0; 3,0], classe A) DEPOIS de ver que o otimo encosta na borda --
+      que e precisamente a expansao post-hoc de regiao de busca que infla
+      multiplicidade, cobra N_lifetime, e cujo retorno o proprio gradiente
+      ja limita a fracao de 1 bps.
+      A Fase A segue valendo INTEIRA, porque nao depende disto: item 1
+      (fill do TP em `last`, ~0,8 bps de edge superestimado) e correcao de
+      corretude, e 0,8 bps e MAIOR que os 0,60 bps que toda a busca de
+      geometria entrega; item 3 (sample_weight) e item 4 (mae_atr_units)
+      fecham dividas de instrumentacao independentes da geometria.
+      Se o Manager quiser a Fase B mesmo assim, a forma honesta e declarar
+      a grade estendida A PRIORI agora, com os pisos por candidato acima, e
+      cobrar de N_lifetime -- nao alargar o range e re-rodar ate achar.
+    status: >
+      ABERTO -- recomendacao pendente de decisao do Manager sobre a Fase B.
+      Os achados (1) e (2) estao fechados: a retratacao esta registrada e o
+      ranking por estrato comum substitui o publicado.
+      NOTA: o artefato do roadmap foi publicado com a afirmacao errada do
+      item (1) e corrigido na mesma sessao. A versao v1 do artefato contem
+      o erro; a v2 contem a correcao.
