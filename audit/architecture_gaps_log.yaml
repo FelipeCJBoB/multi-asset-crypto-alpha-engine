@@ -28804,3 +28804,273 @@ entries:
       target_signal_rate de 0,0284 pra 0,10 ENCARECEU a AUC exigida de
       0,5395 pra 0,5515); e a anomalia de AUC estar em R1 (BTC 0,6428,
       BNB 0,6358), nao no R2 que eu persegui.
+
+  - id: AG-440
+    date: "2026-09-04"
+    file: "tools/lint/check_provenance_numbers.py (NOVO); tests/unit/test_lint_check_provenance_numbers.py (11 testes); .claude/rules/execution-exceptions.md (8o comando liberado)"
+    related_file: "AG-429 (o achado que motivou: proveniencia cujo texto de `source:` citava numeros que nao correspondiam mais ao `value:` vigente)"
+    numeracao: "AG-440."
+    found_by: >-
+      Consequencia direta do AG-429. La o defeito foi achado por leitura
+      manual, uma constante de cada vez; aqui a pergunta foi "o que impede
+      isso de acontecer de novo amanha, em outra constante?".
+    gap: >
+      A prosa de `source:` em `config/constants.yaml` cita numeros -- e nada
+      verificava se esses numeros ainda batem com o `value:` que a mesma
+      entrada declara. Proveniencia que cita um valor obsoleto e PIOR que
+      proveniencia ausente: parece auditada e nao esta.
+    severity: "media -- nao muda calculo nenhum, mas corrompe a camada que o projeto usa pra decidir se um numero pode ir pra producao. Proveniencia falsa e a unica falha que nao aparece em nenhum teste de comportamento."
+    layer: "governanca / lint -- fora do caminho de execucao"
+    consequence: >
+      Sem o lint, cada correcao de `value:` deixa uma prosa desatualizada
+      atras de si, e o proximo leitor decide sobre o numero errado
+      acreditando estar lendo a auditoria.
+    resolved_by_commit: "b732168"
+    resolution: "Linter compara todo numero citado na prosa de `source:` contra o `value:` da constante referenciada. Duas armadilhas de parsing que os MEUS PROPRIOS TESTES pegaram e o dado real NAO teria pegado: `0,0002` casava com o padrao de milhar e virava 0, e `0,494` virava 494 -- corrigido exigindo grupo lider diferente de zero. Marcador historico ('era', 'antes de', 'ate o AG-NNN') suprime a citacao, com janela de 40 caracteres ANTES e DEPOIS: a versao inicial so olhava antes, e perdia 'X (valor anterior ao AG-NNN)'. Entrou como 8o comando da lista de excecoes mecanicas de auditoria."
+    status: "fechado."
+
+  - id: AG-441
+    date: "2026-09-04"
+    file: "config/constants.yaml (prosa corrigida); nenhuma mudanca de codigo -- e uma RETRATACAO"
+    related_file: "AG-122 (a MESMA classe de erro, ja catalogada: apresentar definicao como medicao)"
+    numeracao: "AG-441."
+    found_by: >-
+      Quebra adversarial de 7 pontos conduzida pelo Manager contra a minha
+      propria analise, 2026-09-04.
+    gap: >
+      Eu apresentei como MEDICAO uma tautologia: 'o MFE dos vencedores fica
+      em 1,50 ATR'. MFE num trade que fechou no TP e `>= tp_atr_mult` POR
+      CONSTRUCAO -- e a definicao de `tp_price`, nao um achado sobre o
+      mercado. Espelho identico vale pra MAE num perdedor.
+      Metade dos quadrantes MFE/MAE e definicional e nao deve ser medida.
+      So MAE-no-vencedor e MFE-no-perdedor carregam informacao.
+    severity: "alta como erro de processo, nula como erro de codigo. E a SEGUNDA vez -- AG-122 registrou exatamente isto. Uma tautologia apresentada como evidencia nao e um numero errado, e um numero que nao pode estar errado, e portanto nao decide nada."
+    layer: "analise / interpretacao -- nenhum artefato de producao afetado"
+    consequence: >
+      Se a tautologia tivesse sobrevivido, teria sustentado uma escolha de
+      geometria sobre uma quantidade incapaz de discordar.
+    resolved_by_commit: "b732168"
+    resolution: "Retratacao registrada na prosa. O criterio operacional que fica: antes de citar uma estatistica condicionada ao desfecho, perguntar se o proprio desfecho a determina. Se determina, nao e medicao."
+    status: "fechado -- reincidencia declarada, nao minimizada."
+
+  - id: AG-442
+    date: "2026-09-04"
+    file: "tools/lint/check_constants_provenance.py (check_assumed_no_caminho_do_pnl, flag --only-ret-net-gate); .github/workflows/ci.yml (step BLOQUEANTE); config/constants.yaml (adverse_selection_bps ganha enters_ret_net: true)"
+    related_file: "AG-432 (a mudanca que colocou a constante ASSUMED dentro do P&L); AG-439"
+    numeracao: "AG-442."
+    found_by: "Auditoria propria dos efeitos de segunda ordem do AG-432."
+    gap: >
+      Desde o AG-432 `adverse_selection_bps` -- classe A, proveniencia
+      ASSUMED -- e subtraida de `ret_net`. Ou seja: uma constante inventada
+      decide promocao de candidato, e nenhum gate de build reclamava.
+      A regra do projeto ja dizia que classe A com ASSUMED bloqueia build de
+      producao; o que faltava era o enforcement enxergar que a constante
+      tinha ENTRADO no caminho do P&L.
+    severity: "alta -- e o unico ASSUMED classe A dentro de ret_net, e ret_net e o que gateia os 5 candidatos."
+    layer: "CI / governanca, com origem no Label Engine"
+    consequence: >
+      Sem o gate, a constante seguiria invisivel: nenhum teste falha por
+      causa dela, porque todo teste usa o mesmo valor inventado dos dois
+      lados da comparacao.
+    resolved_by_commit: "c57b484"
+    resolution: "Campo `enters_ret_net: true` marca explicitamente quem esta no caminho do P&L; novo check falha para qualquer constante marcada com provenance ASSUMED. Step de CI BLOQUEANTE, sem continue-on-error. O gate esta VERMELHO por decisao, nao por descuido: a constante nao e mensuravel historicamente (exige bookTicker, que so existe pra BTCUSDT e so na janela pre-RPI). O vermelho e a informacao."
+    status: "fechado quanto ao enforcement; a constante segue ASSUMED e o build segue bloqueado -- ver o teste de invariancia do AG-445, que mostra que a DECISAO de geometria nao depende do valor, so a magnitude do P&L."
+
+  - id: AG-443
+    date: "2026-09-04"
+    file: "src/models/alpha.py (tau_pool_discretization; aviso por fold REMOVIDO); src/models/walk_forward.py (resumo_discretizacao_tau, 4 campos novos por fold)"
+    related_file: "AG-438 (a causa-raiz que este AG instrumenta); AG-428"
+    numeracao: "AG-443."
+    found_by: "Continuacao do AG-438 -- o achado existia, a metrica nao."
+    gap: >
+      A discretizacao do calibrador isotonico era comunicada por um WARNING
+      por fold. Warning nao e metrica: nao entra em artefato, nao se agrega,
+      nao se compara entre rodadas, e some no scroll de um log de 264
+      fold-lado.
+    severity: "media -- o defeito ja estava diagnosticado; o que faltava era torna-lo auditavel."
+    layer: "models (alpha/walk_forward)"
+    consequence: >
+      Sem metrica persistida, a proxima rodada repetiria a mesma
+      investigacao manual do zero.
+    resolved_by_commit: "c57b484"
+    resolution: "`tau_pool_discretization` como funcao pura devolvendo (n_niveis, frac_em_tau). Agregado em `resumo_discretizacao_tau`, que devolve DICIONARIO VAZIO quando nao ha fold utilizavel -- ausencia explicita em vez de zero, que seria indistinguivel de 'medido e deu zero'. O aviso por fold foi removido: metrica agregada substitui, nao acompanha."
+    status: "fechado."
+
+  - id: AG-444
+    date: "2026-09-04"
+    file: "src/features/groups/group_e.py (round_trip_cost_bps ganha maker_prob opcional); src/analysis/s1_tp_sl_sensitivity.py (custo_bps_celula)"
+    related_file: "AG-445 (mesmo commit, mesma medicao); AG-439"
+    numeracao: "AG-444."
+    found_by: "Auditoria propria durante a varredura de geometria."
+    gap: >
+      `round_trip_cost_bps` aplicava sempre a constante global de P(TP
+      primeiro), medida sob a geometria de PRODUCAO, inclusive ao comparar
+      geometrias DIFERENTES. Mas P(TP) e funcao de tp/sl: medido nas 7
+      celulas do S1, varia de 0,278 (tp=3,0/sl=1,5) a 0,477 (producao).
+      Aplicar a constante de producao a uma celula de TP largo subestima o
+      custo dela, porque la muito mais saidas sao taker.
+    severity: "media -- ~0,3 bps por celula, num sweep cujas diferencas sao da ordem de 0,3 a 0,7 bps. Ou seja: da ordem do proprio sinal que o sweep tenta medir."
+    layer: "analysis / features (custo)"
+    consequence: >
+      A vantagem medida de 1,50/0,75 sobre a producao encolheu de 0,6-0,7
+      bps para 0,33 bps quando o custo passou a ser por celula.
+    resolved_by_commit: "378c636"
+    resolution: "`maker_prob` opcional, default = constante global. NAO e opt-in disfarcado (a regra do projeto proibe correcao atras de flag): o default continua CERTO pra todo consumidor de producao, que opera na geometria em que a constante foi medida. O parametro existe porque o sweep pergunta 'e se fosse outra geometria?', e pra essa pergunta a constante global nao descreve a celula avaliada."
+    status: "fechado."
+
+  - id: AG-445
+    date: "2026-09-04"
+    file: "src/analysis/s1_tp_sl_sensitivity.py (edge_bruto_bps, edge_liquido_bps, edge_liquido_bps_por_barra); experiments/s1_tp_sl_sensitivity_report_{R2,R3}.json"
+    related_file: "AG-444"
+    numeracao: "AG-445."
+    found_by: "Auditoria propria -- a funcao-objetivo estava errada, nao o calculo."
+    gap: >
+      Eu vinha comparando geometrias so por TRADE. As celulas resolvem em
+      prazos muito diferentes (holding mediano de 0 a 5 barras nesta grade)
+      e o custo e pago POR TRADE, entao 'melhor por trade' e 'melhor por
+      unidade de tempo' sao perguntas distintas -- e nesta grade elas
+      apontam para direcoes OPOSTAS.
+    severity: "alta -- a inversao muda a leitura da geometria de producao de 'intermediaria' para 'a pior da grade'."
+    layer: "analysis"
+    consequence: >
+      Medido: 1,50/1,50 (producao) da -8,38 bps/barra, a PIOR da grade;
+      2,25/2,25 da -2,39, 3,5x melhor. A geometria de producao e a de maior
+      giro, logo a de maior sangria por unidade de tempo, apesar de edge por
+      trade intermediario. Sem este campo a inversao ficava invisivel.
+    resolved_by_commit: "378c636"
+    resolution: "Campo `edge_liquido_bps_por_barra` no artefato. LIMITACAO DECLARADA, nao mascarada: as 2 celulas de sl=0,75 tem holding mediano de 0 barras (resolvem dentro da propria barra de decisao), entao o campo da NaN pra elas -- o guard disparou em vez de dividir por zero em silencio. A metrica precisaria de unidade sub-barra pra cobri-las, e o giro delas e ainda MAIOR que o da producao. Testado tambem o ranking sob adverse_selection em {0; 0,586; 1,5; 3,0; 5,0}: 1,50/0,75 vence em toda a faixa a partir do valor medido pre-RPI, ou seja a DECISAO nao depende da constante ASSUMED do AG-442, so a magnitude."
+    status: "fechado."
+
+  - id: AG-446
+    date: "2026-09-04"
+    file: "src/analysis/walk_forward_gates.py (intervalo_confianca_media; GateVerdict.edge_bps_ic95, auc_full_ic95_by_side)"
+    related_file: "AG-437 (agregado sem dispersao); AG-447"
+    numeracao: "AG-446."
+    found_by: >-
+      Ponto 6 da quebra adversarial de 7 pontos conduzida pelo Manager:
+      'nenhuma barra de erro no spread de decil'.
+    gap: >
+      Os gates reportavam p-valor e ponto estimado, sem intervalo. O
+      p-valor responde 'e distinguivel de zero?'; nao responde 'de que
+      tamanho, com que incerteza?' -- e e a segunda pergunta que decide
+      promocao.
+    severity: "media -- nao ha decisao passada errada conhecida, mas ha LEITURA passada errada minha, documentada abaixo."
+    layer: "analysis / gates"
+    consequence: >
+      Achado que motivou: reportei o spread de decil dos 5 candidatos como 6
+      numeros (+7,62 / -3,88 / -11,55 / -13,03 / +38,97 / -14,75) sem barra
+      de erro; o IC95 da media e [-21,0; +22,1], que nao se distingue de
+      zero. Minha leitura na epoca ('mal paga um round-trip') era generosa
+      demais -- o correto e 'nao se distingue de zero'.
+    resolved_by_commit: "378c636"
+    resolution: "`intervalo_confianca_media(media, desvio, n, nivel=0.95)`. Um dos testes reproduz exatamente o caso do spread de decil acima, pra que a leitura errada fique travada como contraprova."
+    status: "fechado."
+
+  - id: AG-447
+    date: "2026-09-04"
+    file: "src/analysis/walk_forward_gates.py (camada1_supera_camada0, Welch)"
+    related_file: "AG-446 (mesmo commit); AG-433"
+    numeracao: "AG-447."
+    found_by: "Auditoria propria da estrutura de gates."
+    gap: >
+      A Camada1 e promovida sobre a Camada0 por CONSTRUCAO -- nada no
+      pipeline exigia que ela fosse melhor. Medido: o delta de AUC entre as
+      duas fica em +-0,005 nos 5 candidatos, e a Camada0 vence a Camada1 em
+      edge em 3 deles.
+    severity: "alta -- a arquitetura de duas camadas custa complexidade e N_lifetime, e nunca teve que provar que paga."
+    layer: "analysis / gates"
+    consequence: >
+      Sem o gate, a Camada1 seguiria sendo promovida mesmo quando a Camada0
+      e melhor, que e o caso medido em 3 dos 5 candidatos.
+    resolved_by_commit: "378c636"
+    resolution: "`camada1_supera_camada0` devolve (delta, IC95) por Welch, NAO um booleano: o criterio de corte e decisao do Manager, e travar um limiar aqui repetiria o vicio que CLAUDE.md proibe (regra de decisao sem definicao operacional declarada). A funcao mede; o consumidor decide. 2 testes de contraprova: um garante que delta de 0,004 NAO se distingue de zero, outro que delta de 0,10 EXCLUI zero -- sem o segundo, o gate poderia ser incapaz de aprovar qualquer coisa e ninguem notaria."
+    status: "fechado."
+
+  - id: AG-448
+    date: "2026-09-04"
+    file: "scripts/measure_capital_feasibility.py (control_11 sobre todos os sinais; leverage_eff_mediana/p95); experiments/capital_feasibility_report.json"
+    related_file: "AG-431 (fail-open no risk engine); AG-435"
+    numeracao: "AG-448."
+    found_by: >-
+      Item 10 da lista aprovada pelo Manager -- um grep por `control_11` /
+      `control_12` fora de `src/risk/limits.py` devolvia UMA linha, de
+      docstring.
+    gap: >
+      Os controles 11 (`leverage_eff <= max_notional_multiple`) e 12
+      (margem inicial) nunca tinham sido avaliados contra trade real em
+      lugar nenhum do repositorio. `max_notional_multiple = 3,0` e classe A
+      ASSUMED e so morde quando `atr_pct` fica baixo -- regime plausivel em
+      BTC, cuja mediana medida e 0,27%.
+    severity: "media -- controle de risco nunca exercido e controle nao verificado; a fracao de falha medida e pequena, mas cai na pior celula."
+    layer: "risk / scripts de medicao"
+    consequence: >
+      O controle nunca exercido, quando exercido, MORDE: BTCUSDT/R2/C1 da
+      FAIL, alavancagem mediana 1,252 e p95 2,009. As outras 9 celulas
+      passam com folga (0,33x a 0,64x). A fracao de sinais que estoura e
+      0,07% -- nao-zero, e exatamente na celula que ja falha control_13 e
+      tem o pior edge.
+    resolved_by_commit: "2d02260"
+    resolution: "control_11 avaliado sobre TODOS os sinais e reportado como FRACAO, nao booleano: `leverage_eff` varia com `atr_pct`, entao avaliar so o primeiro sinal esconderia justamente o regime de baixa volatilidade em que o controle atua. control_12 fica NOT_COMPUTABLE, e isso e a VERDADE, nao lacuna do script: `im_required_usd` e injetado pelo chamador por desenho (limits.py documenta que margem inicial depende de leverage/MMR da exchange, fora do escopo de risk/) e nenhum caller de producao existe -- declarar nao-computavel e melhor que inventar o valor e produzir um PASS falso. Achado lateral do campo novo: a alavancagem real vai de 0,33x a 1,25x, o que confirma por MEDICAO o que eu tinha derivado analiticamente sobre liquidacao (loss_max/equity = leverage_eff x sl_atr_mult x atr_pct <= risk_per_trade = 0,005, com atr_pct cancelando) -- liquidacao fica ~2 ordens de grandeza longe."
+    status: "fechado."
+
+  - id: AG-449
+    date: "2026-09-04"
+    file: "nenhum -- achado de MEDICAO, registrado por ordem do Manager para retomada futura; artefatos: experiments/alpha_walk_forward_*_seed{43..46}.json, experiments/capital_feasibility_report.json"
+    related_file: "AG-428 (a investigacao inteira do target_signal_rate, que terminou aqui); AG-438 (discretizacao do calibrador, causa-raiz PROXIMA); AG-372 (T1_FEATURE_IDS)"
+    numeracao: "AG-449."
+    found_by: >-
+      Campanha multi-seed autorizada pelo Manager (2026-09-04) e a medicao
+      de AUC de populacao completa do AG-433, lidas juntas.
+    gap: >
+      O VETOR DE FEATURES NAO DISCRIMINA. Nao e um bug: e o resultado
+      medido, e ele subordina todo o resto.
+      Medido sob 5 seeds x 10 celulas (5 candidatos x Camada0/Camada1):
+        - 0 de 10 celulas com edge distinguivel de zero ao p bruto;
+          melhor p = 0,197, antes de qualquer correcao de multiplicidade.
+        - AUC de populacao completa entre 0,4985 e 0,5107 nas 10 celulas;
+          o consolidado da 0,5023, IC95 [0,4983; 0,5063], p = 0,26 sobre
+          n = 54.428.
+        - Os numeros comemorados em rodadas anteriores (+22,75, +27,13,
+          +12,29 bps) sao todos o MAXIMO da distribuicao da propria seed --
+          selecao sobre ruido, nao achado.
+      Isso reordena a causalidade da investigacao AG-428: a discretizacao do
+      calibrador (AG-438) e causa-raiz PROXIMA do target_signal_rate nunca
+      entregue, mas o calibrador so colapsa em 1-9 niveis distintos porque
+      nao ha sinal para ele ordenar. Corrigir a discretizacao nao produz
+      edge; produz um tau honesto sobre um score que nao separa.
+    severity: >-
+      critica quanto ao mandato do projeto, nula quanto a corretude do
+      codigo. Nenhum artefato esta errado -- todos estao certos, e o que
+      eles dizem e que nao ha edge. Toda melhoria de desenho de alvo
+      (geometria de barreira, MAE, sample_weight, custo por celula) opera
+      sobre um bruto que nao se distingue de zero.
+    layer: "features (T1/T2) -- upstream de models, labels e analysis"
+    consequence: >
+      A melhor geometria possivel sobre um vetor que nao separa rende zero
+      bruto menos custo. Enquanto isto nao virar, nenhum candidato e
+      promovivel, e o gate Alpha continuara em 0/10 por motivo estrutural,
+      nao por calibragem.
+      Implicacao pratica imediata: o roadmap MFE/MAE aprovado em 2026-09-04
+      segue valendo, porque fecha uma divida REAL e barata (sl_atr_mult e
+      classe A e nunca foi derivado de dado), mas ele compra um alvo melhor
+      DESENHADO, nao um motor lucrativo -- e isto esta declarado no proprio
+      artefato do plano, nao so aqui.
+    resolved_by_commit: null
+    resolution: >-
+      ADIADO POR DECISAO DO MANAGER (2026-09-04): "se torna assunto para
+      outro momento, mas deixe isso salvo em algum AG". Nenhuma acao
+      corretiva agendada nesta sessao. Registrado aqui para que a retomada
+      futura parta da medicao, e nao de uma re-descoberta do zero.
+      Quando for retomado, o ponto de partida NAO e mais calibragem nem
+      geometria -- e a pergunta de 1a ordem: o vetor atual pode discriminar?
+      Duas pistas medidas que a proxima rodada nao deve perder: (i) a
+      anomalia de AUC esta em R1 (BTC 0,6428, BNB 0,6358), a grade que NAO
+      esta em producao, nao no R2/R3 que foram perseguidos; (ii) subir
+      target_signal_rate de 0,0284 pra 0,10 ENCARECE a AUC exigida de 0,5395
+      pra 0,5515, ou seja seletividade e alavanca de 1a ordem e foi tratada
+      como parametro secundario.
+    status: >
+      ABERTO -- adiado, nao fechado. Este e o unico AG aberto que subordina
+      todos os outros: qualquer AG futuro que prometa ganho de edge sem
+      tocar no vetor de features deve citar este e explicar por que escapa
+      da conclusao acima.
