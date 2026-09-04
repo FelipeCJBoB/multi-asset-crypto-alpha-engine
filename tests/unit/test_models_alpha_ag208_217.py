@@ -507,3 +507,64 @@ def test_fit_side_model_tau_window_days_none_e_bit_exato_ao_legado() -> None:
         target_signal_rate=0.05, tau_window_days=None,
     )
     assert result_default.tau == pytest.approx(result_explicit_none.tau)
+
+
+# ============================================================================
+# AG-438 -- discretização da pool de tau (`tau_pool_discretization`)
+# ============================================================================
+
+
+def test_tau_pool_discretization_pool_continua_nao_dispara_nada() -> None:
+    """Pool sem repetição: muitos níveis, massa desprezível em qualquer
+    ponto — é o regime em que o quantil FUNCIONA e entrega a taxa pedida."""
+    pool = np.linspace(0.0, 1.0, 1000)
+    tau = float(np.quantile(pool, 0.90))  # noqa: magic-number -- 1 - 0,10
+    n_niveis, frac = alpha.tau_pool_discretization(pool, tau)
+
+    assert n_niveis == 1000  # noqa: magic-number
+    # massa EXATAMENTE em tau é 0: numa pool contínua o quantil interpola
+    # ENTRE dois pontos, então `p > tau` não descarta bloco nenhum. É este
+    # o regime em que o mecanismo funciona -- contraste direto com o teste
+    # do platô abaixo, onde a massa em tau é 98,5%.
+    assert frac == 0.0
+    # e a taxa realizada bate o alvo, que é o ponto de comparação
+    assert float(np.mean(pool > tau)) == pytest.approx(0.10, abs=0.01)  # noqa: magic-number
+
+
+def test_tau_pool_discretization_plato_torna_a_taxa_alvo_inatingivel() -> None:
+    """Reproduz o caso REAL medido em `SOLUSDT/R3/camada0` fold 1: a
+    isotônica colapsou a pool em 2 níveis, com ~98% da massa num só. Pedir
+    10% ali é impossível — as taxas atingíveis são só ~1,5% (acima do platô)
+    ou 100% (incluindo o platô), sem nada entre as duas."""
+    pool = np.concatenate([np.full(985, 0.526152), np.full(15, 0.799248)])  # noqa: magic-number
+    tau = float(np.quantile(pool, 0.90))  # noqa: magic-number
+    n_niveis, frac = alpha.tau_pool_discretization(pool, tau)
+
+    assert n_niveis == 2  # noqa: magic-number -- o colapso é o achado
+    assert frac == pytest.approx(0.985)  # noqa: magic-number -- massa que `p > tau` descarta de uma vez
+
+    # A prova do AG-438: NENHUMA escolha de tau entrega 0,10 nesta pool.
+    taxas_atingiveis = {float(np.mean(pool > v)) for v in np.unique(pool)}
+    assert not any(abs(t - 0.10) <= 0.02 for t in taxas_atingiveis)  # noqa: magic-number
+    assert sorted(taxas_atingiveis) == [0.0, pytest.approx(0.015)]  # noqa: magic-number
+
+
+def test_tau_pool_discretization_pool_vazia_devolve_ausencia_nao_zero() -> None:
+    """Pool vazia é ausência de medição, não `frac=0,0` — que seria lido
+    como 'medi e não há massa no tau'."""
+    n_niveis, frac = alpha.tau_pool_discretization(np.array([], dtype=np.float64), 0.5)
+    assert n_niveis == 0
+    assert np.isnan(frac)
+
+
+def test_tau_pool_discretization_nivel_unico_e_o_caso_degenerado_total() -> None:
+    """Calibrador constante (`AG-393`, `y_calib` com 1 classe): a pool
+    inteira é um valor só. `tau` é esse valor, `p > tau` nunca dispara —
+    taxa realizada 0, independentemente da taxa pedida."""
+    pool = np.full(500, 0.5)  # noqa: magic-number
+    tau = float(np.quantile(pool, 0.90))  # noqa: magic-number
+    n_niveis, frac = alpha.tau_pool_discretization(pool, tau)
+
+    assert n_niveis == 1
+    assert frac == pytest.approx(1.0)
+    assert float(np.mean(pool > tau)) == 0.0

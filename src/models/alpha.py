@@ -1213,6 +1213,26 @@ class SideModelResult:
     # `0`/`False` no caminho `tau_fixed` (não há pool nem quantil).
     tau_pool_n: int = 0
     tau_pool_is_windowed: bool = False
+    # AG-438 (2026-09-04) -- DISCRETIZAÇÃO do calibrador, a causa-raiz real da
+    # divergência nominal-vs-realizado que AG-428/AG-437 perseguiram por 2
+    # rodadas. `tau` é o quantil `1 - target_signal_rate` de
+    # `calibrated_train_all`; se a isotônica colapsa a saída em poucos
+    # níveis (PAV funde blocos quando o score não separa -- e a AUC de
+    # população completa medida está entre 0,4985 e 0,5107, ou seja no
+    # acaso), o quantil NÃO pode cair num ponto arbitrário: ele encosta na
+    # borda de um platô. A taxa realizada passa a ser "a massa que por
+    # acaso está estritamente acima daquela borda", que não tem relação com
+    # a taxa pedida. Medido: em 82,6% dos fold x lado, 0,10 +-20% é
+    # INATINGÍVEL por qualquer escolha de tau.
+    #
+    # `tau_pool_n_niveis` = valores distintos na saída do calibrador sobre a
+    # pool de tau. `tau_pool_frac_em_tau` = massa da pool exatamente NO
+    # `tau` escolhido -- é a fatia que a regra `p > tau` (estrita) descarta
+    # de uma vez. Os dois juntos dizem se a taxa-alvo era sequer alcançável
+    # naquele fold/lado, o que nenhum campo anterior permitia saber.
+    # `0`/`nan` no caminho `tau_fixed` (não há pool nem quantil).
+    tau_pool_n_niveis: int = 0
+    tau_pool_frac_em_tau: float = float("nan")
 
 
 def compute_monotone_screen(
@@ -1775,6 +1795,8 @@ def fit_side_model(
         # registro honesto disso, nao um valor faltando.
         tau_pool_n = 0
         tau_pool_is_windowed = False
+        tau_pool_n_niveis = 0
+        tau_pool_frac_em_tau = float("nan")
     else:
         tau_pool, tau_pool_is_windowed, tau_pool_n = _select_tau_calibration_pool(
             calibrated_train_all,
@@ -1785,6 +1807,26 @@ def fit_side_model(
             variant=variant,
         )
         tau = float(np.quantile(tau_pool, 1.0 - target_signal_rate))
+        # AG-438 -- discretizacao do calibrador. Ver docstring dos campos em
+        # `SideModelResult`. `frac_em_tau` e a massa que a regra `p > tau`
+        # (estrita, `decide_side`) descarta de uma vez; quando ela e grande,
+        # a taxa-alvo simplesmente nao e alcancavel neste fold/lado.
+        tau_pool_n_niveis, tau_pool_frac_em_tau = tau_pool_discretization(tau_pool, tau)
+        if tau_pool_n_niveis <= _TAU_NIVEIS_MINIMOS_ESPERADOS:
+            logger.warning(
+                "models.alpha.tau_pool_discretizada",
+                side=side,
+                variant=variant,
+                n_niveis=tau_pool_n_niveis,
+                frac_em_tau=tau_pool_frac_em_tau,
+                n_pool=tau_pool_n,
+                target_signal_rate=target_signal_rate,
+                detail="calibrador isotonico colapsou a pool em poucos niveis distintos -- "
+                "o quantil 1-target_signal_rate encosta na borda de um plato e a taxa "
+                "realizada vira 'a massa estritamente acima da borda', sem relacao com a "
+                "taxa pedida (AG-438). Sintoma de score sem poder discriminativo (PAV funde "
+                "blocos quando a AUC esta no acaso), nao defeito do mecanismo de tau.",
+            )
 
     # D-08 (docs/alpha_model_design_doc_2026-08-22.md §4): API do LightGBM
     # substitui `booster.get_score(importance_type="total_gain")` (parsing
@@ -1872,6 +1914,8 @@ def fit_side_model(
         calib_target_single_class=calib_target_single_class,
         tau_pool_n=tau_pool_n,
         tau_pool_is_windowed=tau_pool_is_windowed,
+        tau_pool_n_niveis=tau_pool_n_niveis,
+        tau_pool_frac_em_tau=tau_pool_frac_em_tau,
     )
 
 
@@ -1968,10 +2012,50 @@ def unique_test_bars(
 # leitura com sentido), em vez de declarar um segundo "10" independente
 # que pudesse divergir deste com o tempo.
 MIN_OCCURRENCES_ABOVE_TAU = 10  # noqa: magic-number
+# AG-438 -- limiar de AVISO (nunca de decisão) para a discretização da pool
+# de `tau`. Não é constante de domínio e por isso não vive em
+# `constants.yaml`: nada no pipeline ramifica por ele, ele só decide se um
+# `logger.warning` sai. Escolhido como "poucos níveis o bastante para que o
+# quantil não consiga chegar perto de qualquer taxa-alvo plausível" — com
+# 20 níveis as taxas atingíveis já são ~5% de granularidade no melhor caso.
+# Medição que motivou: mediana real de 8 niveis por fold x lado, 37% dos
+# fold x lado com <=5, e 82,6% incapazes de entregar 0,10 ±20%.
+_TAU_NIVEIS_MINIMOS_ESPERADOS = 20  # noqa: magic-number
 
 #: ms/dia -- conversão de unidade pura, não constante de domínio (mesma
 #: classe de `ms_per_hour` em `group_e.e05f_time_to_funding_h`).
 _MS_PER_DAY = 24 * 60 * 60 * 1000  # noqa: magic-number
+
+
+def tau_pool_discretization(tau_pool: FloatArray, tau: float) -> tuple[int, float]:
+    """AG-438 (2026-09-04) — núcleo puro que mede a DISCRETIZAÇÃO da pool de
+    calibração de `tau`. Devolve `(n_niveis, frac_em_tau)`.
+
+    **O que isto detecta, e por que importa.** `tau` é o quantil
+    `1 - target_signal_rate` de `tau_pool`. Isso só entrega a taxa pedida se
+    a pool for aproximadamente contínua. Quando o calibrador isotônico
+    colapsa a saída em poucos níveis — o que o algoritmo PAV faz por
+    construção quando o score não separa as classes, e a AUC de população
+    completa medida neste projeto está entre 0,4985 e 0,5107, ou seja no
+    acaso — o quantil não cai num ponto arbitrário: ele encosta na borda de
+    um platô. A taxa realizada vira "a massa que por acaso está
+    ESTRITAMENTE acima daquela borda" (a regra `decide_side` usa `p > tau`),
+    que não tem relação com a taxa pedida.
+
+    `n_niveis` = valores distintos na pool. `frac_em_tau` = massa exatamente
+    NO `tau`, ou seja a fatia que `p > tau` descarta de uma vez. Quando
+    `frac_em_tau` é grande, a taxa-alvo é literalmente inalcançável naquele
+    fold/lado: as taxas atingíveis pulam de "acima do platô" para "acima do
+    platô + o platô inteiro", sem nada no meio.
+
+    Medição que motivou (2026-09-04, 264 fold×lado reais): mediana de 8
+    níveis, 37% dos fold×lado com ≤5 níveis, 1 fold com um único nível, e
+    **82,6% incapazes de entregar `target_signal_rate=0,10` ±20% sob
+    QUALQUER escolha de `tau`**. Pool vazia devolve `(0, nan)` — ausência de
+    dado, nunca `0.0` como se fosse medição."""
+    if tau_pool.shape[0] == 0:
+        return 0, float("nan")
+    return int(np.unique(tau_pool).shape[0]), float(np.mean(tau_pool == tau))
 
 
 def _select_tau_calibration_pool(

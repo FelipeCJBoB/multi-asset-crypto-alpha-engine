@@ -28664,3 +28664,81 @@ entries:
       medicao. A licao acionavel nao e "medir mais", e "todo numero
       agregado publicado tem que vir acompanhado da dispersao que ele
       resume".
+
+  - id: AG-438
+    date: "2026-09-04"
+    file: "src/models/alpha.py (tau_pool_discretization novo, nucleo puro; SideModelResult.tau_pool_n_niveis/tau_pool_frac_em_tau; aviso models.alpha.tau_pool_discretizada); src/models/walk_forward.py (tau_pool_niveis_by_side/tau_pool_frac_em_tau_by_side no artefato); tests/unit/test_models_alpha_ag208_217.py (4 testes novos)"
+    related_file: "AG-428 (divergencia nominal-vs-realizado, investigada por 2 rodadas sem achar o mecanismo); AG-437 (dispersao entre celulas, sintoma do mesmo); AG-436 (NOFILL, sintoma do mesmo); AG-393 (calib_target_single_class, o caso extremo ja conhecido deste fenomeno); AG-433 (AUC de populacao completa, a causa a montante)"
+    numeracao: "AG-438."
+    found_by: >-
+      Manager pediu "investigue a fundo" por que target_signal_rate=0,10
+      nunca e entregue (taxa realizada medida entre 0,0204 e 0,1520).
+      Investigacao direta sobre os 10 artefatos de predicao OOF.
+    gap: >
+      CAUSA-RAIZ REAL da divergencia nominal-vs-realizado, que o AG-428
+      perseguiu por 2 rodadas e nao achou: NAO e deriva temporal (AG-436
+      mediu Spearman=+0,336, sem tendencia), NAO e exclusividade mutua
+      (6,1%), NAO e pool pequena (2.110 a 4.277 pontos contra piso de 100),
+      NAO e "deriva sistematica" (AG-437 mostrou que aquilo era artefato de
+      pooling). E DISCRETIZACAO DO CALIBRADOR.
+
+      `tau` e o quantil `1 - target_signal_rate` de `calibrated_train_all`.
+      Isso so entrega a taxa pedida se a pool for aproximadamente continua.
+      O calibrador isotonico colapsa a saida em POUCOS NIVEIS distintos --
+      o algoritmo PAV funde blocos por construcao quando o score nao separa
+      as classes. Medido nos 264 fold x lado reais:
+        - mediana de 8 niveis distintos por fold x lado
+        - 37,1% dos fold x lado com <=5 niveis
+        - 93,2% com <=20 niveis
+        - minimo: 1 nivel (calibrador constante)
+      Com poucos niveis, o quantil nao cai num ponto arbitrario: ele encosta
+      na BORDA DE UM PLATO. E `decide_side` usa `p > tau` ESTRITO, entao a
+      massa que esta exatamente EM tau e descartada de uma vez. Medida
+      dessa massa, por celula: entre 52,5% e 86,2% de todas as barras.
+      A taxa realizada vira "a massa que por acaso esta estritamente acima
+      da borda", sem relacao nenhuma com a taxa pedida.
+
+      NUMERO QUE FECHA O CASO: em 82,6% dos fold x lado (218 de 264),
+      `target_signal_rate=0,10` +-20% e INATINGIVEL sob QUALQUER escolha de
+      tau. Nao e erro de calibracao, e impossibilidade aritmetica.
+
+      Exemplo real (SOLUSDT/R3/camada0, fold 1): 2 niveis distintos em 1.113
+      barras, 98,47% em p=0,526152 (que E o tau), 1,53% em 0,799248. As
+      unicas taxas atingiveis sao 0,0153 e 1,0. Nao existe tau que entregue
+      0,10.
+    severity: "alta -- invalida a interpretacao de 3 investigacoes anteriores (AG-428, AG-436, AG-437) que trataram o sintoma como se fosse deriva/dispersao estatistica. E explica de uma vez todos os fatos que sobravam sem explicacao."
+    layer: "models (alpha -- resolucao de tau), causa a montante em models (poder discriminativo do score)"
+    consequence: >
+      Tres consequencias, em ordem de importancia.
+      (1) `target_signal_rate` NAO e um parametro efetivo hoje. Pedir 0,10
+      ou 0,0284 muda pouco o resultado porque o quantil encosta no mesmo
+      plato nos dois casos -- o que explica por que subir a taxa 3,5x mudou
+      a taxa realizada muito menos que proporcionalmente.
+      (2) Todo achado anterior sobre "a taxa realizada" estava medindo
+      discretizacao, nao comportamento economico. Isso inclui o overshoot
+      de 2,3-3,0x do TAU_POLICY_TOTAL_COMMON_OOF (AG-428) e o deslocamento
+      de 2,76x ao remover NOFILL (AG-436): os dois sao relocacoes da borda
+      do plato, nao correcoes de calibracao.
+      (3) O mecanismo e SINTOMA, nao doenca. O PAV so funde tudo quando o
+      score nao separa -- e a AUC de populacao completa medida (AG-433)
+      esta entre 0,4985 e 0,5107 nas 10 celulas, ou seja a +-0,011 do
+      acaso puro. A cadeia causal completa e: sem poder discriminativo ->
+      isotonica colapsa -> quantil encosta em plato -> taxa realizada
+      arbitraria. Consertar o mecanismo de tau sem consertar a AUC trocaria
+      um numero arbitrario por outro.
+    resolved_by_commit: null
+    resolution: "Instrumentado, nao 'corrigido' -- porque a correcao certa nao e no mecanismo de tau. `tau_pool_discretization` (nucleo puro, 4 testes incluindo a reproducao do fold real de 2 niveis) devolve (n_niveis, frac_em_tau); os 2 numeros passaram a ser persistidos por fold/lado no artefato de walk-forward, ao lado do `tau` e do `tau_pool_n` do AG-430. Aviso `models.alpha.tau_pool_discretizada` dispara quando n_niveis <= 20 (limiar de AVISO, nunca de decisao -- nada no pipeline ramifica por ele, por isso nao vive em constants.yaml). A partir da proxima campanha, qualquer leitura de taxa realizada vem acompanhada de quantos niveis existiam e de quanta massa estava presa no tau."
+    status: >
+      fechado quanto ao diagnostico e a instrumentacao; ABERTO quanto a
+      acao. Duas decisoes que ficam para o Manager, e que este achado
+      reformula:
+      (a) `target_signal_rate` como parametro de producao esta
+      efetivamente INERTE enquanto a AUC estiver no acaso. Varrer a
+      constante (o `sweep_required: true` dela) mede ruido de plato, nao
+      sensibilidade economica.
+      (b) A pergunta util deixou de ser "qual taxa-alvo" e passou a ser "o
+      score discrimina alguma coisa?". A AUC de populacao completa ja
+      responde: 0,4985-0,5107 em 10 de 10 celulas, com n na casa das
+      dezenas de milhares. A campanha multi-seed em curso testa se alguma
+      celula tem edge distinguivel de zero; se nenhuma tiver, o mecanismo
+      de tau e uma questao secundaria por definicao.

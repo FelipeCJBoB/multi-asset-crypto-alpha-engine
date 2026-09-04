@@ -162,6 +162,8 @@ class _FakeSideModelResult:
         self.calib_segment = None
         self.tau_pool_n = 0
         self.tau_pool_is_windowed = False
+        self.tau_pool_n_niveis = 0
+        self.tau_pool_frac_em_tau = float("nan")
 
 
 class _FakeFoldResult:

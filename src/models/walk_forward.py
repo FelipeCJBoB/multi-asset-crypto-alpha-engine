@@ -260,6 +260,13 @@ class WalkForwardFoldMetrics:
     # degenerado (nenhum `SideModelResult` existe).
     tau_pool_n_by_side: dict[str, int]
     tau_pool_windowed_by_side: dict[str, bool]
+    # AG-438 -- discretizacao do calibrador: quantos niveis distintos a
+    # pool de tau tem, e que fracao dela cai EXATAMENTE no tau escolhido
+    # (massa que `p > tau` descarta de uma vez). Sao estes 2 numeros que
+    # dizem se a taxa-alvo era alcancavel naquele fold/lado -- medido:
+    # inatingivel em 82,6% dos fold x lado. `{}` em fold degenerado.
+    tau_pool_niveis_by_side: dict[str, int]
+    tau_pool_frac_em_tau_by_side: dict[str, float]
     # `n_signals / n_test_bars` -- taxa de sinal REALIZADA no teste deste
     # fold, pra comparar direto contra `target_signal_rate` (AG-395). NaN
     # se `n_test_bars == 0` (mesmo caso degenerado acima).
@@ -477,6 +484,8 @@ def run_walk_forward_for_combo(
                     tau_short=float("nan"),
                     tau_pool_n_by_side={},
                     tau_pool_windowed_by_side={},
+                    tau_pool_niveis_by_side={},
+                    tau_pool_frac_em_tau_by_side={},
                     signal_rate_realized=float("nan"),
                     calib_degenerate_by_side={},
                     degenerado_by_side={},
@@ -604,6 +613,14 @@ def run_walk_forward_for_combo(
                 tau_pool_windowed_by_side={
                     "long": fold_result.long_result.tau_pool_is_windowed,
                     "short": fold_result.short_result.tau_pool_is_windowed,
+                },
+                tau_pool_niveis_by_side={
+                    "long": fold_result.long_result.tau_pool_n_niveis,
+                    "short": fold_result.short_result.tau_pool_n_niveis,
+                },
+                tau_pool_frac_em_tau_by_side={
+                    "long": fold_result.long_result.tau_pool_frac_em_tau,
+                    "short": fold_result.short_result.tau_pool_frac_em_tau,
                 },
                 signal_rate_realized=(
                     n_signals_fold / fold_result.n_test_bars  # noqa: unguarded-ratio -- guardado pelo ternario: só divide quando n_test_bars>0
