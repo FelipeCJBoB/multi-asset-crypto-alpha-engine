@@ -560,6 +560,16 @@ def _make_inputs(**overrides: object) -> RiskEngineInputs:
         "daily_loss_usd": Decimal("0"),
         "equity_peak_usd": Decimal("196.85"),
         "consecutive_losses": 0,
+        # AG-431 -- o #19 e OBRIGATORIO (`CONTROLS_MANDATORY`): sem
+        # `position_risks`/`correlation_matrix` ele devolve NOT_COMPUTABLE e
+        # `evaluate_all` REJEITA. O caso base de um Risk Engine tem que ser
+        # o conjunto COMPLETO de insumos -- 1 posicao candidata com risco
+        # fracionario 0,005 e Corr=[[1,0]] da sigma_agg=0,005 <=
+        # `aggregate_risk_max`=0,01 -> PASS. A ausencia desses dois campos
+        # virou um caso de teste PROPRIO (ver
+        # `test_evaluate_all_rejeita_quando_controle_obrigatorio_nao_computavel`).
+        "position_risks": [0.005],
+        "correlation_matrix": [[1.0]],
     }
     defaults.update(overrides)
     return RiskEngineInputs(**defaults)  # type: ignore[arg-type]
@@ -569,11 +579,14 @@ def test_evaluate_all_aprova_o_caso_base() -> None:
     decision = evaluate_all(_make_inputs())
     assert decision.approved is True
     assert decision.rejection_reason is None
-    # controles 17 (spread/history None), 18 (sempre) e 19 (sem posições/Corr
-    # injetadas) ficam NOT_COMPUTABLE
+    # controles 17 (spread/history None) e 18 (sempre) ficam NOT_COMPUTABLE
+    # -- nenhum dos dois e obrigatorio, entao nao bloqueiam.
     assert "17" in decision.controls_not_computable
     assert "18" in decision.controls_not_computable
-    assert "19" in decision.controls_not_computable
+    # AG-431 -- o #19 agora PASSA de verdade (dado injetado), nao fica
+    # NOT_COMPUTABLE como antes desta correcao.
+    assert "19" in decision.controls_passed
+    assert "19" not in decision.controls_not_computable
     assert decision.controls_evaluated[-1] == "19"  # rodou todos, nenhum FAIL
 
 
@@ -606,9 +619,42 @@ def test_evaluate_all_rejeita_por_below_min_qty_apos_passar_controles_2_a_5() ->
     assert decision.controls_passed == ("2", "3", "4", "5")
 
 
-def test_evaluate_all_not_computable_nao_impede_approved() -> None:
-    """Mesmo com os controles 17/18/19 NOT_COMPUTABLE, o caso base (todos os
-    outros PASS) ainda aprova — NOT_COMPUTABLE nunca bloqueia."""
+def test_evaluate_all_not_computable_nao_obrigatorio_nao_impede_approved() -> None:
+    """Controles 17/18 `NOT_COMPUTABLE` (sensores cuja fonte de dado ao vivo
+    ainda não existe) continuam NÃO bloqueando — este é o comportamento
+    deliberado e correto do módulo, preservado pelo AG-431."""
     decision = evaluate_all(_make_inputs())
     assert decision.approved is True
-    assert set(decision.controls_not_computable) == {"17", "18", "19"}
+    assert set(decision.controls_not_computable) == {"17", "18"}
+
+
+def test_evaluate_all_rejeita_quando_controle_obrigatorio_nao_computavel() -> None:
+    """AG-431 (auditoria externa 2026-09-03, achado N1) — o #19 é o ÚNICO
+    controle de nível PORTFOLIO (I4/§5.3: rho~0,91 entre os 5 ativos faz 5
+    posições simultâneas entregarem 4,82x o risco unitário declarado). Antes
+    desta correção ele era também o único que NUNCA era computável em
+    produção, e `evaluate_all` seguia em frente aprovando — fail-open
+    exatamente onde mora o risco de ruína. Agora rejeita.
+
+    Este teste é o que trava a regressão: se alguém remover o #19 de
+    `CONTROLS_MANDATORY`, ele quebra."""
+    decision = evaluate_all(_make_inputs(position_risks=None, correlation_matrix=None))
+    assert decision.approved is False
+    assert decision.rejection_reason == RejectionReason.MANDATORY_CONTROL_NOT_COMPUTABLE
+    assert "19" in decision.controls_not_computable
+    # rejeitou NO #19, não antes -- todos os outros foram de fato avaliados
+    assert decision.controls_evaluated[-1] == "19"
+
+
+def test_evaluate_all_controle_obrigatorio_computavel_e_estourado_usa_razao_especifica() -> None:
+    """Contraprova do teste acima: quando o #19 É computável e o risco
+    agregado ESTOURA, o motivo tem que ser `AGGREGATE_RISK_LIMIT` (medi e
+    estourou), nunca `MANDATORY_CONTROL_NOT_COMPUTABLE` (não consegui
+    medir). São diagnósticos diferentes e não podem colapsar num só."""
+    # 5 posições de risco 0,005 com rho=0,91 entre todas -> sigma_agg bem
+    # acima de `aggregate_risk_max`=0,01 (é o cenário I4 do PRD).
+    n = 5
+    corr = [[1.0 if i == j else 0.91 for j in range(n)] for i in range(n)]
+    decision = evaluate_all(_make_inputs(position_risks=[0.005] * n, correlation_matrix=corr))
+    assert decision.approved is False
+    assert decision.rejection_reason == RejectionReason.AGGREGATE_RISK_LIMIT

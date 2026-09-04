@@ -379,7 +379,7 @@ def test_select_tau_pool_janela_none_e_bit_exato_ao_pool_inteiro() -> None:
     calibrated = rng.random(500)
     t0_ms = np.arange(500, dtype=np.int64) * 60_000
 
-    pool, is_windowed = alpha._select_tau_calibration_pool(
+    pool, is_windowed, n_pool = alpha._select_tau_calibration_pool(
         calibrated,
         t0_ms,
         tau_window_days=None,
@@ -388,6 +388,8 @@ def test_select_tau_pool_janela_none_e_bit_exato_ao_pool_inteiro() -> None:
         variant=alpha.VARIANT_CAMADA1,
     )
     assert is_windowed is False
+    # AG-430 -- `n_pool` reportado tambem no caminho `None`: e o pool inteiro.
+    assert n_pool == 500
     np.testing.assert_array_equal(pool, calibrated)
 
 
@@ -398,7 +400,7 @@ def test_select_tau_pool_corta_pelo_tempo_certo() -> None:
     t0_ms = (np.arange(n, dtype=np.int64)) * alpha._MS_PER_DAY
     calibrated = np.arange(n, dtype=np.float64)  # valor == índice, fácil de checar
 
-    pool, is_windowed = alpha._select_tau_calibration_pool(
+    pool, is_windowed, n_pool = alpha._select_tau_calibration_pool(
         calibrated,
         t0_ms,
         tau_window_days=100,
@@ -409,11 +411,14 @@ def test_select_tau_pool_corta_pelo_tempo_certo() -> None:
     # amostra da janela (101 pontos, índices 299..399) é menor que
     # min_bars=500 sob essa taxa-alvo -- cai pro fallback, não corta.
     assert is_windowed is False
+    # AG-430 -- no fallback `n_pool` e o pool INTEIRO (o que de fato
+    # resolveu o tau), nao os 101 da janela que foi descartada.
+    assert n_pool == n
     np.testing.assert_array_equal(pool, calibrated)
 
     # mesma janela, taxa-alvo mais alta (min_bars = ceil(10/0.15) = 67 <=
     # 101 pontos disponíveis) -- agora corta de verdade.
-    pool2, is_windowed2 = alpha._select_tau_calibration_pool(
+    pool2, is_windowed2, n_pool2 = alpha._select_tau_calibration_pool(
         calibrated,
         t0_ms,
         tau_window_days=100,
@@ -423,6 +428,11 @@ def test_select_tau_pool_corta_pelo_tempo_certo() -> None:
     )
     assert is_windowed2 is True
     assert pool2.shape[0] == 101  # dias 299..399 inclusive, âncora em max(t0_ms)
+    # AG-430 -- no caminho de SUCESSO `n_pool` e o tamanho da JANELA, e
+    # bate com o shape real do pool devolvido (era exatamente este numero
+    # que se perdia antes desta correcao).
+    assert n_pool2 == 101
+    assert n_pool2 == pool2.shape[0]
     assert pool2.min() == 299.0
     assert pool2.max() == 399.0
 
@@ -432,7 +442,7 @@ def test_select_tau_pool_fallback_quando_janela_nao_comporta_amostra_minima() ->
     t0_ms = np.arange(n, dtype=np.int64) * alpha._MS_PER_DAY
     calibrated = np.arange(n, dtype=np.float64)
 
-    pool, is_windowed = alpha._select_tau_calibration_pool(
+    pool, is_windowed, n_pool = alpha._select_tau_calibration_pool(
         calibrated,
         t0_ms,
         tau_window_days=5,  # só ~6 pontos na janela, muito abaixo de min_bars
@@ -441,12 +451,13 @@ def test_select_tau_pool_fallback_quando_janela_nao_comporta_amostra_minima() ->
         variant=alpha.VARIANT_CAMADA0,
     )
     assert is_windowed is False
+    assert n_pool == n
     np.testing.assert_array_equal(pool, calibrated)
 
 
 def test_select_tau_pool_sem_t0_cai_pro_pool_inteiro_sem_quebrar() -> None:
     calibrated = np.random.default_rng(3).random(30)
-    pool, is_windowed = alpha._select_tau_calibration_pool(
+    pool, is_windowed, n_pool = alpha._select_tau_calibration_pool(
         calibrated,
         None,
         tau_window_days=180,
@@ -455,6 +466,7 @@ def test_select_tau_pool_sem_t0_cai_pro_pool_inteiro_sem_quebrar() -> None:
         variant=alpha.VARIANT_CAMADA1,
     )
     assert is_windowed is False
+    assert n_pool == 30
     np.testing.assert_array_equal(pool, calibrated)
 
 
@@ -466,7 +478,7 @@ def test_select_tau_pool_historico_curto_nao_quebra() -> None:
     t0_ms = np.arange(n, dtype=np.int64) * alpha._MS_PER_DAY
     calibrated = np.random.default_rng(4).random(n)
 
-    pool, is_windowed = alpha._select_tau_calibration_pool(
+    pool, is_windowed, n_pool = alpha._select_tau_calibration_pool(
         calibrated,
         t0_ms,
         tau_window_days=180,
@@ -476,6 +488,7 @@ def test_select_tau_pool_historico_curto_nao_quebra() -> None:
     )
     assert is_windowed is False
     assert pool.shape[0] == n
+    assert n_pool == n
 
 
 def test_fit_side_model_tau_window_days_none_e_bit_exato_ao_legado() -> None:

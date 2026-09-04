@@ -782,6 +782,21 @@ target_signal_rate:
       0,04   -> 79,6 trades/mês -> R$30,98/mês = 3,10% do capital/mês
       0,06   -> 99,1 trades/mês -> R$38,38/mês = 3,84% do capital/mês
       0,10   -> 151,7 trades/mês -> R$58,85/mês = 5,88% do capital/mês  <- APROVADO
+    MESMO CUSTO, HORIZONTE ANUAL (AG-429, auditoria externa: o número
+    mensal sozinho subestima a percepção do drag; ambas as leituras
+    são a MESMA medição, só reexpressa -- nenhum valor de decisão
+    muda). "Simples" = 12x o mensal (custo sobre o capital de
+    referência R$1.000 constante, cenário de aporte que repõe o
+    consumido); "composto" = 1-(1-r)^12 (fração do capital INICIAL
+    consumida em 12 meses sem reposição, base encolhendo a cada mês):
+      0,0284 -> 22,8%/ano simples | 20,6%/ano composto
+      0,04   -> 37,2%/ano simples | 31,5%/ano composto
+      0,06   -> 46,1%/ano simples | 37,5%/ano composto
+      0,10   -> 70,6%/ano simples | 51,7%/ano composto  <- APROVADO
+    Leitura obrigatória junto do gate Alpha: o edge bruto por trade
+    tem que superar ESTE patamar pra a estratégia ser viável a
+    R$1.000 -- é o motivo de `target_signal_rate` ser restrição
+    econômica, não hiperparâmetro livre (`CLAUDE.md` §0).
     (Tentativa anterior deste mesmo dia usava nocional=33% do equity
     fixo -- leitura errada de "lote mínimo" do `CLAUDE.md` §0, que é o
     PISO imposto pelo `step_size` da exchange sobre uma conta pequena,
@@ -798,10 +813,33 @@ target_signal_rate:
       0,10 -> 76,87% folds usáveis (103/134), std=0,0766, realizado~0,068  <- VALOR ADOTADO
       0,15 -> 80,62% folds usáveis (108/134), std=0,1023, realizado~0,098
     MONOTÔNICO em toda a banda, sem ótimo interior -- mesma forma da
-    rodada 1. ACHADO NOVO (não visto na rodada 1, `sweep_range` antigo
-    não alcançava esta faixa): a taxa REALIZADA (out-of-sample) fica
-    sistematicamente ~65-70% da nominal nesta faixa mais alta -- pedir
-    0,10 entrega ~0,068 realizado, não 0,10.
+    rodada 1. A taxa REALIZADA (out-of-sample) fica sistematicamente
+    ~65-70% da nominal nesta faixa -- pedir 0,10 entrega ~0,068
+    realizado, não 0,10.
+
+    CORREÇÃO DE PROVENIÊNCIA (2026-09-03, auditoria externa AG-429):
+    este texto afirmava, até esta correção, que a divergência
+    nominal-vs-realizado era "ACHADO NOVO (não visto na rodada 1,
+    `sweep_range` antigo não alcançava esta faixa)". A afirmação é
+    FALSA e foi escrita sem checar o artefato que já existia. O
+    `experiments/tau_sweep_stage_B.json` (gerado 06:46 do MESMO dia,
+    ANTES do commit `224a062`/AG-427 às 09:14 e muito antes do
+    `947213b`/AG-428 às 14:01) já continha o mesmo padrão, DENTRO do
+    `sweep_range` antigo ([0,0095; 0,0284]) que o texto dizia não
+    alcançar a faixa:
+      nominal 0,0095 -> realizado 0,00680 (71,5%)
+      nominal 0,0142 -> realizado 0,00888 (62,6%)
+      nominal 0,0189 -> realizado 0,01339 (70,8%)
+      nominal 0,0236 -> realizado 0,01695 (71,8%)
+      nominal 0,0284 -> realizado 0,02068 (72,8%)
+    Ou seja: a razão realizado/nominal já era 62-73% na banda antiga,
+    NÃO passou a existir por causa da extensão do range. O fenômeno é
+    estrutural do mecanismo de calibração de tau, não uma propriedade
+    da faixa alta, e estava mensurável no repositório horas antes de
+    ser tratado como descoberta. Nenhum número de decisão muda com
+    esta correção (o teto econômico e o `value` adotado foram medidos
+    à parte); o que muda é a honestidade do registro de como o achado
+    surgiu.
 
     CAUSA-RAIZ CONFIRMADA (2026-09-03, medição real sobre os 10
     artefatos `experiments/alpha_walk_forward_predictions_*.parquet`,

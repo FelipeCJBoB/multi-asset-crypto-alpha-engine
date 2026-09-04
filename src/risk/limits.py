@@ -117,6 +117,43 @@ class RejectionReason(StrEnum):
     LIQUIDITY_INSUFFICIENT = "LIQUIDITY_INSUFFICIENT"
     EVENT_WINDOW = "EVENT_WINDOW"
     AGGREGATE_RISK_LIMIT = "AGGREGATE_RISK_LIMIT"
+    # AG-431 (auditoria externa 2026-09-03, achado N1) -- controle
+    # OBRIGATORIO devolveu `NOT_COMPUTABLE`. Distinto de
+    # `AGGREGATE_RISK_LIMIT` de proposito: aquele diz "medi o risco
+    # agregado e ele estourou"; este diz "NAO CONSEGUI MEDIR o risco
+    # agregado", que e uma condicao diferente e exige diagnostico
+    # diferente (fonte de dado ausente, nao mercado adverso).
+    MANDATORY_CONTROL_NOT_COMPUTABLE = "MANDATORY_CONTROL_NOT_COMPUTABLE"
+
+
+# AG-431 -- controles cujo `NOT_COMPUTABLE` NAO pode ser silenciosamente
+# tolerado por `evaluate_all`.
+#
+# Achado que motivou: `evaluate_all` tratava `NOT_COMPUTABLE` como
+# nao-bloqueante para TODOS os 19 controles (so `FAIL` rejeitava). Para os
+# controles 4-11/17/18 isso e deliberado e correto -- sao sensores cuja
+# fonte de dado ao vivo ainda nao existe, e o proprio modulo documenta
+# isso. Para o #19 NAO e: ele e o UNICO controle de nivel PORTFOLIO. Os
+# controles 1-18 avaliam cada posicao ISOLADAMENTE, e o achado I4/§5.3 que
+# criou o #19 e exatamente que rho~0,91 entre os 5 ativos faz 5 posicoes
+# simultaneas entregarem 4,82x o risco unitario declarado -- acima de
+# `max_daily_loss` num unico evento. Ou seja: o unico controle que existe
+# para pegar essa falha era tambem o unico que nunca era computavel, e sua
+# ausencia nunca bloqueava nada. Fail-open exatamente no lugar onde o risco
+# de ruina mora.
+#
+# Custo operacional desta correcao HOJE: zero. Nao existe camada live
+# (`src/live/__init__.py` e stub) e nenhum caller de producao chama
+# `evaluate_all`. O ganho e por CONSTRUCAO: quando a camada live for
+# escrita, ela nao consegue aprovar ordem nenhuma sem antes ligar o
+# rastreador de posicoes e a matriz de correlacao. A alternativa (deixar
+# como estava e "lembrar de ligar depois") e precisamente o modo de falha
+# que esta auditoria encontrou.
+#
+# NAO virou flag opt-in de proposito (`CLAUDE.md` §Diretrizes: correcao
+# pedida pelo Manager e o comportamento DEFAULT, nunca atras de parametro
+# que exige uma segunda ordem pra valer).
+CONTROLS_MANDATORY: frozenset[str] = frozenset({"19"})
 
 
 # ============================================================================
@@ -477,10 +514,13 @@ def control_18_janela_evento() -> ControlOutcome:
     A task pediu explicitamente para "retornar sempre 'não bloqueado' com
     nota explícita de que este controle está inativo por falta de dado, não
     implementar como sempre-passa silencioso" — a resolução é a mesma usada
-    no resto deste módulo: `NOT_COMPUTABLE` nunca bloqueia (`evaluate_all`
-    segue em frente), mas fica registrado como tal em
-    `RiskDecision.controls_not_computable`, nunca reportado como
-    `ControlOutcome.PASS`. Sem parâmetros — não há nenhum dado real para
+    no resto deste módulo: `NOT_COMPUTABLE` não bloqueia PARA ESTE
+    CONTROLE (`evaluate_all` segue em frente), mas fica registrado como tal
+    em `RiskDecision.controls_not_computable`, nunca reportado como
+    `ControlOutcome.PASS`. (AG-431, 2026-09-03: "nunca bloqueia" deixou de
+    ser universal — controles em `CONTROLS_MANDATORY` passaram a rejeitar
+    quando não computáveis. O #18 não é um deles: é um filtro de janela de
+    evento, não um limite de risco agregado.) Sem parâmetros — não há nenhum dado real para
     receber ainda; quando K06 (calendário) existir, esta função ganha um
     parâmetro `is_event_window: bool` e passa a computar de verdade, mesmo
     padrão de `s02_spread_extreme`."""
@@ -519,7 +559,12 @@ def control_19_risco_agregado(
     ou alguma linha com tamanho diferente) — tudo isso é `NOT_COMPUTABLE`,
     nunca uma exceção: a mesma incerteza de "sem dado" e "dado malformado
     porque a fonte ainda não existe de verdade" (nenhum caller de produção
-    monta essa matriz hoje)."""
+    monta essa matriz hoje).
+
+    **AG-431 (2026-09-03)** — este `NOT_COMPUTABLE`, ao contrário do dos
+    outros controles, REJEITA em `evaluate_all` (ver `CONTROLS_MANDATORY`).
+    A função em si não muda: continua pura e continua devolvendo
+    `NOT_COMPUTABLE`; quem passou a tratar diferente é o orquestrador."""
     if not position_risks or correlation_matrix is None:
         return ControlOutcome.NOT_COMPUTABLE
     n = len(position_risks)
@@ -684,6 +729,27 @@ def evaluate_all(inputs: RiskEngineInputs) -> RiskDecision:
                 controls_evaluated=tuple(evaluated),
             )
         if outcome == ControlOutcome.NOT_COMPUTABLE:
+            # AG-431 -- `NOT_COMPUTABLE` num controle OBRIGATORIO rejeita,
+            # nao segue em frente. Ver `CONTROLS_MANDATORY`.
+            if control_id in CONTROLS_MANDATORY:
+                logger.warning(
+                    "risk.limits.rejected_controle_obrigatorio_nao_computavel",
+                    control_id=control_id,
+                    reason=RejectionReason.MANDATORY_CONTROL_NOT_COMPUTABLE.value,
+                    controls_passed=tuple(passed),
+                    controls_not_computable=tuple(not_computable),
+                    detail="controle de nivel PORTFOLIO sem fonte de dado -- aprovar aqui "
+                    "seria operar sem NENHUM limite de risco agregado (I4/§5.3, rho~0,91 "
+                    "entre os 5 ativos). Ligar rastreador de posicoes abertas + matriz de "
+                    "correlacao antes de qualquer execucao real.",
+                )
+                return RiskDecision(
+                    approved=False,
+                    rejection_reason=RejectionReason.MANDATORY_CONTROL_NOT_COMPUTABLE,
+                    controls_passed=tuple(passed),
+                    controls_not_computable=(*not_computable, control_id),
+                    controls_evaluated=tuple(evaluated),
+                )
             not_computable.append(control_id)
         else:
             passed.append(control_id)
@@ -703,6 +769,7 @@ def evaluate_all(inputs: RiskEngineInputs) -> RiskDecision:
 
 
 __all__ = [
+    "CONTROLS_MANDATORY",
     "ControlOutcome",
     "RejectionReason",
     "RiskDecision",

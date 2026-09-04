@@ -1187,6 +1187,22 @@ class SideModelResult:
     # que a calibração daquele fold/lado não carrega informação real do
     # score. `True` quando `np.unique(y_calib).shape[0] < 2`.
     calib_target_single_class: bool = False
+    # AG-430 (auditoria externa 2026-09-03, achado N4) -- QUANTOS pontos de
+    # fato resolveram o `tau` deste fold/lado. `_select_tau_calibration_pool`
+    # já calculava `n_in_window`, mas só o LOGAVA no ramo de FALHA (amostra
+    # insuficiente -> fallback pro pool inteiro); no caminho de SUCESSO o
+    # número era descartado silenciosamente. Consequência: sob
+    # `tau_calibration_window_days` ativo em produção, nada no artefato
+    # dizia sobre quantas observações o quantil `1-target_signal_rate` foi
+    # estimado -- exatamente o número necessário pra saber se o `tau` de um
+    # fold é confiável ou ruído de amostra pequena. `tau_pool_n` é o
+    # tamanho EFETIVO do pool usado (após janela, se aplicada);
+    # `tau_pool_is_windowed` diz se a janela pedida de fato valeu (False
+    # tanto para `tau_window_days=None` quanto para fallback por amostra
+    # insuficiente -- mesma semântica que a função já devolvia).
+    # `0`/`False` no caminho `tau_fixed` (não há pool nem quantil).
+    tau_pool_n: int = 0
+    tau_pool_is_windowed: bool = False
 
 
 def compute_monotone_screen(
@@ -1745,8 +1761,12 @@ def fit_side_model(
         # produção (`tau_fixed=None`, default) preserva bit-exato o
         # comportamento calibrado.
         tau = float(tau_fixed)
+        # AG-430 -- nao ha pool nem quantil neste caminho; 0/False e o
+        # registro honesto disso, nao um valor faltando.
+        tau_pool_n = 0
+        tau_pool_is_windowed = False
     else:
-        tau_pool, _tau_pool_is_windowed = _select_tau_calibration_pool(
+        tau_pool, tau_pool_is_windowed, tau_pool_n = _select_tau_calibration_pool(
             calibrated_train_all,
             t0_ms_all,
             tau_window_days=tau_window_days,
@@ -1840,6 +1860,8 @@ def fit_side_model(
         stop_segment=_segment(stop_idx),
         calib_segment=_segment(calib_idx),
         calib_target_single_class=calib_target_single_class,
+        tau_pool_n=tau_pool_n,
+        tau_pool_is_windowed=tau_pool_is_windowed,
     )
 
 
@@ -1950,7 +1972,7 @@ def _select_tau_calibration_pool(
     target_signal_rate: float,
     side: int,
     variant: str,
-) -> tuple[FloatArray, bool]:
+) -> tuple[FloatArray, bool, int]:
     """Item 3 do roadmap de correção do mecanismo de tau (2026-09-03) --
     núcleo puro (zero IO) que decide QUAL subconjunto de `calibrated_
     train_all` alimenta o quantil de `tau` em `fit_side_model`.
@@ -1967,12 +1989,16 @@ def _select_tau_calibration_pool(
     nunca um `tau` estimado sobre amostra pequena demais, e nunca
     silenciosamente diferente do que o log documenta.
 
-    Devolve `(pool, is_windowed)` -- `is_windowed=False` tanto no caso
-    `None` quanto no caso de fallback por amostra insuficiente, pra quem
-    chama poder registrar (`SideModelResult`/diagnostics) se a janela
-    pedida de fato foi aplicada."""
+    Devolve `(pool, is_windowed, n_pool)` -- `is_windowed=False` tanto no
+    caso `None` quanto no caso de fallback por amostra insuficiente, pra
+    quem chama poder registrar (`SideModelResult`/diagnostics) se a janela
+    pedida de fato foi aplicada. `n_pool` é o tamanho EFETIVO do pool
+    devolvido, sempre (AG-430): até esta correção o número existia só como
+    variável local (`n_in_window`) logada no ramo de FALHA e descartada no
+    ramo de sucesso, deixando a produção sem como auditar sobre quantas
+    observações cada `tau` foi estimado."""
     if tau_window_days is None:
-        return calibrated_train_all, False
+        return calibrated_train_all, False, int(calibrated_train_all.shape[0])
     if t0_ms_all is None:
         logger.warning(
             "models.alpha.tau_window_sem_t0_fallback_pool_inteiro",
@@ -1983,7 +2009,7 @@ def _select_tau_calibration_pool(
             "janela rolante; caiu pro pool inteiro (mesmo comportamento de tau_window_days="
             "None)",
         )
-        return calibrated_train_all, False
+        return calibrated_train_all, False, int(calibrated_train_all.shape[0])
 
     cutoff_ms = int(np.max(t0_ms_all)) - tau_window_days * _MS_PER_DAY
     in_window = t0_ms_all >= cutoff_ms
@@ -2002,8 +2028,24 @@ def _select_tau_calibration_pool(
             "ocorrencias suficientes acima do corte -- tau resolvido sobre o pool de "
             "calibracao INTEIRO (mesmo criterio de _resolve_tau_on_common_bars, AG-210)",
         )
-        return calibrated_train_all, False
-    return calibrated_train_all[in_window], True
+        return calibrated_train_all, False, int(calibrated_train_all.shape[0])
+    # AG-430 -- caminho de SUCESSO agora tambem loga. Ate esta correcao so
+    # o ramo de falha acima logava, entao um fold cujo `tau` saiu de uma
+    # janela apertada (mas acima do piso `min_bars`) era indistinguivel,
+    # no log e no artefato, de um fold que usou o pool inteiro.
+    logger.info(
+        "models.alpha.tau_window_aplicada",
+        side=side,
+        variant=variant,
+        tau_window_days=tau_window_days,
+        n_in_window=n_in_window,
+        min_bars_required=min_bars,
+        n_pool_inteiro=int(calibrated_train_all.shape[0]),
+        frac_pool_usada=float(n_in_window / calibrated_train_all.shape[0])  # noqa: unguarded-ratio -- guardado pelo ternario abaixo: só divide quando shape[0]>0
+        if calibrated_train_all.shape[0]
+        else float("nan"),
+    )
+    return calibrated_train_all[in_window], True, n_in_window
 
 
 def _resolve_tau_on_common_bars(

@@ -28255,3 +28255,119 @@ entries:
       nao isolada quantitativamente, so inferida por eliminacao via o
       teste do `TAU_POLICY_TOTAL_COMMON_OOF` acima. Fases 5/7/8 + as 2
       auditorias continuam NAO refeitas.
+
+  - id: AG-429
+    date: "2026-09-03"
+    file: "config/constants.yaml (target_signal_rate -- bloco de proveniencia: claim 'ACHADO NOVO' removida e substituida pela medicao real; leitura anual do custo adicionada ao lado da mensal)"
+    related_file: "experiments/tau_sweep_stage_B.json (artefato que ja continha o achado, gerado 06:46 do mesmo dia); AG-427 (commit 224a062, 09:14); AG-428 (commit 947213b, 14:01)"
+    numeracao: "AG-429."
+    found_by: >-
+      Auditoria externa adversarial (briefing AG-428 enviado a revisor
+      externo; retorno consolidado em
+      docs/prompts/QUEBRA_CONSOLIDADA_AG428_apos_verificacao.md, achado
+      N12). O revisor SUSPEITOU, sem os dados pra provar, que a
+      divergencia nominal-vs-realizado ja estava visivel antes do AG-428.
+      Verificacao propria confirmou e quantificou: o
+      experiments/tau_sweep_stage_B.json foi gerado as 06:46 de
+      2026-09-03, ANTES do commit 224a062 (AG-427, 09:14) e muito antes
+      do 947213b (AG-428, 14:01), e ja continha a razao
+      realizado/nominal em 62-73% DENTRO da banda antiga ([0,0095;
+      0,0284]) que o texto do constants.yaml afirmava nao alcancar a
+      faixa - 0,0095->0,00680 (71,5%); 0,0142->0,00888 (62,6%);
+      0,0189->0,01339 (70,8%); 0,0236->0,01695 (71,8%);
+      0,0284->0,02068 (72,8%).
+    gap: >
+      Proveniencia FALSA commitada em constante classe A. O bloco source
+      de target_signal_rate afirmava "ACHADO NOVO (nao visto na rodada 1,
+      sweep_range antigo nao alcancava esta faixa)" para um fenomeno que
+      (a) ja existia na banda antiga, (b) estava medido num artefato do
+      proprio repositorio, (c) gerado horas antes, na mesma sessao de
+      trabalho. Nao houve invencao de numero -- os numeros do AG-428 sao
+      reais; o que foi escrito errado foi a HISTORIA de como o achado
+      surgiu, tratando como descoberta o que era um dado ja disponivel e
+      nao lido. Furo de PROCESSO (nao checar artefato existente antes de
+      declarar novidade), materializado como texto de proveniencia
+      incorreto no arquivo que e a fonte canonica de proveniencia do
+      projeto.
+    severity: "alta -- nao pelo impacto numerico (nenhum valor de decisao muda: o teto economico e o value adotado foram medidos a parte e continuam validos), mas porque proveniencia e exatamente o artefato cuja unica funcao e ser confiavel. Um constants.yaml que narra errado como um achado surgiu corroi a base de toda auditoria futura que depender dele."
+    layer: "governanca/proveniencia (config/constants.yaml) -- nenhum codigo de pipeline afetado"
+    consequence: >
+      Auditor futuro (ou sessao futura deste projeto) leria o bloco e
+      concluiria que a divergencia era propriedade da faixa alta de
+      target_signal_rate, e portanto que voltar pra faixa baixa a
+      eliminaria. Falso: a divergencia e estrutural do mecanismo de
+      calibracao de tau e existe em toda a banda medida. Uma decisao de
+      reverter target_signal_rate tomada com base nessa leitura nao
+      resolveria nada e custaria um retreino completo.
+    resolved_by_commit: null
+    resolution: "texto corrigido em config/constants.yaml com a tabela real dos 5 pontos do tau_sweep_stage_B.json e a nota explicita de que a claim anterior era falsa (o texto errado NAO foi apagado sem deixar rastro -- a correcao diz o que se afirmava antes e por que estava errado). Leitura anual do custo (70,6%/ano simples, 51,7%/ano composto para o valor aprovado de 5,88%/mes) adicionada no mesmo bloco, atendendo o item 12 da lista do Manager."
+    status: "fechado -- correcao de texto aplicada e validada (yaml parseavel, check_constants_provenance limpo). Nenhum retreino envolvido."
+
+  - id: AG-430
+    date: "2026-09-03"
+    file: "src/models/alpha.py (_select_tau_calibration_pool devolve n_pool; log no caminho de sucesso; SideModelResult.tau_pool_n/tau_pool_is_windowed); src/models/walk_forward.py (WalkForwardFoldMetrics.tau_pool_n_by_side/tau_pool_windowed_by_side); tests/unit/test_models_alpha_ag208_217.py"
+    related_file: "AG-210 (guard de amostra minima, mesmo criterio); AG-427 (tau_calibration_window_days, correcao que introduziu a janela)"
+    numeracao: "AG-430."
+    found_by: >-
+      Auditoria externa adversarial (achado N4), confirmado por leitura
+      direta do codigo: _select_tau_calibration_pool calculava
+      n_in_window mas so o referenciava dentro da chamada de log do ramo
+      de FALHA (amostra insuficiente, fallback pro pool inteiro). O
+      caminho de SUCESSO descartava o numero silenciosamente.
+    gap: >
+      tau_long/tau_short chegavam ao artefato de walk-forward como
+      numeros SEM DENOMINADOR. Sob tau_calibration_window_days ativo em
+      producao, nada no artefato permitia distinguir um tau estimado
+      sobre dezenas de milhares de barras de um estimado sobre o piso
+      min_bars = ceil(MIN_OCCURRENCES_ABOVE_TAU / target_signal_rate) --
+      justamente o numero necessario pra julgar se o tau daquele fold e
+      confiavel ou ruido de amostra pequena. O dado existia, era
+      calculado, e era jogado fora.
+    severity: "alta -- e o insumo direto pra decidir se a divergencia nominal-vs-realizado do AG-428/AG-429 vem de pool apertado ou de deriva de generalizacao. Sem ele, a investigacao da causa-raiz opera as cegas sobre a variavel mais obvia e mais barata de testar."
+    layer: "models (alpha/walk_forward) -- instrumentacao, sem mudanca de decisao"
+    consequence: >
+      Toda a investigacao do AG-428 sobre por que a taxa realizada fica
+      em ~65-70% da nominal foi conduzida sem acesso ao tamanho efetivo
+      do pool que resolveu cada tau. As conclusoes de la (93,9% deriva,
+      6,1% exclusividade mutua) nao foram invalidadas por isso, mas nao
+      puderam CONTROLAR por tamanho de pool, que e uma explicacao
+      alternativa plausivel e barata que ficou sem teste.
+    resolved_by_commit: null
+    resolution: "n_pool passou a ser devolvido pela funcao nos 4 caminhos de retorno (None, sem t0, fallback, sucesso), logado tambem no caminho de sucesso (models.alpha.tau_window_aplicada, com frac_pool_usada), persistido em SideModelResult.tau_pool_n/tau_pool_is_windowed e propagado ao artefato via WalkForwardFoldMetrics.tau_pool_n_by_side/tau_pool_windowed_by_side. Mudanca puramente aditiva: nenhum tau muda de valor. 6 testes existentes atualizados pra assinatura de 3-tupla, com assercoes novas sobre n_pool no caminho de sucesso e no de fallback."
+    status: "fechado -- codigo, log, persistencia e teste aplicados; 31 testes do arquivo verdes. O VALOR medido so aparece depois do proximo retreino (artefatos atuais foram gerados antes desta instrumentacao existir)."
+
+  - id: AG-431
+    date: "2026-09-03"
+    file: "src/risk/limits.py (CONTROLS_MANDATORY novo; RejectionReason.MANDATORY_CONTROL_NOT_COMPUTABLE novo; evaluate_all rejeita quando controle obrigatorio e NOT_COMPUTABLE); tests/unit/test_risk_limits.py"
+    related_file: "PRD_V4_1.md §5.3 achado I4 (origem do controle 19); src/live/__init__.py (stub -- razao pela qual o custo operacional desta correcao hoje e zero)"
+    numeracao: "AG-431."
+    found_by: >-
+      Auditoria externa adversarial (achado N1), confirmado por leitura
+      direta: evaluate_all so rejeitava em ControlOutcome.FAIL;
+      NOT_COMPUTABLE era acumulado numa lista e nunca bloqueava, para os
+      19 controles. E control_19_risco_agregado devolve NOT_COMPUTABLE
+      sempre que position_risks e vazio/None ou correlation_matrix e
+      None -- o que e SEMPRE hoje, por admissao da propria docstring
+      ("nenhum caller de producao monta essa matriz hoje").
+    gap: >
+      Fail-open exatamente no unico controle de nivel PORTFOLIO. Os
+      controles 1-18 avaliam cada posicao ISOLADAMENTE; o #19 existe
+      porque o achado I4/§5.3 mediu rho~0,91 entre os 5 ativos, o que faz
+      5 posicoes simultaneas entregarem 4,82x o risco unitario declarado
+      -- acima de max_daily_loss (2%) num unico evento. Ou seja: o unico
+      sensor capaz de pegar risco de ruina correlacionado era tambem o
+      unico que nunca era computavel, e sua ausencia nunca bloqueava
+      nada. Para os controles 4-11/17/18 o mesmo tratamento e deliberado
+      e CORRETO (sensores sem fonte de dado ao vivo ainda); a falha e nao
+      distinguir as duas categorias.
+    severity: "alta -- e a classe de falha 'o controle de seguranca estava desligado e nada avisava'. Nao houve dano porque nao existe camada live (src/live/__init__.py e stub de 2 linhas) e nenhum caller de producao chama evaluate_all; o risco era estrutural e futuro, nao realizado."
+    layer: "risk (limits) -- decisao de aprovacao de ordem"
+    consequence: >
+      Quando a camada live fosse escrita, ela herdaria um Risk Engine que
+      aprova ordens sem NENHUM limite de risco agregado ativo, sem nenhum
+      sinal de erro -- so uma entrada a mais numa lista
+      controls_not_computable que ninguem e obrigado a ler. O modo de
+      falha e silencioso por construcao.
+    resolved_by_commit: null
+    resolution: "CONTROLS_MANDATORY = frozenset com o controle 19, mais RejectionReason.MANDATORY_CONTROL_NOT_COMPUTABLE (deliberadamente distinta de AGGREGATE_RISK_LIMIT: 'nao consegui medir' e diagnostico diferente de 'medi e estourou'). evaluate_all rejeita com log de warning explicando o que ligar. NAO ficou atras de flag opt-in (CLAUDE.md §Diretrizes: correcao pedida e comportamento DEFAULT). Custo operacional hoje: zero (sem camada live). Ganho: por construcao, a camada live futura nao consegue aprovar ordem nenhuma antes de ligar rastreador de posicoes abertas e matriz de correlacao. 3 testes que codificavam a premissa insegura foram reescritos; 2 testes novos travam a regressao (rejeita quando nao computavel; usa a razao ESPECIFICA quando computavel e estourado)."
+    status: "fechado -- aplicado, 60 testes do arquivo verdes. Fica ABERTO como trabalho separado (nao deste AG): implementar o rastreador de posicoes abertas e a serie de correlacao causal que alimentam o #19, sem os quais a camada live nao podera operar."

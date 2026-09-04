@@ -141,7 +141,9 @@ class _FakeSideModelResult:
     `.stop_segment`/`.calib_segment` -- P3 do Exhibit VIII ("Caso 0/20"),
     `score_quality.compute_train_val_test_gap` lê os 3, default `None`
     igual ao dataclass real -- gap fica vazio pro fold fake, sem
-    AttributeError)."""
+    AttributeError; `.tau_pool_n`/`.tau_pool_is_windowed` -- AG-430,
+    persistidos por fold/lado no artefato ao lado do `tau`, mesmos
+    defaults do dataclass real)."""
 
     def __init__(
         self,
@@ -158,6 +160,8 @@ class _FakeSideModelResult:
         self.fit_segment = None
         self.stop_segment = None
         self.calib_segment = None
+        self.tau_pool_n = 0
+        self.tau_pool_is_windowed = False
 
 
 class _FakeFoldResult:
@@ -437,6 +441,13 @@ def test_run_walk_forward_persiste_tau_e_taxa_de_sinal_por_fold(
         result = fake(*args, **kwargs)
         result.long_result.tau = 0.62  # noqa: magic-number -- valor arbitrário, só testa passthrough
         result.short_result.tau = 0.58  # noqa: magic-number
+        # AG-430 -- denominador do tau: sobre quantos pontos ele saiu, e se
+        # a janela pedida valeu. Valores distintos por lado de propósito,
+        # pra pegar troca de long/short no passthrough.
+        result.long_result.tau_pool_n = 4321  # noqa: magic-number
+        result.long_result.tau_pool_is_windowed = True
+        result.short_result.tau_pool_n = 1234  # noqa: magic-number
+        result.short_result.tau_pool_is_windowed = False
         return result
 
     monkeypatch.setattr(alpha, "run_fold", _fake_com_tau)
@@ -451,6 +462,10 @@ def test_run_walk_forward_persiste_tau_e_taxa_de_sinal_por_fold(
         fold0.n_signals / fold0.n_test_bars
     )
     assert 0.0 < fold0.signal_rate_realized <= 1.0
+    # AG-430 -- o `tau` sem denominador era o furo; o denominador tem que
+    # chegar ao artefato junto, por lado, sem trocar long com short.
+    assert fold0.tau_pool_n_by_side == {"long": 4321, "short": 1234}  # noqa: magic-number
+    assert fold0.tau_pool_windowed_by_side == {"long": True, "short": False}
 
 
 def test_run_walk_forward_persiste_calib_degenerado_por_lado(

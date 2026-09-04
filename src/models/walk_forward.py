@@ -251,6 +251,15 @@ class WalkForwardFoldMetrics:
     # pra reportar).
     tau_long: float
     tau_short: float
+    # AG-430 (auditoria externa 2026-09-03, achado N4) -- SOBRE QUANTOS
+    # pontos cada `tau` acima foi estimado, e se a janela
+    # `tau_calibration_window_days` de fato valeu naquele fold/lado. Sem
+    # isto, `tau_long`/`tau_short` chegavam ao artefato como numeros sem
+    # denominador: impossivel distinguir um tau estimado sobre 40k barras
+    # de um estimado sobre o piso `min_bars`. `{}` quando o fold e
+    # degenerado (nenhum `SideModelResult` existe).
+    tau_pool_n_by_side: dict[str, int]
+    tau_pool_windowed_by_side: dict[str, bool]
     # `n_signals / n_test_bars` -- taxa de sinal REALIZADA no teste deste
     # fold, pra comparar direto contra `target_signal_rate` (AG-395). NaN
     # se `n_test_bars == 0` (mesmo caso degenerado acima).
@@ -466,6 +475,8 @@ def run_walk_forward_for_combo(
                     n_filled_trades=0,
                     tau_long=float("nan"),
                     tau_short=float("nan"),
+                    tau_pool_n_by_side={},
+                    tau_pool_windowed_by_side={},
                     signal_rate_realized=float("nan"),
                     calib_degenerate_by_side={},
                     degenerado_by_side={},
@@ -586,6 +597,14 @@ def run_walk_forward_for_combo(
                 n_filled_trades=n_filled_trades,
                 tau_long=fold_result.long_result.tau,
                 tau_short=fold_result.short_result.tau,
+                tau_pool_n_by_side={
+                    "long": fold_result.long_result.tau_pool_n,
+                    "short": fold_result.short_result.tau_pool_n,
+                },
+                tau_pool_windowed_by_side={
+                    "long": fold_result.long_result.tau_pool_is_windowed,
+                    "short": fold_result.short_result.tau_pool_is_windowed,
+                },
                 signal_rate_realized=(
                     n_signals_fold / fold_result.n_test_bars  # noqa: unguarded-ratio -- guardado pelo ternario: só divide quando n_test_bars>0
                     if fold_result.n_test_bars > 0
