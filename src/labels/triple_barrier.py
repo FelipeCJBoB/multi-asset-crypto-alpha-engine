@@ -250,6 +250,9 @@ def _ms_epoch_to_utc(expr: pl.Expr) -> pl.Expr:
 # AG-221 -- fontes validas para o fill de ENTRADA. Ver
 # `LabelConfig.entry_fill_source` para o achado que motivou.
 ENTRY_FILL_SOURCE_MARK_1M = "mark_1m"
+TP_TOUCH_SOURCE_MARK_1M = "mark_1m"
+TP_TOUCH_SOURCE_KLINES_1M = "klines_1m"
+_TP_TOUCH_SOURCES = (TP_TOUCH_SOURCE_MARK_1M, TP_TOUCH_SOURCE_KLINES_1M)
 ENTRY_FILL_SOURCE_AGG_TRADES = "agg_trades"
 _ENTRY_FILL_SOURCES = (ENTRY_FILL_SOURCE_MARK_1M, ENTRY_FILL_SOURCE_AGG_TRADES)
 
@@ -369,6 +372,41 @@ class LabelConfig:
     ganhar mais lógica além do necessário pra fechar o gap enquanto o
     ADR-001 não está implementado."""
 
+    tp_touch_source: str = TP_TOUCH_SOURCE_MARK_1M
+    """AG-451 -- de qual série de preço o toque de TAKE PROFIT é lido.
+    Mesmo padrão de `entry_fill_source`: default TÉCNICO `mark_1m` no
+    dataclass (preserva bit-exato toda fixture sintética, que não tem
+    `klines_1m`), valor de PRODUÇÃO em `constants.yaml::
+    label_tp_touch_source`, lido por `from_constants()`.
+
+    **Por que o TP é diferente do SL.** O item 8 da docstring do módulo já
+    traduz `§9.1`: `take_profit` é `LIMIT`/`GTC`/`reduce_only` -- ordem
+    PASSIVA em repouso, que só executa quando alguém NEGOCIA no seu preço;
+    `stop_loss` é `STOP_MARKET`/`working_type: MARK_PRICE` -- ordem de
+    GATILHO, que dispara quando o MARK cruza o nível. A regra B11
+    ("barreiras avaliadas em `mark_1m`") está certa para o SL e errada
+    para o TP, e o módulo vinha aplicando mark aos dois.
+
+    Medido antes da correção: em 25,1% dos minutos de XRPUSDT o high de
+    `mark_price_klines_1m` excede o high de `klines_1m` (o low fica abaixo
+    em só 2,65% -- a assimetria não é ruído de arredondamento), e 1,32%
+    das saídas por TP são fantasmas: o mark cruzou `tp_price`, nenhum
+    trade aconteceu lá, e uma ordem limite em repouso não teria executado.
+    O SL continua lido em `mark_1m` sob os dois valores -- só a perna de TP
+    muda de série."""
+
+    mae_computation_id: str = "mae_none_v0"
+    """AG-451 -- marcador de versão da coluna `mae_atr_units`. `"mae_none_
+    v0"` (default técnico) = a coluna não é calculada; `"mae_from_barrier_
+    path_v1"` = excursão adversa máxima sobre a MESMA janela que
+    `_first_barrier_touch` já varreu, espelho exato de `mfe_atr_units`.
+
+    Existe porque adicionar uma COLUNA sem tocar em nenhum valor não muda
+    `config_hash` por si só -- e aí um `labels.parquet` sem a coluna
+    alegaria o mesmo hash de um com ela, e o guardrail B15 passaria cego.
+    Mesmo raciocínio de `barrier_fill_policy_id` (AG-205): mudança de
+    CÓDIGO que o hash precisa enxergar."""
+
     entry_fill_source: str = ENTRY_FILL_SOURCE_MARK_1M
     """Default TÉCNICO do dataclass = `mark_1m`; o valor de PRODUÇÃO vive
     em `constants.yaml::label_entry_fill_source` e entra por
@@ -477,6 +515,11 @@ class LabelConfig:
         # valor não reconhecido cairia silenciosamente no ramo default e
         # produziria labels do regime errado com um `config_hash` que
         # afirma outra coisa -- exatamente o que B15 existe pra impedir.
+        if self.tp_touch_source not in _TP_TOUCH_SOURCES:
+            raise ValueError(
+                f"LabelConfig.tp_touch_source={self.tp_touch_source!r} inválido -- "
+                f"esperado um de {list(_TP_TOUCH_SOURCES)} (AG-451)"
+            )
         if self.entry_fill_source not in _ENTRY_FILL_SOURCES:
             raise ValueError(
                 f"entry_fill_source={self.entry_fill_source!r} desconhecido -- "
@@ -655,6 +698,11 @@ class LabelConfig:
             adverse_selection_bps=float(load_constant("adverse_selection_bps")),
             estimator_id=resolved_estimator_id,
             entry_fill_source=str(load_constant("label_entry_fill_source")),
+            # AG-451 -- producao le a fonte real do toque de TP e liga a
+            # coluna de MAE; os defaults tecnicos do dataclass servem so
+            # a fixture sintetica, que nao tem klines_1m.
+            tp_touch_source=str(load_constant("label_tp_touch_source")),
+            mae_computation_id="mae_from_barrier_path_v1",
             tf=tf,
             resolution_id=resolution_id,
             horizon_bars=resolved_horizon_bars,
@@ -743,6 +791,13 @@ class LabelConfig:
             # labels.parquet anterior tem que divergir.
             "adverse_selection_bps": self.adverse_selection_bps,
             "cost_policy_id": self.cost_policy_id,
+            # AG-451 -- sempre presentes (mesmo padrao de barrier_fill_
+            # policy_id): a perna de TP muda de serie de preco e uma
+            # coluna nova entra no schema. Todo labels.parquet anterior
+            # tem que divergir, senao B15 passa cego sobre um parquet
+            # que nao tem a coluna nem a correcao.
+            "tp_touch_source": self.tp_touch_source,
+            "mae_computation_id": self.mae_computation_id,
         }
         if self.bars_calibration_hash is not None:
             payload["bars_calibration_hash"] = self.bars_calibration_hash
@@ -1017,6 +1072,7 @@ class _BarrierTouch:
     tie_break_used: bool
     mfe_price: float  # melhor preço favorável até o toque (inclusive) — ver mfe_atr_units
     gap_fill_used: bool  # D4/AG-205 — só pode ser True quando barrier == "SL"
+    mae_price: float  # AG-451 — pior preço adverso até o toque (inclusive)
 
 
 def _mfe_price(
@@ -1031,6 +1087,25 @@ def _mfe_price(
     if side == 1:
         return float(np.max(path_high[: end_idx_inclusive + 1]))
     return float(np.min(path_low[: end_idx_inclusive + 1]))
+
+
+def _mae_price(
+    path_high: FloatArray, path_low: FloatArray, side: int, end_idx_inclusive: int
+) -> float:
+    """AG-451 -- excursão ADVERSA máxima, em PREÇO bruto. Espelho exato de
+    `_mfe_price`: `side=1` (long) sofre no MENOR low, `side=-1` (short) no
+    MAIOR high. Mesma janela já varrida por `_first_barrier_touch`.
+
+    **Metade dos quadrantes MFE/MAE é definicional e não deve ser lida como
+    medição** (`AG-441`): num trade que fechou no SL, `mae` é o próprio
+    nível de SL por construção, do mesmo jeito que `mfe` é o TP num
+    vencedor. O que informa é MAE nos VENCEDORES (de onde um `sl_atr_mult`
+    pode ser derivado) e MFE nos perdedores. Esta função calcula os dois
+    casos porque o filtro é do consumidor, não do produtor -- mas o
+    consumidor que não filtrar está medindo a própria definição."""
+    if side == 1:
+        return float(np.min(path_low[: end_idx_inclusive + 1]))
+    return float(np.max(path_high[: end_idx_inclusive + 1]))
 
 
 def _gap_aware_sl_fill(open_at_touch: float, sl_price: float, side: int) -> tuple[float, bool]:
@@ -1072,6 +1147,8 @@ def _first_barrier_touch(
     path_low: FloatArray,
     path_close: FloatArray,
     *,
+    tp_high: FloatArray,
+    tp_low: FloatArray,
     tp_price: float,
     sl_price: float,
     side: int,
@@ -1083,29 +1160,44 @@ def _first_barrier_touch(
     em ordem cronológica real", não high/low de uma barra maior (B11).
 
     Fill de SL passa por `_gap_aware_sl_fill` (D4/AG-205) — TP nunca, ver
-    docstring daquela função e item 3 da docstring do módulo."""
+    docstring daquela função e item 3 da docstring do módulo.
+
+    AG-451 -- `tp_high`/`tp_low` são a série que decide o toque de TP;
+    `path_high`/`path_low` seguem decidindo o de SL. Sob
+    `tp_touch_source="mark_1m"` o chamador passa os MESMOS arrays nos
+    dois pares e o comportamento é bit-exato ao anterior. Sob
+    `"klines_1m"` o TP passa a exigir NEGOCIAÇÃO no nível, que é o que
+    uma ordem `LIMIT`/`GTC` em repouso de fato precisa (item 8 da
+    docstring do módulo). MFE/MAE continuam medidos sobre `path_*`: são
+    excursão de MARK, a mesma série em que o SL vive."""
     if side == 1:
-        tp_touch = path_high >= tp_price
+        tp_touch = tp_high >= tp_price
         sl_touch = path_low <= sl_price
     else:
-        tp_touch = path_low <= tp_price
+        tp_touch = tp_low <= tp_price
         sl_touch = path_high >= sl_price
 
     tp_idx = int(np.argmax(tp_touch)) if bool(tp_touch.any()) else -1
     sl_idx = int(np.argmax(sl_touch)) if bool(sl_touch.any()) else -1
 
     if tp_idx == -1 and sl_idx == -1:
-        mfe = _mfe_price(path_high, path_low, side, path_high.shape[0] - 1)
-        return _BarrierTouch("TIME", horizon_end_ms, float(path_close[-1]), False, mfe, False)
+        idx_fim = path_high.shape[0] - 1
+        mfe = _mfe_price(path_high, path_low, side, idx_fim)
+        mae = _mae_price(path_high, path_low, side, idx_fim)
+        return _BarrierTouch(
+            "TIME", horizon_end_ms, float(path_close[-1]), False, mfe, False, mae
+        )
 
     if sl_idx == -1 or (tp_idx != -1 and tp_idx < sl_idx):
         mfe = _mfe_price(path_high, path_low, side, tp_idx)
-        return _BarrierTouch("TP", int(path_time[tp_idx]), tp_price, False, mfe, False)
+        mae = _mae_price(path_high, path_low, side, tp_idx)
+        return _BarrierTouch("TP", int(path_time[tp_idx]), tp_price, False, mfe, False, mae)
 
     if tp_idx == -1 or (sl_idx != -1 and sl_idx < tp_idx):
         mfe = _mfe_price(path_high, path_low, side, sl_idx)
+        mae = _mae_price(path_high, path_low, side, sl_idx)
         fill, gap_used = _gap_aware_sl_fill(path_open[sl_idx], sl_price, side)
-        return _BarrierTouch("SL", int(path_time[sl_idx]), fill, False, mfe, gap_used)
+        return _BarrierTouch("SL", int(path_time[sl_idx]), fill, False, mfe, gap_used, mae)
 
     # tp_idx == sl_idx: TP e SL tocados no MESMO candle de 1m — resíduo de
     # B11 em escala menor (ver docstring do módulo, item 5). Resolvido por
@@ -1114,10 +1206,11 @@ def _first_barrier_touch(
     dist_tp = abs(path_open[k] - tp_price)
     dist_sl = abs(path_open[k] - sl_price)
     mfe = _mfe_price(path_high, path_low, side, k)
+    mae = _mae_price(path_high, path_low, side, k)
     if dist_tp <= dist_sl:
-        return _BarrierTouch("TP", int(path_time[k]), tp_price, True, mfe, False)
+        return _BarrierTouch("TP", int(path_time[k]), tp_price, True, mfe, False, mae)
     fill, gap_used = _gap_aware_sl_fill(path_open[k], sl_price, side)
-    return _BarrierTouch("SL", int(path_time[k]), fill, True, mfe, gap_used)
+    return _BarrierTouch("SL", int(path_time[k]), fill, True, mfe, gap_used, mae)
 
 
 # ============================================================================
@@ -1146,6 +1239,12 @@ _PRE_WEIGHT_SCHEMA: dict[str, Any] = {
     "ret_net": pl.Float64,
     "atr_at_t0": pl.Float64,
     "mfe_atr_units": pl.Float64,
+    # AG-451 -- espelho adverso do MFE, e as 2 flags que ja eram
+    # calculadas por trade e descartadas (so sobreviviam agregadas em
+    # n_tie_break/n_gap_fill_sl, sem poder condicionar analise nenhuma).
+    "mae_atr_units": pl.Float64,
+    "tie_break_used": pl.Boolean,
+    "gap_fill_used": pl.Boolean,
     "n_bars_held": pl.Int32,
     # Achado de auditoria (audit_engineering, 2026-08-17, migração
     # Parkinson+dollar-bar): Int16 (max 32.767) é seguro sob grade de
@@ -1193,6 +1292,9 @@ LABEL_COLUMNS: Final[tuple[str, ...]] = (
     "ret_net",
     "atr_at_t0",
     "mfe_atr_units",
+    "mae_atr_units",
+    "tie_break_used",
+    "gap_fill_used",
     "n_bars_held",
     "n_funding_events",
     "concurrency",
@@ -1249,6 +1351,9 @@ def _append_nofill_row(
     cols["ret_net"].append(0.0)
     cols["atr_at_t0"].append(atr_pct_i)
     cols["mfe_atr_units"].append(None)
+    cols["mae_atr_units"].append(None)
+    cols["tie_break_used"].append(False)
+    cols["gap_fill_used"].append(False)
     cols["n_bars_held"].append(0)
     cols["n_funding_events"].append(0)
     cols["filters_hash"].append(filters_hash)
@@ -1299,6 +1404,12 @@ class LabelBuildStats:
     carregado — cauda no HORIZONTE da barreira TIME.
 
     **Achado `project_assurance`/AG-100 F1 (2026-08-22, CRITICAL)** —
+    **AG-451** — `n_tp_source_gap`: a janela de barreira toca um minuto
+    que existe em `mark_1m` mas não em `klines_1m` (ou o inverso). Só
+    pode ser > 0 sob `tp_touch_source="klines_1m"`. É EXCLUSÃO, não
+    imputação: ver o comentário longo no preparo de `tp_high`/`tp_low`
+    sobre por que as duas leituras alternativas fabricam resultado.
+
     `n_empty_mark_window`: a janela `mark_1m[t_entry:horizon_end_ms]`
     resolveu vazia (`hi_idx <= lo_idx` em `build_labels_with_stats`) —
     NUNCA `n_incomplete_tail` (há dado carregado cobrindo o horizonte
@@ -1321,6 +1432,7 @@ class LabelBuildStats:
     n_incomplete_tail_decision_bars: int = 0
     n_incomplete_tail_barrier: int = 0
     n_empty_mark_window: int = 0
+    n_tp_source_gap: int = 0
     n_gap_fill_sl: int = 0
     """D4/AG-205 (2026-08-24, audit/architecture_gaps_log.yaml, achado por
     comparação com padrão de outro projeto de referência de Triple Barrier
@@ -1339,6 +1451,7 @@ def build_labels_with_stats(
     funding: pl.DataFrame,
     *,
     side: int,
+    last_1m: pl.DataFrame | None = None,
     agg_trades: pl.DataFrame | None = None,
     agg_trades_feeder: Callable[[], tuple[IntArray, FloatArray] | None] | None = None,
     symbol: str = "BTCUSDT",
@@ -1494,6 +1607,55 @@ def build_labels_with_stats(
     mark_close = mark["close"].cast(pl.Float64).to_numpy()
     max_mark_open_time = int(mark_open_time[-1]) if mark_open_time.size else -1
 
+    # AG-451 -- serie que decide o toque de TAKE PROFIT. Sob `mark_1m`
+    # (default tecnico) sao os PROPRIOS arrays de mark, e todo o caminho fica
+    # bit-exato ao anterior. Sob `klines_1m` o TP passa a exigir NEGOCIACAO no
+    # nivel, que e o que uma ordem LIMIT/GTC em repouso precisa.
+    #
+    # As duas series vem do mesmo lake, na mesma grade de 1 minuto -- medido:
+    # 14.400 minutos em 10 dias de XRPUSDT, zero de diferenca simetrica entre
+    # os `open_time`. A igualdade e EXIGIDA, nao presumida: um desalinhamento
+    # silencioso faria o TP ser lido no minuto errado, que e pior que falhar.
+    tp_gap_mask = np.zeros(mark_open_time.shape[0], dtype=bool)
+    if cfg.tp_touch_source == TP_TOUCH_SOURCE_MARK_1M:
+        tp_high, tp_low = mark_high, mark_low
+    else:
+        if last_1m is None:
+            raise ValueError(
+                f"build_labels: tp_touch_source={cfg.tp_touch_source!r} exige `last_1m` "
+                "(klines_1m do mesmo simbolo/janela) -- o toque de TP e lido na serie "
+                "NEGOCIADA, nao no mark (AG-451)"
+            )
+        # AG-451 -- as duas series NAO cobrem exatamente os mesmos minutos.
+        # Medido em XRPUSDT sobre a historia inteira (2021-12 a 2026-08):
+        # 7.200 minutos so em `mark` (bloco contiguo de 5 dias a partir de
+        # 2022-02-26, arquivo de klines faltando) e 4.327 so em `klines`
+        # (a partir de 2022-07-12). Sao gaps de COBERTURA nos dois lados,
+        # 0,29% e 0,18% -- nao "minutos sem negocio".
+        #
+        # A diferenca importa porque as duas leituras erradas sao opostas e
+        # ambas fabricam resultado: tratar minuto ausente como "nao houve
+        # trade" converteria TP real em SL/TIME ao longo de 5 dias inteiros;
+        # reindexar pelo vizinho leria o TP no minuto errado. Nenhuma das
+        # duas e aceitavel, entao o trade cuja JANELA DE BARREIRA toca um
+        # gap e declarado NAO-COMPUTAVEL e contado (`n_tp_source_gap`) --
+        # mesma disciplina de `n_empty_mark_window`.
+        _last = last_1m.sort("open_time")
+        _alinhado = (
+            pl.DataFrame({"open_time": mark_open_time})
+            .join(
+                _last.select(["open_time", "high", "low"]).with_columns(
+                    pl.col("open_time").cast(pl.Int64)
+                ),
+                on="open_time",
+                how="left",
+            )
+            .sort("open_time")
+        )
+        tp_high = _alinhado["high"].cast(pl.Float64).to_numpy()
+        tp_low = _alinhado["low"].cast(pl.Float64).to_numpy()
+        tp_gap_mask = ~np.isfinite(tp_high) | ~np.isfinite(tp_low)
+
     # AG-221 -- arrays de agg_trades preparados UMA VEZ fora do laço quente,
     # mesmo padrão de `mark_*` acima (converter por linha seria O(n) de
     # polars->numpy dentro do loop). `None` quando a fonte é `mark_1m`.
@@ -1561,6 +1723,7 @@ def build_labels_with_stats(
     n_incomplete_tail_barrier = 0
     # AG-100 F1 (2026-08-22, CRITICAL) -- ver docstring de LabelBuildStats.
     n_empty_mark_window = 0
+    n_tp_source_gap = 0
     # D4/AG-205 (2026-08-24) -- ver docstring de LabelBuildStats.
     n_gap_fill_sl = 0
 
@@ -1688,12 +1851,20 @@ def build_labels_with_stats(
             n_empty_mark_window += 1
             continue
 
+        # AG-451 -- ver comentario no preparo de `tp_high`/`tp_low`. Sob
+        # `mark_1m` a mascara e toda False e este teste nunca dispara.
+        if bool(tp_gap_mask[lo_idx:hi_idx].any()):
+            n_tp_source_gap += 1
+            continue
+
         touch = _first_barrier_touch(
             mark_open_time[lo_idx:hi_idx],
             mark_open[lo_idx:hi_idx],
             mark_high[lo_idx:hi_idx],
             mark_low[lo_idx:hi_idx],
             mark_close[lo_idx:hi_idx],
+            tp_high=tp_high[lo_idx:hi_idx],
+            tp_low=tp_low[lo_idx:hi_idx],
             tp_price=tp_price,
             sl_price=sl_price,
             side=side,
@@ -1801,6 +1972,17 @@ def build_labels_with_stats(
             if atr_unit_price > 0
             else float("nan")
         )
+        # AG-451 -- MAE em unidades de ATR, POSITIVO quando adverso (o
+        # sinal é invertido em relação ao MFE de propósito: "0,69 de MAE"
+        # lê-se como "sofreu 0,69 ATR contra", não "-0,69"). Só é
+        # calculado sob `mae_computation_id != "mae_none_v0"` -- sem
+        # isso, um parquet antigo teria a coluna nula sem nada no hash
+        # dizendo por quê.
+        mae_atr_units = (
+            -side * (touch.mae_price - fill_px) / atr_unit_price  # noqa: unguarded-ratio -- mesma guarda inline do MFE acima
+            if atr_unit_price > 0 and cfg.mae_computation_id != "mae_none_v0"
+            else float("nan")
+        )
 
         cols["t0"].append(t0)
         cols["t_post"].append(t_post)
@@ -1825,6 +2007,9 @@ def build_labels_with_stats(
         cols["ret_net"].append(ret_net)
         cols["atr_at_t0"].append(atr_pct_i)
         cols["mfe_atr_units"].append(mfe_atr_units)
+        cols["mae_atr_units"].append(mae_atr_units)
+        cols["tie_break_used"].append(touch.tie_break_used)
+        cols["gap_fill_used"].append(touch.gap_fill_used)
         cols["n_bars_held"].append(n_bars_held)
         cols["n_funding_events"].append(n_funding_events)
         cols["filters_hash"].append(resolved_filters.filters_hash)
@@ -1842,6 +2027,7 @@ def build_labels_with_stats(
         n_incomplete_tail_barrier=n_incomplete_tail_barrier,
         n_tie_break=n_tie_break,
         n_empty_mark_window=n_empty_mark_window,
+        n_tp_source_gap=n_tp_source_gap,
         n_gap_fill_sl=n_gap_fill_sl,
         n_emitted=len(cols["t0"]),
     )
@@ -1854,6 +2040,7 @@ def build_labels_with_stats(
         n_incomplete_tail_decision_bars=n_incomplete_tail_decision_bars,
         n_incomplete_tail_barrier=n_incomplete_tail_barrier,
         n_empty_mark_window=n_empty_mark_window,
+        n_tp_source_gap=n_tp_source_gap,
         n_gap_fill_sl=n_gap_fill_sl,
     )
     return _finalize_pre_weight_frame(cols), stats
@@ -1865,6 +2052,7 @@ def build_labels(
     funding: pl.DataFrame,
     *,
     side: int,
+    last_1m: pl.DataFrame | None = None,
     symbol: str = "BTCUSDT",
     config: LabelConfig | None = None,
     estimator: VolatilityEstimator | None = None,
@@ -1881,6 +2069,7 @@ def build_labels(
         mark_1m,
         funding,
         side=side,
+        last_1m=last_1m,
         symbol=symbol,
         config=config,
         estimator=estimator,
@@ -1942,6 +2131,7 @@ def build_labels_both_sides_with_stats(
     mark_1m: pl.DataFrame,
     funding: pl.DataFrame,
     *,
+    last_1m: pl.DataFrame | None = None,
     symbol: str = "BTCUSDT",
     config: LabelConfig | None = None,
     estimator: VolatilityEstimator | None = None,
@@ -1983,6 +2173,7 @@ def build_labels_both_sides_with_stats(
         mark_1m,
         funding,
         side=1,
+        last_1m=last_1m,
         agg_trades_feeder=(
             agg_trades_feeder_factory() if agg_trades_feeder_factory is not None else None
         ),
@@ -1996,6 +2187,7 @@ def build_labels_both_sides_with_stats(
         mark_1m,
         funding,
         side=-1,
+        last_1m=last_1m,
         agg_trades_feeder=(
             agg_trades_feeder_factory() if agg_trades_feeder_factory is not None else None
         ),
@@ -2020,6 +2212,7 @@ def build_labels_both_sides_with_stats(
         n_incomplete_tail_barrier=(
             long_stats.n_incomplete_tail_barrier + short_stats.n_incomplete_tail_barrier
         ),
+        n_tp_source_gap=(long_stats.n_tp_source_gap + short_stats.n_tp_source_gap),
         n_empty_mark_window=(
             long_stats.n_empty_mark_window + short_stats.n_empty_mark_window
         ),
@@ -2033,6 +2226,7 @@ def build_labels_both_sides(
     mark_1m: pl.DataFrame,
     funding: pl.DataFrame,
     *,
+    last_1m: pl.DataFrame | None = None,
     symbol: str = "BTCUSDT",
     config: LabelConfig | None = None,
     estimator: VolatilityEstimator | None = None,
@@ -2048,6 +2242,7 @@ def build_labels_both_sides(
         bars_df,
         mark_1m,
         funding,
+        last_1m=last_1m,
         symbol=symbol,
         config=config,
         estimator=estimator,
@@ -2227,10 +2422,21 @@ def build_labels_for_symbol_with_stats(
         else None
     )
 
+    # AG-451 -- serie NEGOCIADA na mesma janela/grade do mark, so quando a
+    # config pede. `mark_end` (nao `end`) pelo mesmo motivo do mark: a janela
+    # de barreira estica alem de `end` pelo prefetch, e as duas series tem que
+    # cobrir exatamente o mesmo alcance (build_labels EXIGE grade identica).
+    last_1m = (
+        lake.query_bars(symbol, "1m", start, mark_end, source="klines_1m", cast_prices=True)
+        if cfg.tp_touch_source != TP_TOUCH_SOURCE_MARK_1M
+        else None
+    )
+
     return build_labels_both_sides_with_stats(
         bars_df,
         mark_1m,
         funding,
+        last_1m=last_1m,
         symbol=symbol,
         config=cfg,
         estimator=estimator,

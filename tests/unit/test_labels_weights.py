@@ -116,6 +116,11 @@ def _synthetic_pre_weight_frame() -> pl.DataFrame:
     t1_ms = [t + 3 * bar_ms for t in t0_ms]  # cada label cobre 3 barras -> sobreposição real
     side = [1, 1, 1, -1, -1, -1]
     ret_net = [0.01, -0.02, 0.015, 0.008, -0.01, 0.02]
+    # AG-452 -- `sample_weight` passou a pesar por `|ret_gross|`. Os valores
+    # aqui sao `ret_net` + um custo de 8 bps, a ordem de grandeza real do
+    # round-trip medido: mantem a fixture parecida com dado de verdade em vez
+    # de repetir `ret_net` numa coluna nova so pra o teste passar.
+    ret_gross = [r + 0.0008 for r in ret_net]
 
     t0_dt = pl.Series(t0_ms, dtype=pl.Int64).cast(pl.Datetime("ms")).dt.replace_time_zone("UTC")
     t1_dt = pl.Series(t1_ms, dtype=pl.Int64).cast(pl.Datetime("ms")).dt.replace_time_zone("UTC")
@@ -125,6 +130,7 @@ def _synthetic_pre_weight_frame() -> pl.DataFrame:
             "t1": t1_dt,
             "side": pl.Series(side, dtype=pl.Int8),
             "ret_net": pl.Series(ret_net, dtype=pl.Float64),
+            "ret_gross": pl.Series(ret_gross, dtype=pl.Float64),
         }
     )
 
@@ -166,6 +172,7 @@ def test_apply_weights_dataset_vazio() -> None:
             "t1": pl.Datetime("ms", "UTC"),
             "side": pl.Int8,
             "ret_net": pl.Float64,
+            "ret_gross": pl.Float64,
         }
     )
     out = weights.apply_weights(empty)
@@ -173,29 +180,76 @@ def test_apply_weights_dataset_vazio() -> None:
     assert "sample_weight" in out.columns
 
 
-def test_apply_weights_todo_ret_net_zero_levanta_erro() -> None:
+def test_apply_weights_todo_ret_gross_zero_levanta_erro() -> None:
     """Dataset degenerado (`sample_weight` não pode ser normalizado para
     média 1 sem dividir por zero) levanta erro alto, não produz NaN/inf
-    silencioso."""
-    df = _synthetic_pre_weight_frame().with_columns(pl.lit(0.0).alias("ret_net"))
+    silencioso. AG-452 -- a coluna que degenera agora é `ret_gross`."""
+    df = _synthetic_pre_weight_frame().with_columns(pl.lit(0.0).alias("ret_gross"))
     with pytest.raises(ValueError):
         weights.apply_weights(df)
 
 
-def test_apply_weights_uma_linha_ret_net_nan_levanta_erro() -> None:
+def test_apply_weights_uma_linha_ret_gross_nan_levanta_erro() -> None:
     """Achado de auditoria (audit_engineering, 2026-08-15): `np.nanmean`
     (implementação anterior) ignora NaN silenciosamente quando só ALGUMAS
     linhas são não-finitas -- a média das OUTRAS 5 linhas continua um número
     normal (não dispara o guard de `mean_w`), e o `sample_weight` da linha
     contaminada vira NaN sem nenhum erro. Este teste tem 6 linhas com
-    `ret_net` finito em 5 delas -- se a implementação voltasse a usar
+    `ret_gross` finito em 5 delas -- se a implementação voltasse a usar
     `nanmean`, ele passaria silenciosamente (regressão real, não
     hipotética); a implementação corrigida precisa levantar `ValueError`
     mesmo com só 1/6 linhas contaminadas."""
     df = _synthetic_pre_weight_frame()
-    ret_net = df["ret_net"].to_list()
-    ret_net[0] = float("nan")
-    df = df.with_columns(pl.Series("ret_net", ret_net, dtype=pl.Float64))
+    ret_gross = df["ret_gross"].to_list()
+    ret_gross[0] = float("nan")
+    df = df.with_columns(pl.Series("ret_gross", ret_gross, dtype=pl.Float64))
 
     with pytest.raises(ValueError, match="não-finita"):
         weights.apply_weights(df)
+
+
+def test_apply_weights_nao_da_peso_extra_a_classe_perdedora_ag452() -> None:
+    """AG-452 -- CONTRAPROVA do viés que motivou a troca de `|ret_net|` para
+    `|ret_gross|`.
+
+    Construção: 4 trades com o MESMO movimento bruto de preço em módulo
+    (0,02), dois vencedores e dois perdedores, e o custo assimétrico real --
+    vencedor sai maker (~4 bps), perdedor sai taker (~10 bps). Sob o peso
+    antigo o perdedor pesava mais SÓ porque o custo somou ao módulo da perda;
+    sob o peso novo os quatro pesam igual, porque o sinal a prever era o
+    mesmo movimento nos quatro.
+
+    O teste falha se alguém reverter para `|ret_net|`: lá a razão
+    perdedor/vencedor é > 1 por construção, aqui tem que ser exatamente 1."""
+    bar_ms = 900_000
+    # espacados 4 barras com t1 = t0 + 1 barra: SEM sobreposicao, entao
+    # `uniqueness` sai 1,0 nos quatro e o unico eixo que resta no peso e o
+    # retorno -- que e exatamente o que este teste quer isolar.
+    t0_ms = [1_700_000_000_000 + i * 4 * bar_ms for i in range(4)]
+    t0_dt = pl.Series(t0_ms, dtype=pl.Int64).cast(pl.Datetime("ms")).dt.replace_time_zone("UTC")
+    t1_dt = (
+        pl.Series([t + bar_ms for t in t0_ms], dtype=pl.Int64)
+        .cast(pl.Datetime("ms"))
+        .dt.replace_time_zone("UTC")
+    )
+    ret_gross = [0.02, -0.02, 0.02, -0.02]
+    custo = [0.0004, 0.0010, 0.0004, 0.0010]  # maker na saida do TP, taker na do SL
+    df = pl.DataFrame(
+        {
+            "t0": t0_dt,
+            "t1": t1_dt,
+            "side": pl.Series([1, 1, -1, -1], dtype=pl.Int8),
+            "ret_gross": pl.Series(ret_gross, dtype=pl.Float64),
+            "ret_net": pl.Series([g - c for g, c in zip(ret_gross, custo)], dtype=pl.Float64),
+        }
+    )
+    out = weights.apply_weights(df).sort("t0")
+    assert out["uniqueness"].to_numpy().std() == 0.0, "fixture com sobreposicao: isola o eixo errado"
+    w = out["sample_weight"].to_numpy()
+    vencedores = w[[0, 2]].mean()
+    perdedores = w[[1, 3]].mean()
+    assert abs(perdedores / vencedores - 1.0) < 1e-12, (
+        f"peso do perdedor / peso do vencedor = {perdedores / vencedores} -- "
+        "com |ret_gross| tem que ser exatamente 1; > 1 significa que o peso "
+        "voltou a ser |ret_net| e o custo virou sinal (AG-452)"
+    )

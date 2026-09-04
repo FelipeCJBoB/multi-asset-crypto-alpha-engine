@@ -671,6 +671,9 @@ def run_layer1_sprint(
     # divergencia. A classe positiva ficava sub-ponderada em ~23%.
     class_balance_basis: str = alpha.CLASS_BALANCE_WEIGHT,
     # `calib_weight_basis` -- AG-312 / ADR-005 §13.10, item 4 de §13.17.
+    # AG-452 -- o vies de -13,0% citado abaixo foi medido sob
+    # `sample_weight = uniqueness * |ret_net|`, que nao e mais o peso
+    # vigente. Decisao do Manager mantida (ver nota longa em alpha.py).
     # DECISAO DO MANAGER (2026-08-26), opcao (b): o calibrador isotonico
     # pondera so por `uniqueness`, nao por `uniqueness * |ret_net|`. Sob o
     # peso legado a saida do calibrador estimava 0,4323 quando `P(TP)` real

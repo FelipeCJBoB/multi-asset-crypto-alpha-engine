@@ -29166,3 +29166,169 @@ entries:
       NOTA: o artefato do roadmap foi publicado com a afirmacao errada do
       item (1) e corrigido na mesma sessao. A versao v1 do artefato contem
       o erro; a v2 contem a correcao.
+
+  - id: AG-451
+    date: "2026-09-04"
+    file: "src/labels/triple_barrier.py (tp_touch_source, mae_computation_id, _mae_price, tp_high/tp_low em _first_barrier_touch, n_tp_source_gap, 3 colunas novas no schema); config/constants.yaml::label_tp_touch_source (NOVA); data/labels/**/labels.parquet (15 combinacoes reconstruidas)"
+    related_file: "AG-236/AG-221/AG-229 (mesmo padrao: fonte de preco do FILL, la de entrada, aqui de saida); AG-205 (barrier_fill_policy_id, o precedente de marcador de versao no config_hash); AG-441 (a tautologia MFE/MAE que esta coluna nao pode repetir)"
+    numeracao: "AG-451."
+    found_by: >-
+      Fase A do roadmap MFE/MAE, autorizada pelo Manager. O gap ja estava
+      escrito na propria docstring do modulo desde sempre (item 8, traducao
+      de §9.1) -- ninguem tinha cruzado a afirmacao com o codigo que a
+      contradizia 3 funcoes abaixo.
+    gap: >
+      A regra B11 do modulo diz "barreiras avaliadas em `mark_1m`, nunca em
+      high/low da barra". Ela e CERTA pro stop loss e ERRADA pro take
+      profit, e o modulo aplicava mark aos dois.
+      O item 8 da docstring do mesmo modulo ja traduzia §9.1 corretamente:
+      `take_profit` e `LIMIT`/`GTC`/`reduce_only` -- ordem PASSIVA em
+      repouso, que so executa quando alguem NEGOCIA no seu preco;
+      `stop_loss` e `STOP_MARKET`/`working_type: MARK_PRICE` -- ordem de
+      GATILHO, que dispara quando o MARK cruza o nivel. O mark nao e sequer
+      um preco em que se possa transacionar: e indice suavizado.
+      Junto: `mae_atr_units` nao existia (so `mfe_atr_units`), e
+      `tie_break_used`/`gap_fill_used` eram calculados por trade e
+      DESCARTADOS -- so sobreviviam agregados em contadores, sem poder
+      condicionar analise nenhuma.
+    severity: >-
+      alta -- muda `barrier_hit` em 1,13% dos trades e o edge medio em
+      +2,46 bps, sobre um deficit total da ordem de 8 bps. E maior que tudo
+      que a busca de geometria inteira entrega (0,60 bps, AG-450).
+    layer: "labels (Label Engine) -- invalida todo artefato downstream por config_hash"
+    consequence: >
+      MEDIDO em XRPUSDT/R3, pareado por (t0, side) contra os labels
+      anteriores, 85.611 linhas em comum:
+        barreira mudou em 964 trades (1,13%): 953 SL->TP, 7 TP->SL, 4 TIME->TP
+        frac_tp   0,4904 -> 0,5015
+        ret_gross -0,959 -> +1,484 bps
+        ret_net   -8,620 -> -6,161 bps
+      MECANISMO, medido e nao presumido: a serie NEGOCIADA tem amplitude por
+      minuto ~20% maior que a do mark (XRPUSDT 8,96 vs 7,45 bps de mediana,
+      razao 1,204, negociado excede em 82,7% dos minutos; BTCUSDT 6,85 vs
+      5,69, razao 1,203, 90,6% dos minutos). O mark e indice suavizado. Logo
+      o TP, que le a serie larga, fica mais facil, e o SL, que le a estreita,
+      nao muda. Essa assimetria NAO e artefato de misturar duas series: e
+      exatamente a razao pela qual se usa stop em MARK_PRICE numa perp --
+      ele protege de pavio que um stop em last pegaria.
+      CORROBORACAO INDEPENDENTE, pelo mesmo teste que o projeto ja usou pra
+      decidir `label_entry_fill_source` (AG-229): sob barreiras simetricas o
+      P(TP) TEORICO de martingale e 0,50. O valor antigo (0,4904) ficava
+      0,96pp abaixo; o novo (0,5015) fica 0,15pp acima. A ponta escolhida e
+      a que reproduz a teoria, nao a que da o numero melhor.
+    resolved_by_commit: null
+    resolution: >-
+      `tp_touch_source` no `LabelConfig`, mesmo padrao de
+      `entry_fill_source`: default TECNICO `mark_1m` no dataclass (preserva
+      fixture sintetica, que nao tem klines_1m), valor de PRODUCAO em
+      `constants.yaml::label_tp_touch_source = "klines_1m"`, lido por
+      `from_constants()` -- entao producao ganha a correcao por default, sem
+      flag opt-in. `_first_barrier_touch` ganhou `tp_high`/`tp_low`
+      separados de `path_high`/`path_low`: sob `mark_1m` o chamador passa os
+      MESMOS arrays e o caminho fica bit-exato ao anterior.
+      MFE/MAE seguem medidos sobre `path_*` de proposito -- sao excursao de
+      MARK, a serie em que o SL vive.
+      GAP DE COBERTURA, tratado por EXCLUSAO e nao por imputacao: as duas
+      series nao cobrem os mesmos minutos (XRPUSDT, historia inteira: 7.200
+      minutos so em mark, bloco contiguo de 5 dias; 4.327 so em klines).
+      Tratar minuto ausente como "nao houve trade" converteria TP real em
+      SL/TIME ao longo de 5 dias; reindexar pelo vizinho leria o TP no
+      minuto errado. As duas fabricam resultado, entao o trade cuja janela
+      de barreira toca um gap e declarado nao-computavel e CONTADO
+      (`n_tp_source_gap`, 0,36% dos trades) -- mesma disciplina de
+      `n_empty_mark_window`.
+      `mae_atr_units` + `mae_computation_id` (marcador de versao no
+      `config_hash`, precedente `barrier_fill_policy_id`/AG-205: sem ele um
+      parquet SEM a coluna alegaria o mesmo hash de um COM ela e o B15
+      passaria cego). `tie_break_used`/`gap_fill_used` passam a ser colunas.
+    status: >
+      fechado quanto ao codigo. RETRATACAO REGISTRADA: eu previ ao Manager
+      que esta correcao REDUZIRIA o edge em ~0,8 bps, com base numa medicao
+      minha de "1,32% de saidas por TP fantasma" (o mark cruzou tp_price e
+      nenhum trade aconteceu la). O sinal estava INVERTIDO. Aquela medicao
+      contou so uma direcao -- o mark alcancando o nivel sem trade -- e
+      ignorou a populacao MAIOR do outro lado: o trade alcancando o nivel
+      sem o mark. Como a serie negociada e ~20% mais larga, o segundo grupo
+      domina, e o efeito liquido medido e +2,46 bps, nao -0,8.
+      O numero 1,32% nao estava errado; a INFERENCIA a partir dele estava,
+      por ser unilateral. E a terceira vez nesta sessao que uma quantidade
+      condicionada ao desfecho me levou a conclusao errada (AG-441, AG-450),
+      e as tres tem a mesma forma: medir um lado de uma comparacao e tratar
+      o resultado como se fosse o efeito liquido.
+      SWEEP FECHADO sobre as 15 combinacoes, pareado por (t0, side):
+        barreira muda em 1,01% a 1,65% dos trades, sempre no mesmo sentido
+          (SL->TP domina TP->SL por 20x a 167x)
+        ret_net melhora em 15 de 15: media +1,899 bps, faixa
+          [+1,055; +2,962], dp 0,552 -- nenhuma combinacao piora
+        |frac_tp - 0,50| medio: 0,0129 -> 0,0023 (5,6x mais aderente a
+          teoria de martingale, o mesmo criterio do AG-229)
+      O sinal do erro tambem corrige: sob mark as 15 ficavam ABAIXO de 0,50
+      (TP sistematicamente dificil demais); sob klines ficam dos dois lados.
+      Isso e o que separa "correcao" de "numero que ficou melhor": um vies
+      unilateral virou ruido bilateral em torno do valor teorico.
+      MAE DOS VENCEDORES, medido direto pela 1a vez (XRPUSDT/R3): mediana
+      0,481 ATR, p90 1,217, 32,65% acima de 0,75 ATR. Bate com a derivacao
+      indireta anterior (14,5% sobre TODOS os trades) uma vez corrigido o
+      denominador: 32,65% x ~0,50 de vencedores = 16,3% -- as duas medicoes
+      concordam, o que parecia divergencia de 2,25x era denominador
+      diferente.
+
+  - id: AG-452
+    date: "2026-09-04"
+    file: "src/labels/weights.py (apply_weights: |ret_net| -> |ret_gross|); tests/unit/test_labels_weights.py (fixtures + 1 contraprova nova); src/models/alpha.py e src/models/pipeline.py (nota de premissa mudada, SEM mudanca de comportamento); src/labels/r2_admissibility.py e docs/CODE_DISCOVERY.md (prosa)"
+    related_file: "AG-312 (decisao do Manager sobre o peso do CALIBRADOR, cuja premissa este AG muda); AG-439 (o agente cetico que achou o vies); AG-451 (mesmo rebuild)"
+    numeracao: "AG-452."
+    found_by: >-
+      Achado do agente cetico despachado pelo Manager em 2026-09-04 (o
+      mesmo do AG-439) que sobreviveu a verificacao. Item 3 da Fase A.
+    gap: >
+      `sample_weight = uniqueness * |ret_net|`. `ret_net = ret_gross -
+      custo`, e o custo NAO e propriedade do sinal: e quase constante por
+      trade (fee + funding + selecao adversa). Pesar por `|ret_net|` faz o
+      peso do exemplo depender de quanto o custo comeu dele, o que injeta
+      vies DETERMINISTICO por classe.
+      Mecanica: quem fecha no SL tem `|ret_gross| ~ sl_mult*ATR` e paga
+      TAKER na saida; quem fecha no TP tem `|ret_gross| ~ tp_mult*ATR` e
+      paga MAKER. Com tp == sl os brutos sao parecidos, mas o custo maior
+      do perdedor AUMENTA o `|ret_net|` dele. O modelo aprende com peso
+      extra exatamente a classe que o custo pune -- e o custo ja e cobrado
+      uma vez, no proprio alvo.
+    severity: >-
+      media-alta -- medido, a classe negativa carrega 1,1474 de peso medio
+      contra 0,8843 da positiva, 30% a mais, sem que nada no SINAL
+      justifique. Afeta todo modelo treinado ate aqui.
+    layer: "labels (weights) -- upstream de todo treino"
+    consequence: >
+      Todo LightGBM do projeto foi treinado dando 30% mais peso a classe
+      perdedora por artefato do modelo de custo, nao por informacao.
+    resolved_by_commit: null
+    resolution: >-
+      `raw_weight = uniqueness * |ret_gross|`. `ret_gross` mede o movimento
+      de PRECO que o sinal precisava prever, que e o que o peso deve
+      refletir (Lopez de Prado, AFML 4.5 -- peso por atribuicao do retorno
+      do EVENTO).
+      Teste de CONTRAPROVA novo, nao um teste que trava o numero que o
+      codigo acabou de produzir: 4 trades com o MESMO movimento bruto em
+      modulo, dois vencedores e dois perdedores, custo assimetrico real
+      (maker na saida do TP, taker na do SL), sem sobreposicao temporal
+      para isolar o eixo do retorno de `uniqueness`. A razao peso-perdedor/
+      peso-vencedor tem que ser EXATAMENTE 1; sob `|ret_net|` ela e > 1 por
+      construcao. O teste falha se alguem reverter.
+      DECISAO DO MANAGER DE 2026-08-30 REABERTA E APROVADA: a correcao
+      tinha sido recusada na epoca porque invalidaria as medicoes em disco.
+      O argumento deixou de valer -- a Fase A ja invalida tudo por
+      `config_hash` (AG-451), entao o custo marginal virou zero, e adiar
+      significaria rodar uma campanha Optuna inteira otimizando para um
+      peso que ja se sabe que vai mudar.
+    status: >
+      fechado. EFEITO COLATERAL DECLARADO, nao silenciado: a decisao AG-312
+      do Manager (2026-08-26) -- calibrador isotonico ponderado so por
+      `uniqueness`, nao por `sample_weight` -- foi tomada sobre um vies de
+      -13,0% cujo MECANISMO era exatamente "o custo subtrai do ganho e soma
+      a perda". Sob `|ret_gross|` esse mecanismo deixa de existir.
+      A decisao fica INALTERADA de proposito: `uniqueness` puro nao tem
+      vies de custo em nenhuma direcao, entao continua segura, e reverte-la
+      exigiria remedir o vies sob o peso novo, o que ninguem fez. O que nao
+      se pode e seguir citando o -13,0% como se descrevesse o peso vigente
+      -- nota adicionada nos dois call sites (`alpha.py`, `pipeline.py`).
+      Fica como pergunta aberta pro Manager, nao como mudanca minha.

@@ -420,6 +420,16 @@ CLASS_BALANCE_WEIGHT = "weight"
 # `sample_weight` = comportamento legado (`uniqueness * |ret_net|`, o mesmo
 # peso da PERDA); `uniqueness` = so a correcao de redundancia estatistica.
 #
+# AG-452 (2026-09-04) -- A PREMISSA DESTE BLOCO MUDOU. `sample_weight` passou
+# a ser `uniqueness * |ret_gross|`, e o mecanismo do vies descrito abaixo (o
+# custo subtrai do ganho e soma a perda) DEIXA DE EXISTIR: `ret_gross` nao
+# tem custo dentro. A decisao do Manager de 2026-08-26 (calibrador so por
+# `uniqueness`) fica INALTERADA de proposito -- ela continua segura, porque
+# `uniqueness` puro nao tem vies de custo em nenhuma direcao, e reverte-la
+# exigiria remedir o vies sob o peso novo, o que ninguem fez ainda. O que
+# NAO se pode e seguir citando o -13,0% como se ainda descrevesse o peso
+# vigente: ele foi medido sob `|ret_net|`.
+#
 # Isotonica ponderada devolve `E_w[y|x]`, e `|ret_net|` no SL e 1,25-1,29x
 # o do TP (o custo subtrai do ganho e soma a perda), entao o peso legado
 # sub-pondera exatamente a classe positiva. MEDIDO em 5 celulas: sob o peso

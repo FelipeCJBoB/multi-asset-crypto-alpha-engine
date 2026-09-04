@@ -94,3 +94,6 @@ Thumbs.db
 /Como_fazer.docx.pdf
 /No motor quant.pdf
 /top3_candidates.json
+
+# AG-451 -- backup dos labels pre-rebuild da Fase A (371M, reproduzivel)
+data/labels_pre_AG451/

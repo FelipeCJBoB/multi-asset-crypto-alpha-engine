@@ -8,7 +8,7 @@ admissibility_census.py`.** Até 2026-08-27 este núcleo vivia inteiro em
 Achado real (handoff de `src/models/`, 2026-08-27, `AG-296`/`AG-297`): R2
 nunca era aplicada em `src/models/` — `src.models.dataset.side_subset`
 não filtra por ela, e `src.labels.weights.apply_weights` (`sample_weight
-= uniqueness * |ret_net|`) dá peso MAIOR às linhas mais catastróficas,
+= uniqueness * |ret_gross|`, AG-452) dá peso MAIOR às linhas mais catastróficas,
 incluindo as que violam R2. Medido contra `data/labels/BNBUSDT/R1/v1/
 labels.parquet`: até 27% das linhas violam R2 (`experiments/r2_
 admissibility_census.json`).

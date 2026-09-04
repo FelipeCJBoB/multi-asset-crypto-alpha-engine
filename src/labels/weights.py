@@ -119,14 +119,14 @@ def compute_concurrency_and_uniqueness(t0: IntArray, t1: IntArray) -> tuple[IntA
 
 def apply_weights(labels: pl.DataFrame) -> pl.DataFrame:
     """Adiciona `concurrency`, `uniqueness` (por lado) e `sample_weight`
-    (`uniqueness * |ret_net|`, normalizado para média 1 sobre o dataset
+    (`uniqueness * |ret_gross|`, normalizado para média 1 sobre o dataset
     COMBINADO — ver docstring do módulo) a `labels` (schema pré-pesos de
-    `triple_barrier._PRE_WEIGHT_SCHEMA`, colunas `side`/`t0`/`t1`/`ret_net`
-    obrigatórias). Levanta `ValueError` se QUALQUER linha individual de
-    `uniqueness * |ret_net|` for não-finita (achado de auditoria
+    `triple_barrier._PRE_WEIGHT_SCHEMA`, colunas `side`/`t0`/`t1`/
+    `ret_gross` obrigatórias). Levanta `ValueError` se QUALQUER linha
+    individual de `uniqueness * |ret_gross|` for não-finita (achado de auditoria
     `audit_engineering`, 2026-08-15 — ver comentário no corpo da função),
     OU se a média for zero/não-finita — dataset degenerado (ex.: todo
-    `ret_net` == 0), não é possível normalizar para média 1 sem dividir por
+    `ret_gross` == 0), não é possível normalizar para média 1 sem dividir por
     zero, e um `sample_weight` silenciosamente `NaN`/`inf` seria pior do
     que falhar alto."""
     if labels.is_empty():
@@ -150,12 +150,31 @@ def apply_weights(labels: pl.DataFrame) -> pl.DataFrame:
 
     out = pl.concat(parts, how="vertical")
 
-    raw_weight = (out["uniqueness"] * out["ret_net"].abs()).to_numpy()
+    # AG-452 -- o peso passa a ser `uniqueness * |ret_gross|`, nao mais
+    # `|ret_net|`. `ret_net = ret_gross - custo`, e o custo NAO e uma
+    # propriedade do sinal: e quase constante por trade (fee maker/taker +
+    # funding + selecao adversa). Pesar por `|ret_net|` faz o peso do
+    # exemplo depender de quanto o custo comeu dele, o que injeta um vies
+    # DETERMINISTICO por classe -- medido: sob a geometria de producao a
+    # classe negativa carrega 1,1474 de peso medio contra 0,8843 da
+    # positiva, 30% a mais, sem que nada no SINAL justifique.
+    #
+    # A mecanica: quem fecha no SL tem |ret_gross| ~ sl_atr_mult*ATR e paga
+    # taker na saida; quem fecha no TP tem |ret_gross| ~ tp_atr_mult*ATR e
+    # paga maker. Com tp == sl (simetrico), os dois brutos sao parecidos,
+    # mas o custo maior do perdedor AUMENTA |ret_net| dele. O modelo entao
+    # aprende com peso extra exatamente a classe que o custo pune -- e o
+    # custo ja e cobrado uma vez, no proprio alvo.
+    #
+    # `ret_gross` mede o movimento de PRECO que o sinal precisava prever.
+    # E o que o peso deve refletir (Lopez de Prado, AFML 4.5: peso por
+    # atribuicao de retorno, o retorno do EVENTO).
+    raw_weight = (out["uniqueness"] * out["ret_gross"].abs()).to_numpy()
     # Achado de auditoria (audit_engineering, 2026-08-15): a versão anterior
     # usava `np.nanmean(raw_weight)` aqui. `nanmean` só emite warning/produz
     # NaN quando TODAS as entradas são não-finitas (confirmado contra a doc
     # oficial do numpy) -- se só ALGUMAS linhas forem NaN/inf (ex.: um
-    # `ret_net` corrompido upstream numa única linha), `nanmean` calcula a
+    # `ret_gross` corrompido upstream numa única linha), `nanmean` calcula a
     # média das demais SILENCIOSAMENTE, o guard de `mean_w` abaixo passa
     # normal, e a divisão `raw_weight / mean_w` propaga NaN só NAQUELA
     # linha para `sample_weight` -- exatamente o "silenciosamente NaN/inf"
@@ -170,7 +189,7 @@ def apply_weights(labels: pl.DataFrame) -> pl.DataFrame:
     # defesa ADICIONAL que vale a pena manter: `apply_weights` roda ANTES
     # de `assert_label_invariants` no pipeline real (calcula `sample_
     # weight`, que a invariante depois valida) -- sem esta validação aqui,
-    # um `ret_net`/`uniqueness` corrompido upstream produziria um
+    # um `ret_gross`/`uniqueness` corrompido upstream produziria um
     # `sample_weight` NaN/inf que só seria pego alguns passos depois (ou,
     # em qualquer caminho de teste/uso direto de `apply_weights` que não
     # passe por `build_and_write_labels_for_symbol`, nunca seria pego).
@@ -181,15 +200,15 @@ def apply_weights(labels: pl.DataFrame) -> pl.DataFrame:
         n_bad = int((~np.isfinite(raw_weight)).sum())
         raise ValueError(
             f"apply_weights: {n_bad}/{raw_weight.size} linha(s) de "
-            "uniqueness*|ret_net| não-finita(s) (NaN/inf) -- provável "
-            "ret_net ou uniqueness corrompido upstream; um sample_weight "
+            "uniqueness*|ret_gross| não-finita(s) (NaN/inf) -- provável "
+            "ret_gross ou uniqueness corrompido upstream; um sample_weight "
             "silenciosamente NaN/inf seria pior do que falhar alto"
         )
     mean_w = float(np.mean(raw_weight)) if raw_weight.size else 0.0
     if not np.isfinite(mean_w) or mean_w <= 0.0:
         raise ValueError(
-            f"apply_weights: média de uniqueness*|ret_net| = {mean_w!r} — dataset "
-            "degenerado (ex.: todo ret_net == 0), não é possível normalizar "
+            f"apply_weights: média de uniqueness*|ret_gross| = {mean_w!r} — dataset "
+            "degenerado (ex.: todo ret_gross == 0), não é possível normalizar "
             "sample_weight para média 1 sem dividir por zero"
         )
     sample_weight = raw_weight / mean_w

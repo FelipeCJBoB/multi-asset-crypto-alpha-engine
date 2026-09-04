@@ -4463,3 +4463,51 @@ meta_tau_tie_epsilon:
   class: C
   sweep_required: false
   derived_from: [round_trip_cost_bps_maker_prob, maker_fee, taker_fee]
+
+label_tp_touch_source:
+  value: "klines_1m"
+  provenance: DERIVED
+  source: >-
+    Serie de preco em que o toque da barreira de TAKE PROFIT e lido no
+    Label Engine. Dois valores validos: "mark_1m" (mark price, caminho
+    historico) e "klines_1m" (preco NEGOCIADO). DERIVED da traducao de
+    §9.1 que a propria docstring de triple_barrier ja fazia no item 8, nao
+    escolhido por preferencia: take_profit e LIMIT/GTC/reduce_only, ordem
+    PASSIVA em repouso, que so executa quando alguem NEGOCIA no seu preco;
+    stop_loss e STOP_MARKET/working_type MARK_PRICE, ordem de GATILHO, que
+    dispara no mark. A regra B11 ("barreiras avaliadas em mark_1m") esta
+    certa pro SL e errada pro TP, e o modulo aplicava mark aos dois.
+    Medido antes da correcao (AG-451): em 25,1% dos minutos de XRPUSDT o
+    high do mark excede o high negociado, contra 2,65% do lado do low --
+    a assimetria nao e ruido de arredondamento; e 1,32% das saidas por TP
+    sao fantasmas (o mark cruzou tp_price, nenhum trade aconteceu la, uma
+    ordem limite em repouso nao teria executado), ~0,8 bps de edge
+    superestimado. O SL segue lido em mark_1m sob os dois valores.
+  class: A
+  sweep_required: true
+  sweep_range: ["mark_1m", "klines_1m"]
+  sweep_status: EXECUTADO
+  sweep_note: >-
+    Mesmo caso de label_entry_fill_source: dominio DISCRETO e completo, entao
+    +-50% nao tem significado -- varrer aqui e medir as duas pontas. Registro
+    da correcao, porque repeti o erro que aquela constante ja documenta:
+    declarei sweep_required: false primeiro, argumentando que a ponta certa e
+    determinada por argumento causal (uma ordem LIMIT em repouso so executa
+    onde ha NEGOCIACAO -- o mark nao e sequer um preco em que se possa
+    transacionar). O argumento segue correto, e a declaracao segue errada:
+    dispensar sweep de constante CLASSE A porque o resultado e previsivel e
+    exatamente o que a regra 4 existe para impedir.
+    EXECUTADO no rebuild da Fase A (AG-451), pareado por (t0, side) sobre as
+    15 combinacoes -- os labels anteriores SAO a ponta "mark_1m", entao a
+    comparacao e sobre o mesmo t0, nao duas rodadas independentes:
+      barreira muda em 1,01% a 1,65% dos trades, sempre no mesmo sentido
+        (SL->TP domina TP->SL por 20x a 167x)
+      ret_net melhora nos 15 de 15: media +1,899 bps, faixa [+1,055; +2,962],
+        dp 0,552
+    O criterio de escolha da ponta NAO e "qual da o numero melhor" -- e o
+    mesmo de label_entry_fill_source: sob barreiras simetricas o P(TP)
+    TEORICO de martingale e 0,50, e a ponta certa e a que o reproduz.
+      |frac_tp - 0,50| medio: 0,0129 sob mark_1m -> 0,0023 sob klines_1m
+    Melhora de 5,6x na aderencia a teoria, e o sinal do erro tambem corrige:
+    sob mark as 15 combinacoes ficavam ABAIXO de 0,50 (TP sistematicamente
+    dificil demais), sob klines ficam distribuidas dos dois lados.
