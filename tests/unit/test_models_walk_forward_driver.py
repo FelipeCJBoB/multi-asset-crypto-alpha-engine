@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 from typing import Any
 
 import lightgbm as lgb
@@ -690,3 +691,57 @@ def test_run_walk_forward_target_signal_rate_e_tau_window_days_default_none(
     for kwargs in captured_kwargs:
         assert kwargs["target_signal_rate"] is None
         assert kwargs["tau_window_days"] is None
+
+
+# ============================================================================
+# AG-443 -- discretizacao agregada POR COMBO (substitui o warning por fold)
+# ============================================================================
+
+
+def _fm(*, degenerado: bool, niveis: dict[str, int], fracs: dict[str, float]) -> Any:
+    """`WalkForwardFoldMetrics` mínimo pro que `resumo_discretizacao_tau` lê."""
+    return SimpleNamespace(
+        degenerado=degenerado,
+        tau_pool_niveis_by_side=niveis,
+        tau_pool_frac_em_tau_by_side=fracs,
+    )
+
+
+def test_resumo_discretizacao_tau_da_denominador_ao_alarme() -> None:
+    """AG-443 -- o ponto da mudança: `fit_side_model` não sabia quantos
+    folds existem, então não podia dizer se um fold discretizado era
+    exceção ou regra. Aqui há denominador."""
+    folds = [
+        _fm(degenerado=False, niveis={"long": 4, "short": 6}, fracs={"long": 0.9, "short": 0.8}),
+        _fm(
+            degenerado=False,
+            niveis={"long": 50, "short": 60},  # noqa: magic-number
+            fracs={"long": 0.01, "short": 0.02},
+        ),
+    ]
+    out = wf.resumo_discretizacao_tau(folds, limiar_niveis=20)  # noqa: magic-number
+
+    assert out["n_fold_lado"] == 4  # noqa: magic-number -- 2 folds x 2 lados
+    assert out["frac_discretizada"] == pytest.approx(0.5)  # noqa: magic-number -- 2 de 4 abaixo do limiar
+    assert out["niveis_min"] == 4  # noqa: magic-number
+    assert out["niveis_mediana"] == pytest.approx(28.0)  # noqa: magic-number -- mediana de [4,6,50,60]
+
+
+def test_resumo_discretizacao_tau_ignora_fold_degenerado() -> None:
+    """Fold degenerado não treinou, logo não tem pool de tau -- entrar no
+    denominador diluiria a fração e faria o alarme mentir pra menos."""
+    folds = [
+        _fm(degenerado=True, niveis={"long": 1}, fracs={"long": 1.0}),
+        _fm(degenerado=False, niveis={"long": 50}, fracs={"long": 0.01}),
+    ]
+    out = wf.resumo_discretizacao_tau(folds, limiar_niveis=20)  # noqa: magic-number
+
+    assert out["n_fold_lado"] == 1
+    assert out["frac_discretizada"] == pytest.approx(0.0)
+
+
+def test_resumo_discretizacao_tau_sem_fold_usavel_e_ausencia_nao_zero() -> None:
+    """Dict vazio, nunca `frac_discretizada: 0.0` -- que seria lido como
+    'medi e não há discretização'."""
+    folds = [_fm(degenerado=True, niveis={}, fracs={})]
+    assert wf.resumo_discretizacao_tau(folds, limiar_niveis=20) == {}  # noqa: magic-number

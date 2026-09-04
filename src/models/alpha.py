@@ -1812,21 +1812,22 @@ def fit_side_model(
         # (estrita, `decide_side`) descarta de uma vez; quando ela e grande,
         # a taxa-alvo simplesmente nao e alcancavel neste fold/lado.
         tau_pool_n_niveis, tau_pool_frac_em_tau = tau_pool_discretization(tau_pool, tau)
-        if tau_pool_n_niveis <= _TAU_NIVEIS_MINIMOS_ESPERADOS:
-            logger.warning(
-                "models.alpha.tau_pool_discretizada",
-                side=side,
-                variant=variant,
-                n_niveis=tau_pool_n_niveis,
-                frac_em_tau=tau_pool_frac_em_tau,
-                n_pool=tau_pool_n,
-                target_signal_rate=target_signal_rate,
-                detail="calibrador isotonico colapsou a pool em poucos niveis distintos -- "
-                "o quantil 1-target_signal_rate encosta na borda de um plato e a taxa "
-                "realizada vira 'a massa estritamente acima da borda', sem relacao com a "
-                "taxa pedida (AG-438). Sintoma de score sem poder discriminativo (PAV funde "
-                "blocos quando a AUC esta no acaso), nao defeito do mecanismo de tau.",
-            )
+        # AG-443 -- NAO ha warning por fold aqui, de proposito.
+        #
+        # A versao anterior (AG-438, mesma sessao) emitia um `logger.warning`
+        # sempre que `n_niveis <= 20`. Medido depois, sobre 858 fold x lado
+        # reais: **96,3% disparavam**. Um aviso que sai em quase toda
+        # execucao nao informa nada -- ele treina quem le o log a filtrar
+        # aquele evento, e o dia em que o caso REALMENTE anomalo aparecer,
+        # ninguem ve. E dividia mal a responsabilidade: `fit_side_model` nao
+        # tem o denominador (quantos folds existem no total) pra dizer se
+        # aquele fold e excecao ou regra.
+        #
+        # Os 2 numeros continuam PERSISTIDOS por fold/lado
+        # (`SideModelResult.tau_pool_n_niveis`/`tau_pool_frac_em_tau` ->
+        # `WalkForwardFoldMetrics`), que e onde eles servem: agregados por
+        # combo no fim da campanha, com denominador, e ai sim um alarme
+        # unico e acionavel. Instrumentar aqui, alarmar la.
 
     # D-08 (docs/alpha_model_design_doc_2026-08-22.md §4): API do LightGBM
     # substitui `booster.get_score(importance_type="total_gain")` (parsing
@@ -2012,15 +2013,19 @@ def unique_test_bars(
 # leitura com sentido), em vez de declarar um segundo "10" independente
 # que pudesse divergir deste com o tempo.
 MIN_OCCURRENCES_ABOVE_TAU = 10  # noqa: magic-number
-# AG-438 -- limiar de AVISO (nunca de decisão) para a discretização da pool
-# de `tau`. Não é constante de domínio e por isso não vive em
-# `constants.yaml`: nada no pipeline ramifica por ele, ele só decide se um
-# `logger.warning` sai. Escolhido como "poucos níveis o bastante para que o
+# AG-438/AG-443 -- limiar de discretização da pool de `tau`. Não é constante
+# de domínio e por isso não vive em `constants.yaml`: nada no pipeline
+# ramifica por ele. Escolhido como "poucos níveis o bastante para que o
 # quantil não consiga chegar perto de qualquer taxa-alvo plausível" — com
 # 20 níveis as taxas atingíveis já são ~5% de granularidade no melhor caso.
 # Medição que motivou: mediana real de 8 niveis por fold x lado, 37% dos
 # fold x lado com <=5, e 82,6% incapazes de entregar 0,10 ±20%.
-_TAU_NIVEIS_MINIMOS_ESPERADOS = 20  # noqa: magic-number
+#
+# AG-443: deixou de gatilhar `logger.warning` por fold em `fit_side_model`
+# (disparava em 96,3% dos 858 fold x lado medidos -- ruído, não alarme).
+# Agora é o corte usado pela agregação POR COMBO, com denominador, em
+# `walk_forward.resumo_discretizacao_tau`.
+TAU_NIVEIS_MINIMOS_ESPERADOS = 20  # noqa: magic-number
 
 #: ms/dia -- conversão de unidade pura, não constante de domínio (mesma
 #: classe de `ms_per_hour` em `group_e.e05f_time_to_funding_h`).

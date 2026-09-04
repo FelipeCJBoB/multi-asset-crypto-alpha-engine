@@ -47,7 +47,8 @@ a lógica de `realize_trades`/agregação aqui."""
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from collections.abc import Sequence
+from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
@@ -361,6 +362,54 @@ class WalkForwardResult:
     # OOF nem aumenta o artefato de forma proporcional ao numero de
     # trades, só os 3 sub-splits pooled).
     train_val_test_gap: tuple[dict[str, Any], ...] = ()
+    # AG-443 -- discretização do calibrador AGREGADA por combo, com
+    # denominador. Substitui o `logger.warning` por fold que o AG-438
+    # emitia e que disparava em 96,3% dos 858 fold x lado medidos — ruído,
+    # não alarme. Ver `resumo_discretizacao_tau`.
+    discretizacao_tau: dict[str, float] = field(default_factory=dict)
+
+
+def resumo_discretizacao_tau(
+    folds: Sequence[WalkForwardFoldMetrics], *, limiar_niveis: int
+) -> dict[str, float]:
+    """AG-443 — resume, POR COMBO, o quanto a pool de `tau` está discretizada.
+
+    O par (`n_niveis`, `frac_em_tau`) é medido por fold x lado em
+    `alpha.tau_pool_discretization`, mas alarmar lá era errado por duas
+    razões: `fit_side_model` não tem o denominador (não sabe quantos folds
+    existem) e, medido, 96,3% dos fold x lado cruzavam o limiar — um aviso
+    que sai quase sempre é filtrado por quem lê e deixa de proteger.
+
+    Aqui há denominador, então o número vira acionável: `frac_discretizada`
+    responde "isto é exceção ou é o regime?". Fold degenerado fica fora
+    (não treinou, não tem pool). Combo sem nenhum fold usável devolve dict
+    vazio — ausência de medição, nunca `0.0` como se fosse medição."""
+    niveis: list[int] = []
+    fracs: list[float] = []
+    for fm in folds:
+        if fm.degenerado:
+            continue
+        for v in (fm.tau_pool_niveis_by_side or {}).values():
+            if isinstance(v, int) and v > 0:
+                niveis.append(v)
+        for f in (fm.tau_pool_frac_em_tau_by_side or {}).values():
+            if isinstance(f, (int, float)) and f == f:
+                fracs.append(float(f))
+    if not niveis:
+        return {}
+    arr = np.asarray(niveis, dtype=np.float64)
+    out = {
+        "n_fold_lado": float(arr.shape[0]),
+        "niveis_mediana": float(np.median(arr)),
+        "niveis_min": float(arr.min()),
+        "frac_discretizada": float(np.mean(arr <= limiar_niveis)),
+        "limiar_niveis": float(limiar_niveis),
+    }
+    if fracs:
+        fr = np.asarray(fracs, dtype=np.float64)
+        out["massa_em_tau_mediana"] = float(np.median(fr))
+        out["massa_em_tau_p90"] = float(np.percentile(fr, 90))  # noqa: magic-number -- quantil de relatório
+    return out
 
 
 def run_walk_forward_for_combo(
@@ -697,4 +746,7 @@ def run_walk_forward_for_combo(
         fold_results=tuple(fold_metrics),
         aggregate=aggregate,
         train_val_test_gap=train_val_test_gap,
+        discretizacao_tau=resumo_discretizacao_tau(
+            fold_metrics, limiar_niveis=alpha.TAU_NIVEIS_MINIMOS_ESPERADOS
+        ),
     )

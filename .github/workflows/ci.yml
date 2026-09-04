@@ -70,5 +70,20 @@ jobs:
         # de "build de produção", não do dia a dia de pesquisa.
         continue-on-error: true
 
+      - name: constants.yaml — classe A ASSUMED DENTRO de ret_net (AG-442, BLOQUEANTE)
+        run: uv run python tools/lint/check_constants_provenance.py --only-ret-net-gate
+        # Deliberadamente SEM continue-on-error, ao contrário do step acima.
+        # A diferença é de categoria, não de rigor: aquele step cobre TODA
+        # classe A ASSUMED, e há 15 legitimamente pendentes da varredura do
+        # Sprint 10 — bloquear ali pararia a pesquisa. Este cobre só o
+        # subconjunto declarado com `enters_ret_net: true`, isto é, a
+        # constante que é SUBTRAÍDA do P&L e portanto decide promoção de
+        # candidato. Para essa, "esperar o Sprint 10" não é estado de
+        # pesquisa aceitável.
+        # Motivo (AG-432/AG-442): `adverse_selection_bps` migrou de coluna
+        # informativa para termo de `ret_net` sem que nada registrasse a
+        # mudança de status. Este gate existe para que a próxima migração
+        # dessas não passe silenciosa.
+
       - name: pytest
         run: uv run pytest -q

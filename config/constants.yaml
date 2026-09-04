@@ -1078,6 +1078,29 @@ adverse_selection_bps:
   sweep_required: true
   sweep_range: [0.0, 5.0]
   review_by: sprint_16   # experimento A/B RPI vs post-only comum, §9.5.1
+  # AG-442 (2026-09-04) -- esta constante DEIXOU DE SER COSMÉTICA no AG-432.
+  # Antes era coluna informativa que nenhum gate lia; hoje é SUBTRAÍDA de
+  # `ret_net` (`src/labels/triple_barrier.py`), logo entra no número que
+  # decide se um candidato dá lucro e governa toda promoção. A mudança de
+  # categoria não estava registrada em lugar nenhum -- ela continuava
+  # indistinguível, na lista de pendências do Sprint 10, de uma constante de
+  # guardrail. Este campo é a declaração explícita, e liga o gate BLOQUEANTE
+  # de CI (`--only-ret-net-gate`).
+  #
+  # O gate está VERMELHO de propósito. As três saídas, e só elas: (a) medir
+  # -- hoje impossível historicamente (exige `bookTicker`, que só existe pra
+  # BTCUSDT e só na janela pré-RPI 2023-05→2024-03; `fill_simulator` levanta
+  # ValueError em qualquer janela que alcance 2025-11-20); (b) remover de
+  # `ret_net`, voltando ao estado pré-AG-432 -- rejeitado, porque não medir
+  # não torna o custo zero; (c) renúncia explícita do Manager, registrada.
+  #
+  # ATENUANTE MEDIDO, que é o que torna a situação tolerável enquanto (a) não
+  # é possível: a DECISÃO de geometria não depende deste valor. Testado o
+  # ranking das 7 células de `tp_atr_mult`/`sl_atr_mult` sob adverse_selection
+  # em 0,0 / 0,586 / 1,5 / 3,0 / 5,0 -- `1,50/0,75` vence em toda a faixa a
+  # partir de 0,586 (o valor MEDIDO pré-RPI). O que muda com o valor é a
+  # MAGNITUDE do P&L, não a escolha. Ver AG-442.
+  enters_ret_net: true
 
 adverse_selection_wr_cost_per_bp:
   value: 0.0091
