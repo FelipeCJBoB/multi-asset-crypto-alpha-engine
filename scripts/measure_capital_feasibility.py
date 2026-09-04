@@ -55,6 +55,7 @@ Uso:
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -65,13 +66,19 @@ import numpy as np
 import polars as pl
 import structlog
 
-from src.exchange.filters import NoFiltersAvailableError
+from src.exchange.filters import NoFiltersAvailableError, load_filters_asof
+from src.features.groups.group_e import round_trip_cost_bps
 from src.labels._paths import labels_symbol_tf_dir
 from src.models._constants import load_constant
 from src.models._paths import EXPERIMENTS_DIR
 from src.monitoring.logging import configure_logging
 from src.risk.limits import ControlOutcome, control_13_orcamento_fees
-from src.risk.sizing import SizingResult, compute_sizing_asof
+from src.risk.sizing import (
+    NonPositiveEquityError,
+    SizingResult,
+    ZeroStopDistanceError,
+    compute_sizing,
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -102,7 +109,7 @@ class CelulaResult:
     variant: str
     n_sinais: int
     n_sizing_ok: int
-    n_sem_filtros: int
+    n_com_fallback_de_filtro: int
     frac_abaixo_min_qty: float
     frac_abaixo_min_notional: float
     frac_executavel: float
@@ -163,11 +170,23 @@ def _carrega_sinais(symbol: str, resolution_id: str, variant: str) -> pl.DataFra
 def _sizing_por_sinal(
     df: pl.DataFrame, *, symbol: str, equity: Decimal
 ) -> tuple[list[SizingResult | None], int]:
-    """Roda o sizing de PRODUÇÃO sinal a sinal. `None` na lista = sizing
-    impossível naquela data (sem snapshot de filtros aplicável); contado à
-    parte, nunca silenciado nem tratado como 'executável'."""
+    """Roda o sizing de PRODUÇÃO sinal a sinal.
+
+    **Fallback de filtro histórico, explícito e contado.** Existe UM único
+    snapshot de `exchangeInfo` no repositório (2026-08-08,
+    `known_gaps.exchange_info_snapshot_coverage_gap`), então toda data
+    anterior faz `load_filters_asof` levantar `NoFiltersAvailableError`.
+    A Label Engine resolve isso com `historical_filters_fallback=True`
+    (usa o snapshot mais recente disponível, marcando `is_fallback=True`
+    em cada linha); este módulo faz EXATAMENTE o mesmo, pela mesma razão,
+    e devolve a contagem — o número reportado é "quantização sob os
+    filtros de 2026-08-08 aplicados retroativamente", não "quantização sob
+    o filtro vigente na data". Fingir a segunda coisa seria pior que não
+    medir. `None` na lista fica reservado a falha genuína de sizing
+    (ex. ATR nulo), nunca a filtro ausente."""
     resultados: list[SizingResult | None] = []
-    n_sem_filtros = 0
+    n_com_fallback = 0
+    fallback_filters = load_filters_asof(datetime.now(tz=UTC), symbol=symbol)
     t0s = df["t0"].to_list()
     atrs = df["atr_at_t0"].to_list()
     precos = df["entry_price_fill"].to_list()
@@ -176,19 +195,23 @@ def _sizing_por_sinal(
         if t0_dt.tzinfo is None:
             t0_dt = t0_dt.replace(tzinfo=UTC)
         try:
+            filters = load_filters_asof(t0_dt, symbol=symbol)
+        except NoFiltersAvailableError:
+            filters = fallback_filters
+            n_com_fallback += 1
+        try:
             resultados.append(
-                compute_sizing_asof(
+                compute_sizing(
                     t0=t0_dt,
                     equity=equity,
                     atr_pct=atr_pct,
                     mark_price=mark_price,
-                    symbol=symbol,
+                    filters=filters,
                 )
             )
-        except NoFiltersAvailableError:
-            n_sem_filtros += 1
+        except (ZeroStopDistanceError, NonPositiveEquityError):
             resultados.append(None)
-    return resultados, n_sem_filtros
+    return resultados, n_com_fallback
 
 
 def _mede_celula(
@@ -198,7 +221,7 @@ def _mede_celula(
     if df is None or df.is_empty():
         return None
 
-    sizings, n_sem_filtros = _sizing_por_sinal(df, symbol=symbol, equity=equity)
+    sizings, n_com_fallback = _sizing_por_sinal(df, symbol=symbol, equity=equity)
     ret_net = df["ret_net"].to_numpy().astype(np.float64)
 
     min_qty = np.array(
@@ -266,7 +289,15 @@ def _mede_celula(
     # Custo/mês e `control_13` REAIS, com a função de produção.
     span_dias = _span_dias(df)
     trades_mes = (n_ok / span_dias * _DIAS_POR_MES) if span_dias > 0 else float("nan")  # noqa: unguarded-ratio -- guardado pelo ternario
-    round_trip_bps = float(load_constant("round_trip_cost_bps"))
+    # AG-435 -- `round_trip_cost_bps` NAO e constante em constants.yaml, e
+    # funcao derivada (`src.features.groups.group_e`): custo do caminho
+    # assimetrico maker_in/maker_tp/taker_sl, ponderado por
+    # `round_trip_cost_bps_maker_prob` (42,06%, MEDIDO). Reusar a funcao e
+    # obrigatorio -- replicar a formula aqui seria repetir exatamente o
+    # erro de metodo que este modulo existe pra fechar (achado B1).
+    round_trip_bps = round_trip_cost_bps(
+        float(load_constant("maker_fee")), float(load_constant("taker_fee"))
+    )
     notional_mediano = float(np.nanmedian(notional[executavel])) if n_ok else float("nan")
     custo_mes = (
         notional_mediano * round_trip_bps / _BPS_PER_UNIT * trades_mes  # noqa: unguarded-ratio -- _BPS_PER_UNIT e constante literal 10_000
@@ -291,7 +322,7 @@ def _mede_celula(
         variant=variant,
         n_sinais=n,
         n_sizing_ok=n_ok,
-        n_sem_filtros=n_sem_filtros,
+        n_com_fallback_de_filtro=n_com_fallback,
         frac_abaixo_min_qty=float(np.count_nonzero(min_qty) / n) if n else float("nan"),  # noqa: unguarded-ratio -- guardado pelo ternario
         frac_abaixo_min_notional=(
             float(np.count_nonzero(min_notional) / n) if n else float("nan")  # noqa: unguarded-ratio -- guardado pelo ternario
@@ -361,7 +392,7 @@ def main() -> None:
     payload = {
         "equity_referencia": equity_f,
         "n_celulas": len(resultados),
-        "celulas": [r.__dict__ for r in resultados],
+        "celulas": [dataclasses.asdict(r) for r in resultados],
     }
     _OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     _OUT_PATH.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")

@@ -3,69 +3,92 @@ target_signal_rate (config/constants.yaml) = 0.1
 
 === POR ARQUIVO (is_oof == True) ===
 -- BTCUSDT_R2_camada1 -- n_total=31251 n_oof=31251
-   rate_long_alone=0.0516  rate_short_alone=0.0345  rate_naive_or=0.0861  rate_actual=0.0861
-   long:  n_bateu_tau=1613  n_suprimido=0  frac_suprimido_por_perder_corrida=NaN
-   short: n_bateu_tau=1078  n_suprimido=0  frac_suprimido_por_perder_corrida=NaN
+   rate_long_alone=0.0502  rate_short_alone=0.0438  rate_naive_or=0.0937  rate_actual=0.0937
+   long:  n_bateu_tau=1569  n_suprimido=9  frac_suprimido_por_perder_corrida=1.0000
+   short: n_bateu_tau=1368  n_suprimido=0  frac_suprimido_por_perder_corrida=NaN
 
 -- BTCUSDT_R2_camada0 -- n_total=31251 n_oof=31251
-   rate_long_alone=0.0518  rate_short_alone=0.0539  rate_naive_or=0.1057  rate_actual=0.1051
-   long:  n_bateu_tau=1620  n_suprimido=4  frac_suprimido_por_perder_corrida=1.0000
-   short: n_bateu_tau=1683  n_suprimido=15  frac_suprimido_por_perder_corrida=1.0000
+   rate_long_alone=0.0696  rate_short_alone=0.0554  rate_naive_or=0.1251  rate_actual=0.1249
+   long:  n_bateu_tau=2176  n_suprimido=0  frac_suprimido_por_perder_corrida=NaN
+   short: n_bateu_tau=1732  n_suprimido=5  frac_suprimido_por_perder_corrida=1.0000
 
 -- SOLUSDT_R2_camada1 -- n_total=24691 n_oof=24691
-   rate_long_alone=0.0149  rate_short_alone=0.0109  rate_naive_or=0.0256  rate_actual=0.0179
-   long:  n_bateu_tau=367  n_suprimido=9  frac_suprimido_por_perder_corrida=1.0000
-   short: n_bateu_tau=269  n_suprimido=184  frac_suprimido_por_perder_corrida=1.0000
+   rate_long_alone=0.0484  rate_short_alone=0.0264  rate_naive_or=0.0729  rate_actual=0.0724
+   long:  n_bateu_tau=1194  n_suprimido=51  frac_suprimido_por_perder_corrida=1.0000
+   short: n_bateu_tau=652  n_suprimido=8  frac_suprimido_por_perder_corrida=1.0000
 
 -- SOLUSDT_R2_camada0 -- n_total=24691 n_oof=24691
-   rate_long_alone=0.0701  rate_short_alone=0.0196  rate_naive_or=0.0890  rate_actual=0.0853
-   long:  n_bateu_tau=1730  n_suprimido=3  frac_suprimido_por_perder_corrida=1.0000
-   short: n_bateu_tau=483  n_suprimido=105  frac_suprimido_por_perder_corrida=1.0000
+   rate_long_alone=0.0321  rate_short_alone=0.0028  rate_naive_or=0.0344  rate_actual=0.0312
+   long:  n_bateu_tau=793  n_suprimido=91  frac_suprimido_por_perder_corrida=1.0000
+   short: n_bateu_tau=70  n_suprimido=1  frac_suprimido_por_perder_corrida=1.0000
 
 -- SOLUSDT_R3_camada1 -- n_total=12190 n_oof=12190
-   rate_long_alone=0.0295  rate_short_alone=0.0041  rate_naive_or=0.0336  rate_actual=0.0336
-   long:  n_bateu_tau=360  n_suprimido=0  frac_suprimido_por_perder_corrida=NaN
-   short: n_bateu_tau=50  n_suprimido=1  frac_suprimido_por_perder_corrida=1.0000
+   rate_long_alone=0.0262  rate_short_alone=0.0189  rate_naive_or=0.0447  rate_actual=0.0445
+   long:  n_bateu_tau=319  n_suprimido=1  frac_suprimido_por_perder_corrida=1.0000
+   short: n_bateu_tau=230  n_suprimido=5  frac_suprimido_por_perder_corrida=1.0000
 
 -- SOLUSDT_R3_camada0 -- n_total=12190 n_oof=12190
-   rate_long_alone=0.0489  rate_short_alone=0.0176  rate_naive_or=0.0664  rate_actual=0.0662
-   long:  n_bateu_tau=596  n_suprimido=2  frac_suprimido_por_perder_corrida=1.0000
-   short: n_bateu_tau=214  n_suprimido=1  frac_suprimido_por_perder_corrida=1.0000
+   rate_long_alone=0.0242  rate_short_alone=0.0085  rate_naive_or=0.0327  rate_actual=0.0323
+   long:  n_bateu_tau=295  n_suprimido=5  frac_suprimido_por_perder_corrida=1.0000
+   short: n_bateu_tau=104  n_suprimido=0  frac_suprimido_por_perder_corrida=NaN
 
 -- XRPUSDT_R2_camada1 -- n_total=25613 n_oof=25613
-   rate_long_alone=0.0586  rate_short_alone=0.0229  rate_naive_or=0.0815  rate_actual=0.0815
-   long:  n_bateu_tau=1502  n_suprimido=0  frac_suprimido_por_perder_corrida=NaN
-   short: n_bateu_tau=586  n_suprimido=0  frac_suprimido_por_perder_corrida=NaN
+   rate_long_alone=0.0606  rate_short_alone=0.0301  rate_naive_or=0.0907  rate_actual=0.0894
+   long:  n_bateu_tau=1553  n_suprimido=32  frac_suprimido_por_perder_corrida=1.0000
+   short: n_bateu_tau=771  n_suprimido=1  frac_suprimido_por_perder_corrida=1.0000
 
 -- XRPUSDT_R2_camada0 -- n_total=25613 n_oof=25613
-   rate_long_alone=0.0549  rate_short_alone=0.0045  rate_naive_or=0.0594  rate_actual=0.0581
-   long:  n_bateu_tau=1406  n_suprimido=35  frac_suprimido_por_perder_corrida=1.0000
-   short: n_bateu_tau=116  n_suprimido=0  frac_suprimido_por_perder_corrida=NaN
+   rate_long_alone=0.0404  rate_short_alone=0.0477  rate_naive_or=0.0881  rate_actual=0.0877
+   long:  n_bateu_tau=1034  n_suprimido=9  frac_suprimido_por_perder_corrida=1.0000
+   short: n_bateu_tau=1222  n_suprimido=0  frac_suprimido_por_perder_corrida=NaN
 
 -- XRPUSDT_R3_camada1 -- n_total=12646 n_oof=12646
-   rate_long_alone=0.0542  rate_short_alone=0.0375  rate_naive_or=0.0903  rate_actual=0.0892
-   long:  n_bateu_tau=686  n_suprimido=15  frac_suprimido_por_perder_corrida=1.0000
-   short: n_bateu_tau=474  n_suprimido=17  frac_suprimido_por_perder_corrida=1.0000
+   rate_long_alone=0.0789  rate_short_alone=0.0232  rate_naive_or=0.1007  rate_actual=0.1003
+   long:  n_bateu_tau=998  n_suprimido=7  frac_suprimido_por_perder_corrida=1.0000
+   short: n_bateu_tau=294  n_suprimido=16  frac_suprimido_por_perder_corrida=1.0000
 
 -- XRPUSDT_R3_camada0 -- n_total=12646 n_oof=12646
-   rate_long_alone=0.0580  rate_short_alone=0.0169  rate_naive_or=0.0750  rate_actual=0.0744
-   long:  n_bateu_tau=734  n_suprimido=6  frac_suprimido_por_perder_corrida=1.0000
-   short: n_bateu_tau=214  n_suprimido=1  frac_suprimido_por_perder_corrida=1.0000
+   rate_long_alone=0.0528  rate_short_alone=0.0059  rate_naive_or=0.0586  rate_actual=0.0475
+   long:  n_bateu_tau=668  n_suprimido=132  frac_suprimido_por_perder_corrida=1.0000
+   short: n_bateu_tau=75  n_suprimido=10  frac_suprimido_por_perder_corrida=1.0000
 
 === POOLED (10 arquivos, is_oof == True) ===
 n_oof_pooled = 212782
-rate_long_alone  = 0.0499
-rate_short_alone = 0.0243
-rate_naive_or    = 0.0740
-rate_actual      = 0.0723
-long:  n_bateu_tau=10614  n_suprimido=74  frac_suprimido_por_perder_corrida=1.0000
-short: n_bateu_tau=5167  n_suprimido=324  frac_suprimido_por_perder_corrida=1.0000
+rate_long_alone  = 0.0498
+rate_short_alone = 0.0306
+rate_naive_or    = 0.0800
+rate_actual      = 0.0786
+long:  n_bateu_tau=10599  n_suprimido=337  frac_suprimido_por_perder_corrida=1.0000
+short: n_bateu_tau=6518  n_suprimido=46  frac_suprimido_por_perder_corrida=1.0000
 
 === DECOMPOSICAO (pooled) ===
 identidade: (target - rate_actual) = (target - rate_naive_or) + (rate_naive_or - rate_actual)
-gap_total (target - rate_actual)          = 0.0277
-gap_drift (target - rate_naive_or)        = 0.0260
-gap_exclusion (rate_naive_or - rate_actual) = 0.0017
-  -> gap_drift / gap_total     = 93.9%
-  -> gap_exclusion / gap_total = 6.1%
-checagem soma = 0.0277 (deve bater com gap_total)
+gap_total (target - rate_actual)          = 0.0214
+gap_drift (target - rate_naive_or)        = 0.0200
+gap_exclusion (rate_naive_or - rate_actual) = 0.0014
+  -> gap_drift / gap_total     = 93.6%
+  -> gap_exclusion / gap_total = 6.4%
+checagem soma = 0.0214 (deve bater com gap_total)
+
+=== POR TRIMESTRE (pooled, is_oof == True) -- AG-436 ===
+razao = rate_actual / target_signal_rate (1,0 = nominal entregue)
+2022Q1  n_oof=     16  long_alone=0.0000  short_alone=0.0000  naive_or=0.0000  actual=0.0000  razao=0.0000
+2022Q2  n_oof=   1344  long_alone=0.0000  short_alone=0.0000  naive_or=0.0000  actual=0.0000  razao=0.0000
+2022Q4  n_oof=    800  long_alone=0.0000  short_alone=0.0000  naive_or=0.0000  actual=0.0000  razao=0.0000
+2023Q1  n_oof=   5114  long_alone=0.0000  short_alone=0.0000  naive_or=0.0000  actual=0.0000  razao=0.0000
+2023Q2  n_oof=   3866  long_alone=0.0103  short_alone=0.2248  naive_or=0.2351  actual=0.2351  razao=2.3513
+2023Q3  n_oof=   4032  long_alone=0.0027  short_alone=0.0702  naive_or=0.0729  actual=0.0729  razao=0.7292
+2023Q4  n_oof=  19374  long_alone=0.0397  short_alone=0.0109  naive_or=0.0506  actual=0.0505  razao=0.5053
+2024Q1  n_oof=  17512  long_alone=0.0392  short_alone=0.0800  naive_or=0.1191  actual=0.1189  razao=1.1895
+2024Q2  n_oof=  15984  long_alone=0.0470  short_alone=0.0112  naive_or=0.0581  actual=0.0580  razao=0.5800
+2024Q3  n_oof=  17224  long_alone=0.0751  short_alone=0.0284  naive_or=0.1026  actual=0.1024  razao=1.0236
+2024Q4  n_oof=  20032  long_alone=0.0351  short_alone=0.0124  naive_or=0.0475  actual=0.0475  razao=0.4752
+2025Q1  n_oof=  17662  long_alone=0.0598  short_alone=0.0188  naive_or=0.0786  actual=0.0777  razao=0.7774
+2025Q2  n_oof=  16516  long_alone=0.0625  short_alone=0.0433  naive_or=0.1057  actual=0.1054  razao=1.0541
+2025Q3  n_oof=  17100  long_alone=0.0302  short_alone=0.0287  naive_or=0.0589  actual=0.0589  razao=0.5889
+2025Q4  n_oof=  15906  long_alone=0.0555  short_alone=0.0000  naive_or=0.0555  actual=0.0531  razao=0.5306
+2026Q1  n_oof=  17336  long_alone=0.0635  short_alone=0.0214  naive_or=0.0814  actual=0.0687  razao=0.6870
+2026Q2  n_oof=  16702  long_alone=0.0917  short_alone=0.0137  naive_or=0.1048  actual=0.1046  razao=1.0460
+2026Q3  n_oof=   6262  long_alone=0.0359  short_alone=0.1118  naive_or=0.1477  actual=0.1476  razao=1.4756
+
+LEITURA: razao ESTAVEL entre trimestres => a deriva e estrutural do mecanismo de calibracao de tau, nao deriva temporal continua (e o salto de ~2,5x apontado pelo revisor veio da troca de mecanismo). razao com TENDENCIA monotonica => deriva temporal real, e a janela de calibracao precisa acompanhar o regime.

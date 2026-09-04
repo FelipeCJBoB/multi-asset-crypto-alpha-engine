@@ -28438,7 +28438,24 @@ entries:
       so dos eixos Data e Alpha.
     resolved_by_commit: null
     resolution: "Gate Model passou a decidir por score_quality_full_population (populacao completa de barras de teste com outcome realizado). A AUC de sinal continua calculada, persistida e reportada -- nunca some do artefato, e a comparacao entre as duas populacoes e ela mesma um diagnostico. apply_fdr_to_model_gates migrou junto: a familia corrigida por FDR tem que ser a MESMA estatistica que governa a promocao, senao a correcao ajusta hipoteses diferentes das que decidem."
-    status: "fechado -- codigo e testes aplicados (224 testes de gate/stability/model_card verdes). O EFEITO no veredito so aparece apos o retreino desta rodada."
+    status: >
+      fechado -- codigo e testes aplicados (224 testes de
+      gate/stability/model_card verdes). O EFEITO no veredito so aparece
+      apos o retreino desta rodada.
+
+      MEDICAO DE VALIDACAO (2026-09-03, sobre os 5 artefatos canonicos
+      ANTES do retreino, so pra checar densidade da fonte nova): 99 folds
+      nao-degenerados, logo 198 fold-lados possiveis.
+      `score_quality_by_side` (populacao de sinal, a fonte ANTIGA do gate)
+      tem 148 entradas -- 50 fold-lados (25%) simplesmente AUSENTES, porque
+      um lado sem nenhum trade OOF nao aparece no dict.
+      `score_quality_full_population_by_side` tem 198/198, com ZERO
+      `roc_auc` ausente. Dois ganhos, nao um: (a) +34% de pontos na
+      dispersao que alimenta o teste-t, e (b) o `n_folds` do teste antigo
+      estava SUBESTIMADO em 25% dos casos por ausencia silenciosa, o que
+      reduzia ainda mais um poder estatistico que ja era insuficiente. O
+      risco oposto -- fonte esparsa faria o gate reprovar tudo por NaN --
+      foi verificado e nao existe.
 
   - id: AG-434
     date: "2026-09-03"
@@ -28501,7 +28518,36 @@ entries:
       exchange) -- e nada no processo de promocao perguntaria isso.
     resolved_by_commit: null
     resolution: "Camada NOVA (nao mudanca no backtest_lite): scripts/measure_capital_feasibility.py junta as predicoes OOF aos labels e roda compute_sizing_asof de producao sinal a sinal, com os filtros vigentes NA DATA (B01-safe), reportando frac_abaixo_min_qty, frac_abaixo_min_notional, frac_executavel, quant_error mediano/p95, edge_bps nominal vs ponderado por nocional, e o veredito de control_13_orcamento_fees chamado de verdade."
-    status: "aberto -- script escrito e lint-limpo; execucao pendente do retreino desta rodada (precisa das predicoes novas)."
+    status: >
+      fechado -- executado 2026-09-03 sobre as predicoes da rodada 4.
+      RESULTADOS, 3 deles inesperados:
+      (1) QUANTIZACAO NAO INVIABILIZA NADA: frac_executavel = 1,00 em
+      TODAS as 10 celulas a R$ 1.000 -- nenhum sinal cai abaixo de
+      min_qty ou min_notional. O erro de quantizacao mediano e 2,1-2,3%
+      em BTCUSDT/R2, 0,13% em SOL e 0,01% em XRP; muito abaixo dos 16,2%
+      que o PRD documenta pra BTC, numero que portanto esta obsoleto
+      pro regime atual. A severidade implicita do achado N9 nao se
+      confirma.
+      (2) control_13_orcamento_fees REPROVA BTCUSDT/R2 nas 2 camadas --
+      custo mensal medido de 4,88% (C1) e 6,46% (C0) do equity, e o C0
+      ESTOURA o teto de 5,88%/mes autorizado pelo Manager. Primeira vez
+      que o controle de producao real e chamado sobre trades reais, e
+      ele rejeita. As outras 4 combos passam (0,24% a 2,27%).
+      (3) ACHADO MAIS FORTE, nao previsto por ninguem: o edge PONDERADO
+      PELO NOCIONAL diverge muito do edge nominal do gate, e sempre pra
+      pior nas celulas positivas -- XRPUSDT/R3/C1 vai de +8,65 nominal
+      pra +0,43 ponderado; XRPUSDT/R3/C0 vai de +5,68 pra -8,45;
+      XRPUSDT/R2/C0 de +0,13 pra -5,47. Significa que o edge positivo se
+      concentra nos trades de nocional PEQUENO: ponderado pelo capital
+      que de fato seria alocado, ele praticamente desaparece. O gate
+      Alpha, que pesa cada trade igualmente, superestima o que R$ 1.000
+      renderiam. Isto NAO e o achado que o revisor descreveu, mas e a
+      versao real e mensuravel da preocupacao dele.
+      LIMITACAO DECLARADA: existe 1 unico snapshot de exchangeInfo
+      (2026-08-08), entao a quantizacao foi medida com esses filtros
+      aplicados retroativamente (mesmo fallback explicito que a Label
+      Engine usa, contado em n_com_fallback_de_filtro). E "quantizacao
+      sob os filtros de 2026-08-08", nao "sob o filtro vigente na data".
 
   - id: AG-436
     date: "2026-09-03"
@@ -28537,4 +28583,84 @@ entries:
       correcao conhecida pro tau in-sample (AG-210).
     resolved_by_commit: null
     resolution: "TAU_POLICY_TOTAL_COMMON_OOF_NO_NOFILL: identica a TOTAL_COMMON_OOF exceto por remover as barras NOFILL da pool antes do quantil, selecionavel por --tau-policy. Implementada como PAR DE COMPARACAO, nao como correcao direta -- sem o par nao ha como atribuir a diferenca a uma variavel so (CLAUDE.md permite: comparacao lado-a-lado pedida pelo Manager). Levanta se barrier_hit nao existir no frame: pedido de excluir NOFILL nunca e ignorado em silencio. Em paralelo, ag428_signal_rate_decomposition ganhou corte por trimestre (razao realizado/nominal por ano x trimestre), que e o que separa deriva estrutural de deriva temporal continua."
-    status: "aberto -- codigo aplicado e lint-limpo; as 2 medicoes (comparacao de politica e corte trimestral) pendentes do retreino desta rodada."
+    status: >
+      fechado quanto as 2 medicoes; executadas 2026-09-03.
+      (1) HIPOTESE NOFILL CONFIRMADA, e e o mecanismo DOMINANTE do
+      overshoot. XRPUSDT/R3/Camada1, taxa realizada MEDIANA por fold:
+        LEGACY_PER_SIDE (producao)      0,1016 (1,02x) edge +12,29
+        TOTAL_COMMON_OOF               0,1760 (1,76x) edge +18,80
+        TOTAL_COMMON_OOF sem NOFILL    0,0637 (0,64x) edge +22,32
+      Remover as barras NOFILL da pool desloca a mediana de 1,76x pra
+      0,64x -- fator 2,76x, atribuivel a UMA variavel. A especulacao
+      estruturada do revisor virou medicao. RESSALVA que impede
+      promover: a correcao CRUZA o alvo em vez de acertar (de overshoot
+      1,76x pra undershoot 0,64x), entao NOFILL explica o mecanismo mas
+      nao entrega calibracao correta sozinho. 1 combo, 1 seed -- mesma
+      limitacao que o AG-428 tinha, declarada.
+      (2) CORTE TRIMESTRAL: NAO existe deriva temporal continua. Sobre
+      12 trimestres com sinal real (2023Q4 a 2026Q3), a razao
+      realizado/nominal tem mediana 0,732, media 0,828, min 0,475, max
+      1,476 (amplitude 3,11x, desvio 0,309, CV 0,37) e
+      Spearman(tempo, razao) = +0,336 -- SEM tendencia monotonica, e o
+      sinal ate positivo, oposto ao de uma deriva degradante. Junto com
+      o AG-437 (spread de 5,9x entre celulas), os 2 eixos independentes
+      dizem a MESMA coisa: o problema e DISPERSAO em torno do alvo, nao
+      VIES sistematico pra baixo. Isso reformula a causa-raiz do AG-428
+      de "por que todas entregam 70%?" pra "por que a calibracao de tau
+      tem variancia tao alta?" -- pergunta diferente, correcao
+      diferente.
+
+  - id: AG-437
+    date: "2026-09-03"
+    file: "config/constants.yaml (target_signal_rate -- 3o bloco de correcao de proveniencia); experiments/ag428_signal_rate_decomposition_report.txt (artefato que ja continha o dado)"
+    related_file: "AG-428 (conclusao que este achado corrige); AG-429 (mesma falha de processo: nao ler o artefato proprio); AG-436 (corte trimestral, o eixo que a auditoria propos)"
+    numeracao: "AG-437."
+    found_by: >-
+      Eu mesmo, seguindo o achado N3 da auditoria externa. O revisor
+      apontou que a decomposicao agregada do AG-428 escondia estrutura e
+      propos decompor por TRIMESTRE. Ao instrumentar esse corte
+      (AG-436), reli o relatorio por-arquivo que o proprio
+      `scripts/ag428_signal_rate_decomposition.py` ja emitia na rodada 3 e
+      encontrei estrutura num eixo diferente do proposto: por CELULA.
+    gap: >
+      A conclusao central do AG-428 -- "a taxa REALIZADA fica
+      sistematicamente ~65-70% da nominal" -- e um artefato de POOLING. O
+      numero pooled (0,0723, ou 0,72x do nominal) e a media de celulas
+      que vao de 0,0179 a 0,1051 -- spread de 5,9x, de 18% do nominal a
+      105% do nominal:
+        BTCUSDT/R2/C0 = 0,1051 (1,05x)   BTCUSDT/R2/C1 = 0,0861 (0,86x)
+        XRPUSDT/R3/C1 = 0,0892 (0,89x)   SOLUSDT/R2/C0 = 0,0853 (0,85x)
+        XRPUSDT/R2/C1 = 0,0815 (0,81x)   XRPUSDT/R3/C0 = 0,0744 (0,74x)
+        SOLUSDT/R3/C0 = 0,0662 (0,66x)   XRPUSDT/R2/C0 = 0,0581 (0,58x)
+        SOLUSDT/R3/C1 = 0,0336 (0,34x)   SOLUSDT/R2/C1 = 0,0179 (0,18x)
+      Uma deriva SISTEMATICA produziria razao aproximadamente constante
+      entre celulas. Isto nao e isso. Uma celula esta praticamente NO
+      alvo e outra entrega menos de um quinto dele -- e heterogeneidade
+      entre celulas, nao um mecanismo comum operando em todas.
+      DIAGNOSTICO DIFERENTE, correcao diferente: "deriva sistematica"
+      pediria mexer no mecanismo de calibracao pra todos; heterogeneidade
+      pede entender por que ESTAS celulas especificas falham, e admite a
+      possibilidade de que o mecanismo esteja correto na maioria delas.
+    severity: "alta -- nao pelo numero (nenhuma decisao de producao foi tomada pelo valor pooled), mas porque a conclusao errada estava commitada em config/constants.yaml, no ledger e num briefing enviado a auditor externo, e orientaria a proxima correcao pro alvo errado."
+    layer: "governanca/analise -- nenhum codigo de pipeline afetado"
+    consequence: >
+      A investigacao da causa-raiz do AG-428 estava perseguindo um
+      mecanismo comum ("por que TODAS as celulas entregam 70%?") quando a
+      pergunta real e de dispersao ("por que SOLUSDT/R2/C1 entrega 18% e
+      BTCUSDT/R2/C0 entrega 105%?"). O teste do
+      TAU_POLICY_TOTAL_COMMON_OOF, que foi descartado por "overshoot de
+      2,3-3,0x", tambem foi avaliado contra o alvo errado -- overshoot
+      medido numa celula so (XRPUSDT/R3) contra uma linha de base pooled
+      que nao descreve celula nenhuma.
+    resolved_by_commit: null
+    resolution: "Proveniencia de target_signal_rate corrigida pela 3a vez, agora com a tabela por celula e a distincao explicita entre deriva sistematica e heterogeneidade. A conclusao anterior NAO foi apagada -- fica registrada junto com o motivo de estar errada, mesma disciplina do AG-429. O corte por trimestre do AG-436 continua valido e pendente: os dois eixos (celula e tempo) sao complementares, e agora sabemos que o eixo CELULA carrega a maior parte da variacao."
+    status: >
+      fechado quanto ao registro; a investigacao da causa-raiz do AG-428
+      segue ABERTA, agora com a pergunta reformulada. Falha de PROCESSO,
+      identica a do AG-429 e reincidente na mesma sessao: o dado por
+      celula estava no relatorio que eu mesmo gerei e commitei na rodada
+      3 -- reportei so o agregado. Duas vezes no mesmo dia a conclusao
+      errada veio de nao reler um artefato proprio, nao de falta de
+      medicao. A licao acionavel nao e "medir mais", e "todo numero
+      agregado publicado tem que vir acompanhado da dispersao que ele
+      resume".

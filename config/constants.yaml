@@ -841,7 +841,27 @@ target_signal_rate:
     à parte); o que muda é a honestidade do registro de como o achado
     surgiu.
 
-    CAUSA-RAIZ CONFIRMADA (2026-09-03, medição real sobre os 10
+    SEGUNDA CORREÇÃO, MAIS GRAVE (2026-09-03, AG-437) -- "a taxa
+    realizada fica SISTEMATICAMENTE em ~65-70% da nominal" é ela mesma
+    um ARTEFATO DE POOLING. O 0,72x é a média de células que vão de
+    0,18x a 1,05x -- spread de 5,9x:
+      BTCUSDT/R2/C0 = 0,1051 (1,05x)   BTCUSDT/R2/C1 = 0,0861 (0,86x)
+      XRPUSDT/R3/C1 = 0,0892 (0,89x)   SOLUSDT/R2/C0 = 0,0853 (0,85x)
+      XRPUSDT/R2/C1 = 0,0815 (0,81x)   XRPUSDT/R3/C0 = 0,0744 (0,74x)
+      SOLUSDT/R3/C0 = 0,0662 (0,66x)   XRPUSDT/R2/C0 = 0,0581 (0,58x)
+      SOLUSDT/R3/C1 = 0,0336 (0,34x)   SOLUSDT/R2/C1 = 0,0179 (0,18x)
+    Uma deriva SISTEMÁTICA daria razão aproximadamente constante entre
+    células. Isto não é isso: uma célula está praticamente NO alvo e
+    outra entrega menos de um quinto dele. É HETEROGENEIDADE entre
+    células, não um mecanismo comum -- diagnóstico diferente, correção
+    diferente. E o dado estava no relatório que o próprio
+    `scripts/ag428_signal_rate_decomposition.py` já emitia na rodada 3:
+    a conclusão errada veio de reportar só o agregado, não de falta de
+    medição. Mesma falha de processo do AG-429, reincidente no mesmo
+    dia. Regra acionável que sai disto: todo número agregado publicado
+    tem que vir acompanhado da dispersão que ele resume.
+
+    CAUSA-RAIZ (2026-09-03, medição real sobre os 10
     artefatos `experiments/alpha_walk_forward_predictions_*.parquet`,
     `is_oof==True`, n=212.782 pooled) -- NÃO é exclusividade mútua
     long/short (hipótese líder original, descartada por medição):

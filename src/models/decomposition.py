@@ -21,9 +21,22 @@ colunas fracionárias já calculadas por `src.labels.triple_barrier`:
 Não há termo de `(P_fill - P_ref)` separado: `src.labels.triple_barrier`
 documenta explicitamente (docstring, item 3) que ordens são LIMIT/maker —
 preenchem exatamente no preço postado ou não preenchem (`NOFILL`), sem
-slippage de execução além das taxas; `adverse_selection_bps` é reportado
-mas deliberadamente NÃO subtraído de `ret_net` (mesma docstring, item 4) —
-não pode reentrar aqui como se fosse.
+slippage de execução além das taxas.
+
+**[CORRIGIDO 2026-09-03, `AG-432`]** Este docstring afirmava que
+`adverse_selection_bps` "é reportado mas deliberadamente NÃO subtraído de
+`ret_net`, não pode reentrar aqui como se fosse". Desde o `AG-432` ele É
+cobrado — nas pernas maker (entrada sempre; saída só quando TP). A
+decomposição continua CORRETA e o invariante abaixo continua exato, sem
+mudança de código aqui, por um detalhe de implementação deliberado: a
+cobrança foi embutida nas PRÓPRIAS colunas `cost_entry_bps`/
+`cost_exit_bps`, não como um quarto termo. Então `PnL_execucao_unit` já
+inclui a seleção adversa automaticamente, e continua não havendo nada a
+"reentrar" aqui — o que mudou foi o conteúdo de `PnL_execucao_unit`, não
+a forma da soma. Quem quiser a seleção adversa ISOLADA lê a coluna
+`adverse_selection_bps` do label, que agora reporta o valor de fato
+cobrado naquele trade (1,5 bps em SL/TIME, 3,0 em TP), não a constante
+crua.
 
 **Reconciliação exata**, verificada como invariante/teste:
 `PnL_direcional_unit + PnL_carry_unit + PnL_execucao_unit == ret_net`

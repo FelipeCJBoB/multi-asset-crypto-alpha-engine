@@ -75,15 +75,19 @@ def main(argv: list[str] | None = None) -> int:
 
     configure_logging(json_output=False)
 
-    # AG-408 (item 11 do roadmap) -- edge_bps é BRUTO de spread e seleção
-    # adversa, sempre. Não é um bug corrigível aqui (ver docstring do
-    # módulo) -- é uma lacuna de medição real que o gate Alpha ignora
-    # silenciosamente sem este aviso.
+    # AG-408 (item 11 do roadmap) -- `edge_bps` continua BRUTO de SPREAD.
+    # AG-432 (2026-09-03) -- a metade de SELECAO ADVERSA deste aviso deixou
+    # de valer: `adverse_selection_bps` agora E cobrado de `ret_net` nas
+    # pernas maker. Aviso reduzido ao que ainda e verdade, em vez de
+    # mantido inteiro (aviso que mente sobre metade do conteudo treina
+    # quem le a ignorar a outra metade).
     logger.warning(
-        "scripts.evaluate_walk_forward_gates.edge_bps_bruto_de_spread_e_selecao_adversa",
-        detail="cost_exit_frac cobra so taker_fee (nunca spread bid-ask); "
-        "adverse_selection_bps e reportado mas deliberadamente nao subtraido "
-        "de ret_net (triple_barrier.py:46-53) -- ver AG-408",
+        "scripts.evaluate_walk_forward_gates.edge_bps_bruto_de_spread",
+        detail="cost_exit_frac cobra so taker_fee, nunca o spread bid-ask -- nao existe "
+        "serie historica de spread no repositorio pra medir (spread_bps e grandeza de "
+        "book, so disponivel ao vivo), entao o custo NAO e fabricado: fica declarado "
+        "como lacuna. AG-408. Selecao adversa saiu deste aviso -- passou a ser cobrada "
+        "em ret_net no AG-432.",
     )
 
     data_min = int(load_constant("alpha_gate_data_min_folds_usados"))
@@ -121,7 +125,14 @@ def main(argv: list[str] | None = None) -> int:
             label = f"{gv.combo}/{gv.variant}/{side}"
             fdr = fdr_by_label.get(label)
             model_pass_raw = gv.model_gate_pass_by_side[side]
-            p_raw = gv.auc_p_value_by_side[side]
+            # AG-433 -- o p-valor que DECIDE o gate Model e o de populacao
+            # COMPLETA. Logar `auc_p_value_by_side` (populacao so-de-sinal)
+            # ao lado de um `model_gate_pass` que vem do outro produzia
+            # linhas de log contraditorias -- ex. p=0,9187 marcado como
+            # "passou". Loga-se agora o p-valor que decide, e o antigo fica
+            # ao lado com nome que diz o que ele e.
+            p_decisor = gv.auc_full_p_value_by_side[side]
+            p_sinal = gv.auc_p_value_by_side[side]
             pass_raw = bool(gv.data_gate_pass and gv.alpha_gate_pass and model_pass_raw)
             pass_bh = bool(gv.data_gate_pass and gv.alpha_gate_pass and fdr and fdr.significant_bh)
             n_pass_raw += int(pass_raw)
@@ -134,7 +145,9 @@ def main(argv: list[str] | None = None) -> int:
                 alpha_gate_pass=gv.alpha_gate_pass,
                 edge_bps_mean=gv.edge_bps_mean,
                 model_gate_pass_raw=model_pass_raw,
-                model_auc_p_value_raw=p_raw,
+                model_auc_p_value_decisor=p_decisor,
+                model_auc_mean_populacao_completa=gv.auc_full_mean_by_side[side],
+                model_auc_p_value_populacao_de_sinal=p_sinal,
                 model_significant_bh=fdr.significant_bh if fdr else None,
                 model_significant_by=fdr.significant_by if fdr else None,
                 passa_sob_p_bruto=pass_raw,
