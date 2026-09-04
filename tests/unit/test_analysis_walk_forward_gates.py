@@ -8,6 +8,7 @@ testes incluem valores conferidos a mão contra `scipy.stats.t.ppf`."""
 from __future__ import annotations
 
 import math
+import statistics
 from typing import Any
 
 import pytest
@@ -457,3 +458,73 @@ def test_apply_fdr_to_model_gates_p_valor_bruto_e_bilateral_2x_o_unicaudal() -> 
 
 def test_apply_fdr_to_model_gates_lista_vazia_devolve_dict_vazio() -> None:
     assert wfg.apply_fdr_to_model_gates([], significance_level=0.05) == {}
+
+
+# ============================================================================
+# AG-446/AG-447 -- IC95 nos gates e o gate Camada1 > Camada0
+# ============================================================================
+
+
+def test_intervalo_confianca_media_conferido_a_mao() -> None:
+    """n=5, media=10, dp=2 -> SE=2/sqrt(5)=0,8944; t(0,975; df=4)=2,7764
+    -> IC = 10 +- 2,4834."""
+    lo, hi = wfg.intervalo_confianca_media(10.0, 2.0, 5)  # noqa: magic-number
+    assert lo == pytest.approx(7.5166, abs=1e-3)  # noqa: magic-number
+    assert hi == pytest.approx(12.4834, abs=1e-3)  # noqa: magic-number
+
+
+@pytest.mark.parametrize(
+    ("media", "desvio", "n"),
+    [
+        (float("nan"), 2.0, 5),
+        (10.0, float("nan"), 5),
+        (10.0, 2.0, 1),      # n<2: desvio amostral indefinido
+        (10.0, 0.0, 5),      # dispersao zero
+    ],
+)
+def test_intervalo_confianca_media_ausencia_nao_vira_intervalo_estreito(
+    media: float, desvio: float, n: int
+) -> None:
+    """Mesma convenção do resto do módulo: ausência de teste válido devolve
+    ausência. Um IC de largura zero seria lido como 'medi com precisão
+    perfeita' -- o oposto da verdade."""
+    lo, hi = wfg.intervalo_confianca_media(media, desvio, n)
+    assert math.isnan(lo) and math.isnan(hi)
+
+
+def test_intervalo_confianca_reproduz_o_achado_do_spread_de_decil() -> None:
+    """AG-446 -- o caso real que motivou. Os 6 valores de spread de decil
+    topo-vs-fundo dos candidatos foram reportados sem barra de erro; com
+    ela, o IC95 da média cruza zero com folga e a leitura 'mal paga um
+    round-trip' era generosa demais."""
+    valores = [7.62, -3.88, -11.55, -13.03, 38.97, -14.75]  # noqa: magic-number
+    media = statistics.mean(valores)
+    desvio = statistics.stdev(valores)
+    lo, hi = wfg.intervalo_confianca_media(media, desvio, len(valores))
+
+    assert lo < 0.0 < hi, "IC tem que cruzar zero -- e o ponto do achado"
+    assert media == pytest.approx(0.563, abs=0.01)  # noqa: magic-number
+
+
+def test_camada1_supera_camada0_delta_e_ic_conferidos() -> None:
+    """AG-447 -- a Camada1 é promovida sobre a Camada0 por construção e
+    nada exigia que fosse MELHOR. Medido, o delta fica em ±0,005."""
+    delta, (lo, hi) = wfg.camada1_supera_camada0(0.5023, 0.011, 14, 0.4985, 0.010, 12)  # noqa: magic-number
+
+    assert delta == pytest.approx(0.0038, abs=1e-4)  # noqa: magic-number
+    assert lo < 0.0 < hi, "delta desta magnitude NAO deve se distinguir de zero"
+
+
+def test_camada1_supera_camada0_detecta_diferenca_real() -> None:
+    """Contraprova: se a Camada1 fosse de fato melhor por margem ampla, o
+    IC excluiria zero. Sem isto o gate seria incapaz de aprovar qualquer
+    coisa e viraria decorativo."""
+    delta, (lo, _hi) = wfg.camada1_supera_camada0(0.60, 0.01, 20, 0.50, 0.01, 20)  # noqa: magic-number
+
+    assert delta == pytest.approx(0.10, abs=1e-9)  # noqa: magic-number
+    assert lo > 0.0, "diferenca de 10 pontos de AUC tem que excluir zero"
+
+
+def test_camada1_supera_camada0_ausencia_devolve_ausencia() -> None:
+    delta, (lo, hi) = wfg.camada1_supera_camada0(0.5, 0.01, 1, 0.5, 0.01, 12)  # noqa: magic-number
+    assert math.isnan(delta) and math.isnan(lo) and math.isnan(hi)

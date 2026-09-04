@@ -214,6 +214,35 @@ def _cell_result(
         float(np.median(resolved.n_bars_held)) if resolved.n_bars_held.size else float("nan")
     )
 
+    # AG-444/AG-445 -- custo POR CÉLULA e edge líquido POR DIA.
+    #
+    # (AG-444) `round_trip_cost_bps` sem `maker_prob` usaria a constante
+    # global, medida sob a geometria de PRODUÇÃO — errada para comparar
+    # células entre si, porque P(TP) é função da geometria e varia de 0,278
+    # a 0,477 nesta própria grade. Aqui passa-se o `frac_tp` da célula.
+    #
+    # (AG-445) `edge_atr_units` é por TRADE. Comparar geometrias só por
+    # trade usa a função-objetivo errada: as células resolvem em prazos
+    # muito diferentes (holding mediano de 1 a 5 barras nesta grade), e o
+    # custo é pago por trade. A geometria de produção, medida, é a de
+    # MAIOR giro da grade — e portanto a de maior sangria por unidade de
+    # tempo, mesmo tendo edge por trade intermediário. Sem este campo, essa
+    # inversão fica invisível no artefato.
+    custo_bps_celula = round_trip_cost_bps(
+        cfg.maker_fee, cfg.taker_fee, maker_prob=frac.frac_tp
+    ) + cfg.adverse_selection_bps * (1.0 + frac.frac_tp)
+    edge_bruto_bps = (
+        edge_atr_units * atr_median_side * _BPS_PER_UNIT
+        if math.isfinite(atr_median_side)
+        else float("nan")
+    )
+    edge_liquido_bps = edge_bruto_bps - custo_bps_celula
+    trades_por_barra = (
+        1.0 / holding_mediano_bars  # noqa: unguarded-ratio -- guardado pelo ternário: só divide quando > 0
+        if math.isfinite(holding_mediano_bars) and holding_mediano_bars > 0
+        else float("nan")
+    )
+
     return {
         "reward_risk_ratio": str(reward_risk_ratio),
         "sl_atr_mult_frac": str(sl_mult),
@@ -230,6 +259,10 @@ def _cell_result(
         "breakeven_wr_cost_adjusted": breakeven_wr_cost_adjusted,
         "collision_rate": collision_rate,
         "holding_mediano_bars": holding_mediano_bars,
+        "custo_bps_celula": custo_bps_celula,
+        "edge_bruto_bps": edge_bruto_bps,
+        "edge_liquido_bps": edge_liquido_bps,
+        "edge_liquido_bps_por_barra": edge_liquido_bps * trades_por_barra,
         "stop_pct_cell": (
             sl_atr_mult * atr_median_side if math.isfinite(atr_median_side) else float("nan")
         ),

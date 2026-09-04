@@ -101,7 +101,9 @@ def e10f_oi_change_z_48_from_native_delta(
     return support.rolling_zscore(oi_change_native_aligned, window)
 
 
-def round_trip_cost_bps(maker_fee: float, taker_fee: float) -> float:
+def round_trip_cost_bps(
+    maker_fee: float, taker_fee: float, *, maker_prob: float | None = None
+) -> float:
     """Custo de round-trip do caminho assimétrico `maker_in / maker_tp /
     taker_sl` (§9.1): entrada sempre maker; saída maker se o TP for tocado
     primeiro, taker se o SL for tocado primeiro.
@@ -110,18 +112,34 @@ def round_trip_cost_bps(maker_fee: float, taker_fee: float) -> float:
     Até esta correção, a probabilidade condicional de qual barreira toca
     primeiro era 50/50 hardcoded no corpo — apesar de `round_trip_cost_bps_
     maker_prob` já existir declarada em `constants.yaml` desde AG-027
-    (2026-08-15), a função nunca a lia. Ruína do apostador
-    (`tp_atr_mult=2,0`/`sl_atr_mult=1,5`, distâncias assimétricas) prevê
-    P(TP primeiro)=1,5/3,5≈42,9% analítico; medição empírica real
+    (2026-08-15), a função nunca a lia. Passou a ler o valor MEDIDO
     (`tools/diagnostics/measure_barrier_touch_probability.py`, 5 ativos,
-    `labels.parquet`) confirma 42,06% pooled — usa o valor MEDIDO, não o
-    analítico. Agora lido de `constants.yaml` via `load_constant`, não mais
-    literal — os 7 call sites conhecidos (`group_e.py`, `cost_surface.py`,
-    `volatility_operational_effect.py`, `feasibility.py`,
-    `m3_timeframe_choice.py`, `risk/limits.py`, `s1_tp_sl_sensitivity.py`)
-    herdam a correção automaticamente, nenhuma assinatura mudou."""
-    maker_prob = float(load_constant("round_trip_cost_bps_maker_prob"))
-    return (maker_fee + maker_prob * maker_fee + (1.0 - maker_prob) * taker_fee) * 10000  # noqa: magic-number -- conversão fração->bps, não constante de domínio
+    `labels.parquet`) — os 7 call sites conhecidos (`group_e.py`,
+    `cost_surface.py`, `volatility_operational_effect.py`,
+    `feasibility.py`, `m3_timeframe_choice.py`, `risk/limits.py`,
+    `s1_tp_sl_sensitivity.py`) herdaram a correção automaticamente.
+
+    **`maker_prob` explícito (AG-444, 2026-09-04).** A constante global é
+    P(TP primeiro) medida SOB A GEOMETRIA DE PRODUÇÃO. Ela é o valor certo
+    para qualquer consumidor que opere nessa geometria — e é o default,
+    justamente por isso. Mas ela é ERRADA para comparar geometrias entre
+    si: P(TP) é função de `tp_atr_mult`/`sl_atr_mult`, e medido nas 7
+    células da grade do S1 ele varia de **0,278** (tp=3,0/sl=1,5) a
+    **0,477** (produção, 1,5/1,5). Aplicar a constante de produção à célula
+    de TP largo subestima o custo dela em ~0,3 bps, porque lá muito mais
+    saídas são taker.
+
+    Não é flag opt-in disfarçada (`CLAUDE.md` §Diretrizes): o default
+    continua sendo o comportamento correto para todo caller de produção. O
+    parâmetro existe porque há um caller — o sweep de geometria — cuja
+    pergunta é precisamente "e se a geometria fosse outra?", e para ele a
+    constante global não descreve a célula que está sendo avaliada."""
+    prob = (
+        float(load_constant("round_trip_cost_bps_maker_prob"))
+        if maker_prob is None
+        else float(maker_prob)
+    )
+    return (maker_fee + prob * maker_fee + (1.0 - prob) * taker_fee) * 10000  # noqa: magic-number -- conversão fração->bps, não constante de domínio
 
 
 def e27f_cost_atr_ratio(atr_20_pct: FloatArray, maker_fee: float, taker_fee: float) -> FloatArray:

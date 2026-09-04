@@ -120,7 +120,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from scipy.stats import t as student_t
@@ -220,6 +220,76 @@ def alpha_gate_passes(
     return p_value < significance_level
 
 
+def intervalo_confianca_media(
+    media: float, desvio: float, n: int, *, nivel: float = 0.95
+) -> tuple[float, float]:
+    """AG-446 — IC da média por t de Student. `(nan, nan)` quando não
+    computável, nunca um intervalo degenerado.
+
+    **Por que existe.** Todo gate deste módulo publica ponto estimado +
+    p-valor, e o p-valor sozinho responde "é distinguível de zero?" mas não
+    "de que tamanho, com que incerteza?". Duas células com o mesmo p podem
+    ter amplitudes de erro que diferem por uma ordem de grandeza, e a
+    decisão de promover uma delas depende disso. Achado real que motivou
+    (2026-09-04): o spread de decil topo-vs-fundo dos 5 candidatos foi
+    reportado como seis números (+7,62 / −3,88 / −11,55 / −13,03 / +38,97 /
+    −14,75) sem nenhuma barra de erro; calculado depois, o IC95 da média é
+    [−21,0; +22,1] — não se distingue de zero, e a leitura "mal paga um
+    round-trip" que eu tinha dado era generosa demais.
+
+    Mesmos guards do resto do módulo (`_MIN_FOLDS_FOR_TTEST`, `std` finito
+    e não-nulo): ausência de teste válido devolve ausência, não um
+    intervalo estreito por acidente de amostra."""
+    if not math.isfinite(media) or not math.isfinite(desvio):
+        return float("nan"), float("nan")
+    if n < _MIN_FOLDS_FOR_TTEST or desvio <= 0.0:
+        return float("nan"), float("nan")
+    erro_padrao = desvio / math.sqrt(n)  # noqa: unguarded-ratio -- n>=2 garantido pelo early-return acima
+    t_critico = float(student_t.ppf(0.5 * (1.0 + nivel), df=n - 1))  # noqa: magic-number -- bicaudal
+    return media - t_critico * erro_padrao, media + t_critico * erro_padrao
+
+
+def camada1_supera_camada0(
+    auc_c1_mean: float,
+    auc_c1_std: float,
+    n_c1: int,
+    auc_c0_mean: float,
+    auc_c0_std: float,
+    n_c0: int,
+) -> tuple[float, tuple[float, float]]:
+    """AG-447 — `(delta, ic95)` da diferença de AUC entre Camada1 e
+    Camada0, por Welch (variâncias não pooled: os dois lados têm `n` e
+    dispersão diferentes por construção).
+
+    **Por que este gate faltava.** A Camada1 é promovida sobre a Camada0
+    por construção — nada no pipeline exige que ela seja MELHOR. Medido
+    (2026-09-04, população completa, walk-forward): o delta de AUC entre as
+    duas fica em ±0,005 nos 5 candidatos, e a C0 vence a C1 em edge em 3
+    deles. Ou seja: a complexidade extra da Camada1 não se paga, e nada
+    reprovava isso.
+
+    Devolve delta e IC — não um booleano — de propósito: o critério de
+    corte ("IC95 exclui zero" vs "delta > x") é decisão do Manager, e
+    travar um limiar aqui repetiria exatamente o vício que `CLAUDE.md`
+    §Diretrizes proíbe (regra de decisão sem definição operacional
+    declarada). O consumidor decide; esta função só mede."""
+    if any(not math.isfinite(v) for v in (auc_c1_mean, auc_c1_std, auc_c0_mean, auc_c0_std)):
+        return float("nan"), (float("nan"), float("nan"))
+    if n_c1 < _MIN_FOLDS_FOR_TTEST or n_c0 < _MIN_FOLDS_FOR_TTEST:
+        return float("nan"), (float("nan"), float("nan"))
+    delta = auc_c1_mean - auc_c0_mean
+    var_c1 = (auc_c1_std**2) / n_c1  # noqa: unguarded-ratio -- n>=2 garantido acima
+    var_c0 = (auc_c0_std**2) / n_c0  # noqa: unguarded-ratio -- n>=2 garantido acima
+    erro = math.sqrt(var_c1 + var_c0)
+    if erro <= 0.0:
+        return delta, (float("nan"), float("nan"))
+    # graus de liberdade de Welch-Satterthwaite
+    denom = (var_c1**2) / (n_c1 - 1) + (var_c0**2) / (n_c0 - 1)  # noqa: unguarded-ratio -- n>=2 => n-1>=1
+    df = ((var_c1 + var_c0) ** 2) / denom if denom > 0 else float(n_c1 + n_c0 - 2)  # noqa: unguarded-ratio -- guardado pelo ternário
+    t_critico = float(student_t.ppf(0.975, df=df))  # noqa: magic-number -- bicaudal a 95%
+    return delta, (delta - t_critico * erro, delta + t_critico * erro)
+
+
 @dataclass(frozen=True, slots=True)
 class GateVerdict:
     combo: str
@@ -254,6 +324,11 @@ class GateVerdict:
     auc_full_std_by_side: dict[str, float]
     n_folds_auc_full_by_side: dict[str, int]
     auc_full_p_value_by_side: dict[str, float]
+    # AG-446 -- IC95 ao lado do ponto estimado. O p-valor responde "e
+    # distinguivel de zero?"; o IC responde "de que tamanho, com que
+    # incerteza?" -- e e a segunda pergunta que decide promocao.
+    edge_bps_ic95: tuple[float, float] = (float("nan"), float("nan"))
+    auc_full_ic95_by_side: dict[str, tuple[float, float]] = field(default_factory=dict)
 
 
 def evaluate_gates(
@@ -365,6 +440,13 @@ def evaluate_gates(
         auc_full_std_by_side=auc_full_std_by_side,
         n_folds_auc_full_by_side=n_folds_auc_full_by_side,
         auc_full_p_value_by_side=auc_full_p_value_by_side,
+        edge_bps_ic95=intervalo_confianca_media(edge_bps_mean, edge_bps_std, n_folds_usados),
+        auc_full_ic95_by_side={
+            s: intervalo_confianca_media(
+                auc_full_mean_by_side[s], auc_full_std_by_side[s], n_folds_auc_full_by_side[s]
+            )
+            for s in _SIDES
+        },
     )
 
 
