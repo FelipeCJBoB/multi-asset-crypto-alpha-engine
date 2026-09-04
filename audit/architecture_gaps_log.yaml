@@ -29332,3 +29332,69 @@ entries:
       se pode e seguir citando o -13,0% como se descrevesse o peso vigente
       -- nota adicionada nos dois call sites (`alpha.py`, `pipeline.py`).
       Fica como pergunta aberta pro Manager, nao como mudanca minha.
+
+  - id: AG-453
+    date: "2026-09-04"
+    file: "experiments/alpha_walk_forward_{BTCUSDT_R2,SOLUSDT_R2,SOLUSDT_R3,XRPUSDT_R2,XRPUSDT_R3}.json (regerados sobre os labels da Fase A)"
+    related_file: "AG-451/AG-452 (a Fase A, cujo efeito este AG mede); AG-449 (o vetor nao discrimina -- este e o 3o caminho independente que chega la); AG-437 (agregado sem dispersao)"
+    numeracao: "AG-453."
+    found_by: >-
+      Medicao do efeito da Fase A nos gates, com os hiperparametros
+      EXISTENTES de proposito -- pra isolar o efeito do label novo de uma
+      busca nova. Campanha de walk-forward + consolidacao dos 3 gates.
+    gap: >
+      Nao e um defeito: e a medicao do que a Fase A comprou, e ela contradiz
+      a leitura otimista que o ganho de label sugeria.
+      NOS LABELS o efeito e nitido e apertado: +1,899 bps de media, faixa
+      [+1,055; +2,962], dp 0,552, positivo em 15 de 15 combinacoes.
+      NO WALK-FORWARD ele desaparece dentro do ruido: delta de edge_bps por
+      celula vai de -14,51 a +27,28, media +3,58, positivo em so 7 de 10.
+      A dispersao do delta e ~20x maior que a do efeito medido no label.
+    severity: >-
+      alta como informacao de decisao, nula como defeito. Nenhum artefato
+      esta errado. O que ela diz e que o pipeline de selecao adiciona muito
+      mais variancia do que a correcao de label remove.
+    layer: "models/analysis -- medicao, nenhuma mudanca de codigo"
+    consequence: >
+      GATES, comparacao apples-to-apples (os artefatos anteriores foram
+      recuperados do git e consolidados pelo MESMO script, com sufixo
+      proprio, em vez de eu citar de memoria um numero de outra rodada):
+        antes da Fase A: 20 celulas, 0 passam ao p bruto, 0 sob BH
+        depois da Fase A: 20 celulas, 0 passam ao p bruto, 0 sob BH
+      O gate Model ao p BRUTO subiu de 2 pra 3 celulas (XRPUSDT/R2/C1/long
+      entrou, p=0,0137), mas NENHUMA sobrevive ao FDR, e o gate Alpha
+      reprova as 20 nas duas rodadas.
+      Ou seja: a Fase A e uma correcao de CORRETUDE real e mensuravel, e
+      NAO move a decisao de promocao. As duas coisas sao verdade ao mesmo
+      tempo e nao se cancelam -- o label passou a descrever melhor o trade
+      que a execucao faz, o que era o objetivo declarado da fase; o que ela
+      nunca prometeu foi poder preditivo.
+      Este e o TERCEIRO caminho independente que chega no AG-449: (i) a
+      campanha multi-seed (0/10 com edge distinguivel de zero); (ii) a
+      varredura de geometria (7 celulas negativas nas 2 grades, teto de
+      0,3-0,5 bps por halving de SL, AG-450); (iii) agora a correcao do
+      alvo -- melhor label medido, mesmo 0/20.
+    resolved_by_commit: null
+    resolution: >-
+      Nenhuma acao corretiva: nao ha defeito a corrigir. Registrado como
+      medicao pra que a proxima rodada nao repita a pergunta.
+      RESSALVA METODOLOGICA DECLARADA, nao escondida: esta campanha rodou
+      com os hiperparametros da busca ANTERIOR, otimizada sobre Sharpe
+      calculado no `ret_net` velho. Como `ret_net` mudou (+1,9 bps) e
+      `frac_tp` andou ~1,2pp, a busca vigente nao e estritamente valida
+      sobre estes labels. A escolha foi deliberada -- misturar retreino com
+      busca nova impediria atribuir o efeito -- mas significa que o "0/20
+      depois" NAO e o teto do que os labels novos permitem sob busca
+      propria. Uma campanha Optuna completa (~4h) responderia isso, e a
+      decisao de gasta-la e do Manager.
+      Contra-argumento honesto, que eu registro por ser contrario a rodar:
+      a dispersao entre seeds ja medida (AG-438/AG-449) e da ordem de 10-20
+      bps por celula, ou seja MAIOR que o proprio delta de +3,58 que se
+      quer detectar. Uma campanha nova, sem multi-seed, produziria um
+      numero pontual dentro dessa nuvem -- e o maximo de uma nuvem de ruido
+      ja foi confundido com achado 3 vezes neste projeto.
+    status: >
+      fechado como medicao. A pergunta que fica aberta e do Manager, nao
+      minha: gastar ~4h de Optuna sobre os labels novos, sabendo que a
+      dispersao entre seeds excede o efeito procurado, ou aceitar que o
+      AG-449 subordina esta pergunta tambem.
