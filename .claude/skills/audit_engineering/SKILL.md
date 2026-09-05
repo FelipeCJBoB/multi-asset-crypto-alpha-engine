@@ -148,16 +148,17 @@ encontrado — é registro forense, não decoração.
   correlação, achado da Fase D), maior share <0,30 (§5.8). AUC/acurácia
   suspeitosamente alta (>0,90), ou treino≈teste igualmente bons, é o sinal
   clássico inverso — sempre confira os dois extremos, não só concentração alta.
-- **Multiple testing controlado?** Toda otimização/busca de hiperparâmetro
-  incrementa `audit/n_lifetime.yaml`? Restrição forçada por identidade
-  contábil (ex. `E27f_cost_atr_ratio`, `E02f_funding_z` — Fase T0) é
-  explicitamente ISENTA disso — confirme que a isenção está documentada, não
-  assumida.
+- **Multiple testing controlado?** `audit/n_lifetime.yaml` foi
+  DESCONTINUADO como controle em 2026-09-04 (`AG-458`) — não cobre mais
+  incremento de ledger. A pergunta que fica, e que continua valendo: a
+  conclusão sobrevive a correção de multiplicidade (FDR/BH) sobre o LOTE
+  de células testadas, e não célula a célula? Ver
+  `apply_fdr_to_model_gates` (`AG-400`).
 - **Regime/HMM ajustado na série toda e "predito" retroativamente?** (B05)
 - **Constante classe A sem sweep de sensibilidade** antes do Gate 3? (§16.10)
 
 Cross-check obrigatório: CLAUDE.md banned patterns B01-B10, B18-B25; PRD Gate 3
-(`§16.1`); `audit/n_lifetime.yaml`.
+(`§16.1`).
 
 #### Lente FI — Falhas de Implementação
 
@@ -284,10 +285,10 @@ encerramento #5"):** as 10 perguntas abaixo são, por desenho, **0 trials** —
 leem `constants.yaml`, código-fonte já escrito, e artefato já persistido
 (`labels.parquet`, `experiments/*.json`). Nenhuma resposta a elas autoriza,
 sozinha, abrir um sweep/Optuna/retreino pra "corrigir" o parâmetro
-encontrado. `audit/n_lifetime.yaml::counter` tem teto declarado em
-`PRD_V4_1.md` (critério de encerramento 5: `N_lifetime > 60 sem Camada 2
-fechada → encerrar`); interpretar "N janelas ASSUMED encontradas" como "varra
-as N" pode consumir o orçamento restante inteiro numa única sessão e disparar
+encontrado. O teto de `N_lifetime` do `PRD_V4_1.md` (critério de encerramento 5)
+caiu junto com o controle (`AG-458`, 2026-09-04); mas interpretar "N janelas
+ASSUMED encontradas" como "varra as N" segue sendo errado por outro motivo --
+consome horas de compute numa única sessão e dispara
 o encerramento do projeto sem nenhuma decisão do Manager ter sido tomada
 sobre isso. Sequência obrigatória, sempre nesta ordem:
 1. Responda as 10 perguntas (0 trials).

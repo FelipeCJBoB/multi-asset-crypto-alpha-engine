@@ -420,15 +420,28 @@ CLASS_BALANCE_WEIGHT = "weight"
 # `sample_weight` = comportamento legado (`uniqueness * |ret_net|`, o mesmo
 # peso da PERDA); `uniqueness` = so a correcao de redundancia estatistica.
 #
-# AG-452 (2026-09-04) -- A PREMISSA DESTE BLOCO MUDOU. `sample_weight` passou
-# a ser `uniqueness * |ret_gross|`, e o mecanismo do vies descrito abaixo (o
-# custo subtrai do ganho e soma a perda) DEIXA DE EXISTIR: `ret_gross` nao
-# tem custo dentro. A decisao do Manager de 2026-08-26 (calibrador so por
-# `uniqueness`) fica INALTERADA de proposito -- ela continua segura, porque
-# `uniqueness` puro nao tem vies de custo em nenhuma direcao, e reverte-la
-# exigiria remedir o vies sob o peso novo, o que ninguem fez ainda. O que
-# NAO se pode e seguir citando o -13,0% como se ainda descrevesse o peso
-# vigente: ele foi medido sob `|ret_net|`.
+# AG-457 (2026-09-04) -- REMEDIDO POR ORDEM DO MANAGER, que pediu
+# explicitamente "remedir para atualizar, nao manter a decisao antiga".
+# Medicao nova sobre os labels da Fase A, 20 celulas (5 simbolos x R2/R3 x
+# 2 lados), comparando P(TP) por CONTAGEM contra P(TP) por MASSA DE PESO --
+# sob calibrador nao enviesado os dois batem:
+#     base do peso            vies medio   |vies| max   dp
+#     uniqueness*|ret_net|      -0,0457      0,0691    0,0129   <- motivou AG-312
+#     uniqueness*|ret_gross|    +0,0007      0,0074    0,0042   <- peso vigente
+#     uniqueness                +0,0014      0,0050    0,0020   <- em producao
+# O -13,0% que este bloco citava MORREU: sob `|ret_gross|` o vies maximo cai
+# de 6,91pp pra 0,74pp, 9,3x menor. A justificativa antiga esta obsoleta e
+# foi substituida por esta medicao.
+# O VALOR segue `uniqueness`, e agora por razao medida, nao herdada: ele
+# ainda e o mais apertado (0,50pp de vies maximo contra 0,74pp). Trocar
+# aumentaria o vies sem comprar nada mensuravel. Alem disso `uniqueness` e
+# INDEPENDENTE DO DESFECHO -- corrige redundancia estatistica de amostras
+# sobrepostas -- enquanto qualquer peso por |retorno| estima `E_w[y|x]`
+# ponderado por quanto esta em jogo, que nao e a probabilidade que `tau`
+# corta. Sob barreira SIMETRICA os dois quase coincidem (por isso o vies
+# novo e pequeno); sob geometria assimetrica voltariam a divergir.
+# O que flipa a decisao: `|ret_gross|` ficar com vies maximo ABAIXO de
+# 0,50pp numa remedicao futura.
 #
 # Isotonica ponderada devolve `E_w[y|x]`, e `|ret_net|` no SL e 1,25-1,29x
 # o do TP (o custo subtrai do ganho e soma a perda), entao o peso legado

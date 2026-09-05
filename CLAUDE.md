@@ -25,7 +25,7 @@ documentação, não de arquitetura.
 | Proveniência/classe de toda constante | `config/constants.yaml` |
 | Furos de arquitetura/integração (AG-NNN) | `audit/architecture_gaps_log.yaml` |
 | Explorador visual dos AGs / protocolo "Atualiza ag" | skill `atualiza_ag` |
-| Orçamento de trials (multiple-testing) | `audit/n_lifetime.yaml` |
+| ~~Orçamento de trials~~ — **descontinuado** (2026-09-04), ver `AG-458` | ~~`audit/n_lifetime.yaml`~~ |
 | Achados estatísticos medidos | `audit/evidence_ledger.yaml` |
 | Roadmap visual (M1-M6/V41-N + 15 estágios) | Road Map Vivo v2 — link em `PLANO_MESTRE_PRINCE2.md` §14 |
 | Skills disponíveis | `.claude/skills/` |
@@ -38,8 +38,7 @@ documentação, não de arquitetura.
 1. `docs/SPRINT_LOG.md` — últimas seções, estado real.
 2. `PLANO_MESTRE_PRINCE2.md` §11.4 — o que já está agendado, antes de tratar algo como urgente.
 3. `audit/architecture_gaps_log.yaml` — gaps abertos relevantes à tarefa.
-4. `audit/n_lifetime.yaml` — orçamento de trials restante, se a tarefa envolver otimização/sweep/retreino.
-5. `config/constants.yaml` — se a tarefa tocar em constante nova ou existente.
+4. `config/constants.yaml` — se a tarefa tocar em constante nova ou existente.
 
 ## Projeto
 

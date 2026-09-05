@@ -4665,3 +4665,192 @@ entries:
     tivesse poder discriminativo real, a geometria otima CONDICIONADA ao sinal
     poderia diferir. Com AUC no acaso essa ressalva e vacua hoje, mas volta a
     valer se alguma versao futura do vetor sair do acaso.
+
+- id_curto: fase-a-toque-do-tp-na-serie-negociada-2026-09-04
+  data: "2026-09-04"
+  fase: >-
+    Fase A do roadmap MFE/MAE (AG-451) -- toque do TAKE PROFIT migra de
+    mark_price_klines_1m para klines_1m (preco NEGOCIADO), porque TP e
+    ordem LIMIT/GTC em repouso e so executa onde ha negociacao; o SL
+    segue no mark, porque e STOP_MARKET/working_type MARK_PRICE.
+  feature_ou_filtro: "LabelConfig.tp_touch_source (constants.yaml::label_tp_touch_source)"
+  symbol: "BTCUSDT, ETHUSDT, SOLUSDT, BNBUSDT, XRPUSDT"
+  tf: "R1, R2, R3"
+  lado: "long e short agregados"
+  janela: "2021-12-01 a 2026-08-07 (historia completa)"
+  regime: "todos"
+  metrica_tipo: >-
+    delta de ret_net medio (bps) entre labels pareados por (t0, side),
+    e |frac_tp - 0,50| como aderencia ao P(TP) teorico de martingale sob
+    barreira simetrica -- o MESMO criterio usado no AG-229 pra decidir
+    label_entry_fill_source.
+  metrica_valor: >-
+    ret_net melhora nas 15 de 15 combinacoes: media +1,899 bps, faixa
+    [+1,055; +2,962], dp 0,552. Barreira muda em 1,01% a 1,65% dos
+    trades, sempre no mesmo sentido (SL->TP domina TP->SL por 20x a
+    167x). |frac_tp - 0,50| medio cai de 0,0129 para 0,0023 (5,6x), e o
+    SINAL do erro corrige: sob mark as 15 ficavam ABAIXO de 0,50 (TP
+    dificil demais), sob klines ficam dos dois lados.
+    MECANISMO medido: a serie negociada tem amplitude por minuto ~20%
+    maior que a do mark (XRP 8,96 vs 7,45 bps de mediana, razao 1,204,
+    excede em 82,7% dos minutos; BTC 6,85 vs 5,69, razao 1,203, 90,6%).
+  n: "15 combinacoes, 2.879.000+ trades pareados"
+  fonte_arquivo: "data/labels/*/R*/v1/labels.parquet; data/labels_pre_AG451/ (backup da ponta mark_1m)"
+  fonte_secao: "AG-451; config/constants.yaml::label_tp_touch_source.sweep_note"
+  status: verde
+  nota: >-
+    RETRATACAO REGISTRADA: eu previ ao Manager que esta correcao
+    REDUZIRIA o edge em ~0,8 bps, com base em "1,32% de saidas por TP
+    fantasma". O sinal estava invertido -- aquela medicao contou so o
+    mark alcancando o nivel sem trade e ignorou a populacao MAIOR do
+    outro lado. O 1,32% nao estava errado; a inferencia unilateral a
+    partir dele estava.
+
+- id_curto: geometria-de-barreira-ranking-corrigido-2026-09-04
+  data: "2026-09-04"
+  fase: >-
+    Regeneracao do S1 depois que o AG-454 propagou o toque do TP pro
+    sweep vetorizado. SUPERA a entrada
+    `geometria-de-barreira-nao-fecha-o-buraco-2026-09-04`, que foi medida
+    com o TP resolvido no MARK e cujo RANKING esta invalidado.
+  feature_ou_filtro: "tp_atr_mult / sl_atr_mult (grade REWARD_RISK_GRID x SL_MULT_GRID)"
+  symbol: "BTCUSDT, ETHUSDT, SOLUSDT, BNBUSDT, XRPUSDT"
+  tf: "R2, R3"
+  lado: "long e short, estrato comum"
+  janela: "historia completa dos labels"
+  regime: "todos"
+  metrica_tipo: >-
+    edge liquido por trade (bps) com custo POR CELULA (P(TP) varia de
+    0,26 a 0,50 na grade), e edge liquido por unidade de tempo (bps por
+    barra), ambos sobre o conjunto de estratos COMUM a todas as celulas
+    -- as celulas de sl=0,75 em R2 cobrem 6 estratos e as demais 10.
+  metrica_valor: >-
+    O ranking INVERTE. Melhor celula passa a ser 2,25/2,25 nas duas
+    grades (R2 -5,92 +-0,42; R3 -5,89 +-0,45); 1,50/0,75, que era 1a nas
+    duas, cai pra 4a (R2) e 3a (R3). Producao 1,50/1,50 fica em -6,45
+    +-0,28 (R2) e -6,27 +-0,30 (R3).
+    Vantagem da melhor sobre a producao: 0,53 bps (R2) e 0,38 bps (R3) --
+    NAO distinguivel de zero (erro da diferenca ~0,50 e ~0,54, menos de
+    1 sigma nas duas).
+    Os dois eixos que antes apontavam para lados OPOSTOS agora concordam:
+    por trade e por barra, a producao perde nos dois.
+    TODAS as 7 celulas seguem negativas nas 2 grades.
+  n: "7 celulas x 2 grades; 6 estratos (R2) e 10 (R3)"
+  fonte_arquivo: "experiments/s1_tp_sl_sensitivity_report_{R2,R3}.json"
+  fonte_secao: "AG-454 (corrige AG-450); AG-444 (custo por celula); AG-445 (por unidade de tempo)"
+  status: vermelho
+  nota: >-
+    SEGUNDA RETRATACAO da mesma sessao: o AG-450 afirmou "apertar o SL
+    melhora, otimo na FRONTEIRA da regiao buscada". Refutado -- o otimo e
+    INTERIOR. A conclusao QUANTITATIVA sobrevive (geometria compra fracao
+    de 1 bps contra deficit de ~6), e e ela que decide.
+    RESSALVA sobre o eixo por-barra, que agora concorda com o outro e por
+    isso fica tentador usar como confirmacao: ele presume que capital
+    liberado mais cedo encontra outro sinal imediatamente. Sob
+    target_signal_rate de 0,03 a 0,10 isso nao esta garantido -- e teto,
+    nao valor realizavel.
+
+- id_curto: fase-a-nao-move-os-gates-2026-09-04
+  data: "2026-09-04"
+  fase: >-
+    Campanha de walk-forward + consolidacao dos 3 gates sobre os labels
+    da Fase A, com os hiperparametros da busca ANTERIOR de proposito --
+    pra isolar o efeito do label novo de uma busca nova (AG-453).
+  feature_ou_filtro: "gates Data/Model/Alpha com correcao FDR (BH)"
+  symbol: "BTCUSDT/R2, SOLUSDT/R2, SOLUSDT/R3, XRPUSDT/R2, XRPUSDT/R3"
+  tf: "R2, R3"
+  lado: "long e short"
+  janela: "walk-forward ancorado, 8 a 14 folds usados por celula"
+  regime: "todos"
+  metrica_tipo: "n de celulas que passam os 3 gates, ao p bruto e sob FDR/BH"
+  metrica_valor: >-
+    ANTES da Fase A: 20 celulas, 0 ao p bruto, 0 sob BH.
+    DEPOIS: 20 celulas, 0 ao p bruto, 0 sob BH.
+    Gate Model ao p BRUTO sobe de 2 pra 3 celulas (XRPUSDT/R2/C1/long
+    entra, p=0,0137) -- nenhuma sobrevive ao FDR, e o gate Alpha reprova
+    as 20 nas duas rodadas.
+    O efeito e nitido no LABEL (+1,899 +-0,552) e SOME no walk-forward
+    (delta por celula de -14,51 a +27,28, media +3,58, 7/10 positivos).
+    A dispersao do delta e ~20x a do efeito medido no label.
+  n: "20 celulas (5 candidatos x 2 camadas x 2 lados)"
+  fonte_arquivo: "experiments/alpha_walk_forward_*.json"
+  fonte_secao: "AG-453; comparacao apples-to-apples com os artefatos anteriores recuperados do git e consolidados pelo MESMO script"
+  status: vermelho
+  nota: >-
+    TERCEIRO caminho independente convergindo no AG-449 (o vetor de
+    features nao discrimina): (i) multi-seed 0/10, (ii) geometria com
+    teto de fracao de 1 bps, (iii) agora o alvo corrigido -- label
+    mensuravelmente melhor, mesmo 0/20.
+    A Fase A e correcao de CORRETUDE real E nao move a decisao de
+    promocao. As duas sao verdade ao mesmo tempo.
+
+- id_curto: calibrador-vies-remedido-sob-ret-gross-2026-09-04
+  data: "2026-09-04"
+  fase: >-
+    Remedicao do vies do calibrador isotonico por ordem do Manager
+    ("remedir para atualizar, nao manter a decisao antiga"), depois que
+    o AG-452 trocou sample_weight de |ret_net| para |ret_gross| e
+    extinguiu o mecanismo que motivou a decisao AG-312.
+  feature_ou_filtro: "calib_weight_basis (uniqueness vs sample_weight)"
+  symbol: "BTCUSDT, ETHUSDT, SOLUSDT, BNBUSDT, XRPUSDT"
+  tf: "R2, R3"
+  lado: "long e short separados"
+  janela: "historia completa dos labels da Fase A"
+  regime: "todos"
+  metrica_tipo: >-
+    vies do calibrador = P(TP) por MASSA DE PESO menos P(TP) por
+    CONTAGEM. Sob calibrador nao enviesado os dois batem.
+  metrica_valor: >-
+    uniqueness*|ret_net| (base antiga): vies medio -0,0457, |vies| max
+    0,0691, dp 0,0129.
+    uniqueness*|ret_gross| (base nova): vies medio +0,0007, |vies| max
+    0,0074, dp 0,0042.
+    uniqueness (o que roda em producao): vies medio +0,0014, |vies| max
+    0,0050, dp 0,0020.
+    O -13,0% que sustentava a decisao AG-312 MORREU: o vies maximo cai
+    de 6,91pp para 0,74pp, 9,3x menor.
+  n: "20 celulas (5 simbolos x 2 grades x 2 lados)"
+  fonte_arquivo: "data/labels/*/R{2,3}/v1/labels.parquet"
+  fonte_secao: "AG-457 (remede AG-312)"
+  status: verde
+  nota: >-
+    A decisao AG-312 continua CERTA, mas por razao diferente: uniqueness
+    segue sendo o mais apertado (0,50pp contra 0,74pp) e e INDEPENDENTE
+    DO DESFECHO -- qualquer peso por |retorno| estima E_w[y|x] ponderado
+    por quanto esta em jogo, que nao e a probabilidade que tau corta.
+    Sob barreira simetrica os dois quase coincidem; sob geometria
+    assimetrica voltariam a divergir.
+    CRITERIO DE FLIP declarado: trocar para sample_weight se numa
+    remedicao futura o vies maximo de |ret_gross| ficar abaixo de 0,50pp.
+    Verificado que a decisao NAO e correcao inerte atras de flag:
+    pipeline, walk_forward e hyperparams_optuna tem uniqueness como
+    DEFAULT.
+
+- id_curto: mae-dos-vencedores-medido-direto-2026-09-04
+  data: "2026-09-04"
+  fase: >-
+    Primeira medicao DIRETA da excursao adversa maxima no projeto --
+    coluna mae_atr_units persistida no rebuild da Fase A (AG-451, item 4).
+  feature_ou_filtro: "mae_atr_units condicionado a barrier_hit == TP"
+  symbol: "XRPUSDT"
+  tf: "R3"
+  lado: "long e short agregados"
+  janela: "historia completa"
+  regime: "todos"
+  metrica_tipo: >-
+    distribuicao de MAE (em unidades de ATR) entre os VENCEDORES -- o
+    quadrante informativo. MAE no PERDEDOR e tautologico (e o proprio SL
+    por construcao) e nao entra, AG-441.
+  metrica_valor: >-
+    mediana 0,481 ATR; p90 1,217; 32,65% dos vencedores acima de 0,75
+    ATR de excursao adversa antes de fechar no TP.
+  n: "84.561 trades com MAE finito de 85.611 (XRPUSDT/R3)"
+  fonte_arquivo: "data/labels/XRPUSDT/R3/v1/labels.parquet"
+  fonte_secao: "AG-451"
+  status: verde
+  nota: >-
+    CONCORDA com a derivacao indireta anterior (14,5% sobre TODOS os
+    trades) uma vez corrigido o denominador: 32,65% x ~0,50 de vencedores
+    = 16,3%. O que parecia divergencia de 2,25x era populacao diferente.
+    E daqui que um sl_atr_mult derivado de dado sairia -- hoje ele e
+    classe A e nunca foi derivado.

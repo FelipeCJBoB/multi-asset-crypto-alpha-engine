@@ -69,6 +69,14 @@ _BOOTSTRAP_N_REPS = 2000  # noqa: magic-number
 
 
 def _audited_n_lifetime() -> int:
+    # AG-458 (2026-09-04) -- este counter esta CONGELADO. `N_lifetime` foi
+    # descontinuado como controle por decisao do Manager e ninguem mais o
+    # incrementa. O valor lido e um PISO HISTORICO (10060 na reconciliacao
+    # do AG-456), nao uma contagem viva: todo trial rodado depois de
+    # 2026-09-04 esta FORA dele. Consequencia direta pro DSR: o haircut de
+    # multiplicidade que esta funcao aplica SUBESTIMA o real, e a
+    # subestimacao cresce com o tempo. Isso e otimista na direcao errada --
+    # declarado aqui em vez de descoberto depois.
     path = _REPO_ROOT / "audit" / "n_lifetime.yaml"
     with path.open(encoding="utf-8") as f:
         data = yaml.safe_load(f)

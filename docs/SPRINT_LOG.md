@@ -6888,3 +6888,150 @@ Isso reinterpreta 3 investigações: o overshoot de 2,3-3,0× do `TOTAL_COMMON_O
 **Multi-seed (5 seeds × 10 células, `scripts/measure_seed_sensitivity.py`): nenhuma célula tem edge distinguível de zero.** 0/10 significativas ao p BRUTO, sem sequer precisar de FDR; melhor p-valor 0,197 (`XRPUSDT/R2/C0`); 6 das 10 com média negativa. Gates por seed: **0/20 nas 4 seeds novas**, no p bruto e sob FDR. E o achado que fecha o ciclo desta sessão: os números celebrados nas rodadas anteriores são todos o MÁXIMO da própria distribuição de seed daquela célula — `XRPUSDT/R3/C1` tem média +2,16 e desvio 6,32 (o +12,29 da rodada 4 é o máximo de 5); `XRPUSDT/R3/C0` tem média +4,33 e desvio 13,58 (o +27,13 é o máximo). Nenhuma mudança de código foi necessária pro multi-seed — os 3 scripts já tinham o encanamento de seed; só a instrumentação do `AG-438` foi adicionada antes, e saiu de graça nas 5 seeds.
 
 **Consequência de priorização:** `AG-434` (sweep de janela com ≥5 seeds/365/540 dias) e o teste isolante do `AG-432` ficam DESPRIORIZADOS — os dois medem sensibilidade a parâmetros de um mecanismo que o `AG-438` mostrou estar inerte. Rodá-los agora gastaria `N_lifetime` medindo ruído de platô. A pergunta aberta mudou de lugar: não é mais "qual taxa-alvo" nem "qual janela", é **o vetor de features carrega alguma informação?** — e a AUC responde que não, em 10 de 10 células. Artefato "ADR-007" atualizado com as duas seções novas.
+
+## 2026-09-04 — Fase A do roadmap MFE/MAE: o alvo passa a descrever o trade que a execução faz; label melhora 1,9bps em 15/15, gates seguem 0/20 (AG-450..AG-458) <!-- check-sprint-log: skip -->
+
+Sessão longa, três frentes: fechar a lista de 10 correções pendentes, <!-- check-sprint-log: skip -->
+executar a Fase A (rebuild único de labels) e limpar governança. Sete
+`AG` novos, **três retratações minhas** e uma decisão do Manager
+revertida por medição.
+
+**Lista de 10 fechada (`AG-442`..`AG-448`).** Destaques: gate de CI <!-- check-sprint-log: skip -->
+bloqueante pra `ASSUMED` dentro de `ret_net` — está **vermelho por
+desenho**, porque `adverse_selection_bps` não é mensurável
+historicamente (exige `bookTicker`, que só existe pra BTCUSDT e só
+pré-RPI); custo por célula no S1 (P(TP) varia de 0,26 a 0,50 na grade, e <!-- check-sprint-log: skip -->
+a constante global de produção não descreve célula nenhuma além da dela);
+`edge_liquido_bps_por_barra`; IC95 ao lado do ponto estimado; e um gate <!-- check-sprint-log: skip -->
+que mede se a Camada1 supera a Camada0 — ela era promovida por <!-- check-sprint-log: skip -->
+**construção**, e o delta de AUC medido fica em ±0,005 com a C0 vencendo
+em edge em 3 dos 5 candidatos. O item 10 achou algo: `control_11` e
+`control_12` nunca tinham sido exercidos contra trade real em lugar
+nenhum do repositório; exercidos, `control_11` **reprova**
+`BTCUSDT/R2/C1` (alavancagem p95 de 2,009 contra teto 3,0, 0,07% dos
+sinais) — justamente a célula que já falha `control_13` e tem o pior
+edge.
+
+**Fase A (`AG-451`/`AG-452`): rebuild único de 15 combinações, 19 min.**
+A regra B11 do Label Engine — "barreiras avaliadas em `mark_1m`" — é
+certa pro SL e **errada pro TP**, e o módulo aplicava mark aos dois. O
+item 8 da própria docstring já traduzia `§9.1` corretamente:
+`take_profit` é `LIMIT`/`GTC`, ordem passiva que só executa onde alguém
+**negocia**; `stop_loss` é `STOP_MARKET`/`working_type: MARK_PRICE`,
+gatilho no mark. Ninguém tinha cruzado a afirmação com o código que a
+contradizia três funções abaixo.
+
+Medido, pareado por `(t0, side)` nas 15 combinações: `ret_net` melhora <!-- check-sprint-log: skip -->
+em **15 de 15**, média **+1,899bps**, faixa [+1,055; +2,962], dp 0,552; <!-- check-sprint-log: skip -->
+barreira muda em 1,01% a 1,65% dos trades, sempre no mesmo sentido <!-- check-sprint-log: skip -->
+(`SL→TP` domina `TP→SL` por 20x a 167x). O critério de escolha da ponta <!-- check-sprint-log: skip -->
+**não** é "qual dá o número melhor" — é o mesmo do `AG-229`: sob <!-- check-sprint-log: skip -->
+barreiras simétricas o P(TP) teórico de martingale é 0,50, e <!-- check-sprint-log: skip -->
+`|frac_tp − 0,50|` cai de **0,0129 para 0,0023** (5,6x), com o *sinal* <!-- check-sprint-log: skip -->
+do erro corrigindo junto (sob mark as 15 ficavam abaixo de 0,50; sob <!-- check-sprint-log: skip -->
+klines ficam dos dois lados — viés unilateral virou ruído bilateral).
+Mecanismo medido: a série negociada tem amplitude por minuto **~20% <!-- check-sprint-log: skip -->
+maior** que a do mark (razão 1,204 em XRP, 1,203 em BTC, excedendo em <!-- check-sprint-log: skip -->
+83–91% dos minutos) — o mark é índice suavizado, e essa assimetria é <!-- check-sprint-log: skip -->
+exatamente a razão pela qual se usa stop em MARK_PRICE numa perp.
+
+**Primeira retratação.** Eu previ ao Manager que essa correção
+*reduziria* o edge em ~0,8bps, com base em "1,32% de saídas por TP <!-- check-sprint-log: skip -->
+fantasma". O sinal estava invertido: aquela medição contou só o mark
+alcançando o nível sem trade e ignorou a população maior do outro lado.
+O 1,32% não estava errado; a inferência unilateral a partir dele estava. <!-- check-sprint-log: skip -->
+
+Gaps de cobertura entre as duas séries (7.200 minutos só no mark — bloco <!-- check-sprint-log: skip -->
+contíguo de 5 dias — e 4.327 só nas klines) são tratados por <!-- check-sprint-log: skip -->
+**exclusão**, não imputação: tratar minuto ausente como "não houve
+trade" converteria TP real em SL por 5 dias, e reindexar pelo vizinho <!-- check-sprint-log: skip -->
+leria o TP no minuto errado. Trade cuja janela toca um gap vira
+não-computável e contado (`n_tp_source_gap`, 0,36%). <!-- check-sprint-log: skip -->
+
+`sample_weight` passou a pesar por `|ret_gross|` (`AG-452`): a razão de <!-- check-sprint-log: skip -->
+peso classe-perdedora/vencedora cai de **1,297 para 1,006** — os 30% de <!-- check-sprint-log: skip -->
+peso extra que o modelo de custo injetava sumiram. Decisão do Manager de
+2026-08-30 reaberta e aprovada; o argumento que a sustentava <!-- check-sprint-log: skip -->
+("invalidaria as medições em disco") tinha deixado de valer.
+`mae_atr_units` entra no schema com marcador de versão no `config_hash`,
+e o MAE dos **vencedores** fica medido direto pela primeira vez: mediana
+0,481 ATR, p90 1,217, 32,65% acima de 0,75 ATR. <!-- check-sprint-log: skip -->
+
+**A Fase A não move os gates (`AG-453`): 0/20 antes, 0/20 depois.** <!-- check-sprint-log: skip -->
+Comparação apples-to-apples — artefatos anteriores recuperados do git e
+consolidados pelo mesmo script. O efeito é nítido no label
+(+1,899 ± 0,552) e **some** no walk-forward (delta por célula de −14,51 <!-- check-sprint-log: skip -->
+a +27,28, média +3,58, 7/10 positivos): a dispersão do delta é ~20x a do <!-- check-sprint-log: skip -->
+efeito. O pipeline de seleção adiciona muito mais variância do que a
+correção de label remove.
+
+**Segunda e terceira retratações, sobre geometria.** O `AG-450` mediu o <!-- check-sprint-log: skip -->
+teto do que a geometria compra e eu recomendei não gastar a Fase B. A
+suíte **completa** (que eu tinha pulado ao commitar) achou depois que
+`barrier_sweep.resolve_barriers_vectorized` resolvia o TP no mark — não
+recebeu a correção do `AG-451`, e é o motor que produz o S1, base
+daquela recomendação. Propagado (`AG-454`), o **ranking inverte**:
+`2,25/2,25` assume o 1º nas duas grades, `1,50/0,75` cai pra 4º/3º, e o
+ótimo deixa de estar na fronteira e passa a ser **interior**. Cai junto
+o argumento que eu tinha usado contra estender a grade. A conclusão
+*quantitativa* sobrevive e é o que decide: vantagem de 0,53bps (R2) e
+0,38bps (R3), **menos de 1σ** nas duas — trocar produção custaria
+relabel e retreino inteiros por algo indistinguível de zero.
+
+Antes disso, o `AG-450` já tinha corrigido um artefato de pooling: as <!-- check-sprint-log: skip -->
+células de `sl=0,75` em R2 agregam 6 estratos e as demais 10, porque o <!-- check-sprint-log: skip -->
+controle R2 exclui BTCUSDT e BNBUSDT — o ranking publicado comparava <!-- check-sprint-log: skip -->
+conjuntos de símbolos diferentes.
+
+**Goldens de CPCV: baseline vencido pelo dado, não regressão (`AG-455`).** <!-- check-sprint-log: skip -->
+9 de 15 combos falharam. O padrão não batia com contagem de linhas — <!-- check-sprint-log: skip -->
+BTC/R3, ETH/R3 e BNB/R2 falharam com contagem *idêntica*, e BTC/R2, <!-- check-sprint-log: skip -->
+também idêntica, passou. Causa: `t0` igual, `t1` mudou (1.011 a 3.202 <!-- check-sprint-log: skip -->
+barreiras por combo), e o purge do CPCV depende de `t1` por desenho. <!-- check-sprint-log: skip -->
+Prova antes de tocar no baseline: alimentando os labels antigos no
+`cpcv.py` de hoje, os 6 combos testados reproduzem o baseline commitado <!-- check-sprint-log: skip -->
+**bit a bit**. Só então recapturei.
+
+**Governança.** `N_lifetime` reconciliado (`AG-456`): estava 4 dias <!-- check-sprint-log: skip -->
+defasado, counter 5.530 → 10.060, e a régua do DSR sobe **+4,0%** <!-- check-sprint-log: skip -->
+(`expected_max_sharpe_under_n_trials` de 1,8566 para 1,9311 sob <!-- check-sprint-log: skip -->
+`sigma_sr=0,5`). Em seguida **descontinuado como controle** por decisão <!-- check-sprint-log: skip -->
+do Manager (`AG-458`) — sai do bootstrap do `CLAUDE.md`, da tabela de <!-- check-sprint-log: skip -->
+navegação e de 3 skills; nenhum lint ou CI o enforçava. O arquivo fica <!-- check-sprint-log: skip -->
+porque `faixa2_dsr_and_b2_check.py` ainda lê `::counter`: o valor está <!-- check-sprint-log: skip -->
+**congelado** e o consumidor agora declara a consequência — o haircut de
+multiplicidade do DSR subestima o real, e a subestimação cresce com o
+tempo.
+
+**`AG-312` remedido por ordem do Manager (`AG-457`)**, que recusou <!-- check-sprint-log: skip -->
+manter a decisão antiga com uma nota e mandou medir. O viés de −13,0% <!-- check-sprint-log: skip -->
+que sustentava "calibrador ponderado só por `uniqueness`" foi medido sob
+`|ret_net|` e **morreu**: em 20 células, o viés máximo cai de 6,91pp <!-- check-sprint-log: skip -->
+para 0,74pp sob `|ret_gross|`. O valor segue `uniqueness` — mas agora <!-- check-sprint-log: skip -->
+por medição, não herança: ele ainda é o mais apertado (0,50pp) e é <!-- check-sprint-log: skip -->
+independente do desfecho, enquanto qualquer peso por |retorno| estima
+`E_w[y|x]` ponderado por quanto está em jogo, que não é a probabilidade
+que `tau` corta. Critério de flip declarado.
+
+**Terceiro caminho independente convergindo no `AG-449`** (o vetor de <!-- check-sprint-log: skip -->
+features não discrimina, ABERTO e subordinando todos os outros):
+multi-seed 0/10, geometria com teto de fração de 1bps, e agora o alvo <!-- check-sprint-log: skip -->
+corrigido — label mensuravelmente melhor, mesmo 0/20. A Fase A comprou <!-- check-sprint-log: skip -->
+corretude real; não comprou poder preditivo, e nunca prometeu.
+
+**Lição de processo, registrada porque custou caro:** commitei duas
+vezes com verificação parcial da suíte, e as duas vezes a suíte completa
+achou coisa real — na segunda, um furo de arquitetura que invalidava uma
+recomendação já entregue ao Manager. Suíte completa: 3031 passed, 0 <!-- check-sprint-log: skip -->
+failed.
+
+**Fontes desta seção** — todo número acima é rastreável a um destes:
+`audit/architecture_gaps_log.yaml` (AG-450..AG-458),
+`audit/evidence_ledger.yaml` (5 entradas novas de 2026-09-04),
+`data/labels/*/R*/v1/labels.parquet` e o backup `data/labels_pre_AG451/`
+(as duas pontas do sweep de `label_tp_touch_source`),
+`experiments/s1_tp_sl_sensitivity_report_{R2,R3}.json`,
+`experiments/alpha_walk_forward_*.json`,
+`experiments/capital_feasibility_report.json`,
+`tests/golden/fixtures/cpcv_single_symbol_baseline.json`,
+`audit/n_lifetime.yaml` e `config/constants.yaml::label_tp_touch_source`.

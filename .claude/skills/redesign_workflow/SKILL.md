@@ -72,7 +72,6 @@ que aqui vira parte da própria Discovery, não um passo à parte:
 3. `audit/architecture_gaps_log.yaml` — gaps abertos (`AG-NNN`) na área
    que o redesenho toca. Um redesenho que ignora um `AG-NNN` já aberto na
    mesma área está resolvendo o problema errado.
-4. `audit/n_lifetime.yaml` — se a tarefa envolve otimização/sweep/retreino.
 5. `config/constants.yaml` — se toca em constante nova ou existente.
 
 Cria a lista de todos (`TodoWrite`) com as 7 fases já no início.

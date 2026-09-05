@@ -36,9 +36,14 @@ contra o PRD real (`AG-051`/`AG-052`).
 
 ## Deliberadamente FORA desta lista (decisão do Manager, não esquecimento)
 
-- **`audit/n_lifetime.yaml`** — segue existindo e sendo incrementado
-  quando um trial de fato acontece, mas não é gate vinculante desde
-  2026-08-17 (`AG-077`) e não entra na varredura de rotina.
+- **`audit/n_lifetime.yaml`** — **DESCONTINUADO como controle**
+  (decisão do Manager, 2026-09-04, `AG-458`). Não é gate vinculante desde
+  2026-08-17 (`AG-077`), não entra na varredura de rotina, e desde
+  2026-09-04 não precisa mais ser consultado nem incrementado. O arquivo
+  fica no repositório porque `src/analysis/faixa2_dsr_and_b2_check.py`
+  ainda lê `::counter` — o valor está CONGELADO em 10.060, e quem for
+  usar o DSR precisa saber que é um piso histórico, não uma contagem
+  viva.
 - **`PRD_V3_2_UNIFICADO.md`/`PRD_V4_1.md`** — categoria "blueprint
   técnico", não "governança". Só ganham correção pontual (ponteiro de 1
   linha, nota de proveniência) quando um achado contradiz o texto — nunca

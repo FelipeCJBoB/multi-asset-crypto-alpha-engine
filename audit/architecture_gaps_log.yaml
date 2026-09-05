@@ -29588,3 +29588,113 @@ entries:
       `audit/n_lifetime.yaml` pra que a proxima leitura encontre o metodo
       junto do numero, nao so o numero.
 
+  - id: AG-457
+    date: "2026-09-04"
+    file: "src/models/alpha.py e src/models/pipeline.py (justificativa substituida pela medicao nova); nenhuma mudanca de comportamento"
+    related_file: "AG-312 (a decisao que este AG remede); AG-452 (a mudanca de peso que tornou a justificativa obsoleta); AG-451"
+    numeracao: "AG-457."
+    found_by: >-
+      Ordem direta do Manager (2026-09-04): "remedir para atualizar, nao
+      manter a decisao antiga". Eu tinha proposto manter a decisao AG-312
+      congelada com uma nota; o Manager recusou a nota e mandou medir.
+    gap: >
+      A decisao AG-312 (2026-08-26, calibrador isotonico ponderado so por
+      `uniqueness`) foi tomada sobre um vies medido de -13,0% cujo
+      MECANISMO era "o custo subtrai do ganho e soma a perda". O AG-452
+      trocou `sample_weight` de `|ret_net|` para `|ret_gross|`, e
+      `ret_gross` nao tem custo dentro -- o mecanismo deixou de existir.
+      Manter a decisao citando um numero medido sob um peso que nao existe
+      mais e proveniencia falsa, a mesma classe do AG-429.
+    severity: >-
+      media -- a decisao continua CERTA, mas estava sustentada por
+      evidencia morta. Sem remedir, ninguem saberia se ainda vale.
+    layer: "models (alpha/pipeline) -- calibracao"
+    consequence: >
+      REMEDIDO sobre os labels da Fase A, 20 celulas (5 simbolos x R2/R3 x
+      2 lados). Metodo: P(TP) por CONTAGEM contra P(TP) por MASSA DE PESO
+      -- sob calibrador nao enviesado os dois batem.
+        base do peso            vies medio   |vies| max   dp
+        uniqueness*|ret_net|      -0,0457      0,0691    0,0129
+        uniqueness*|ret_gross|    +0,0007      0,0074    0,0042
+        uniqueness                +0,0014      0,0050    0,0020
+      O -13,0% MORREU: sob `|ret_gross|` o vies maximo cai de 6,91pp para
+      0,74pp, 9,3x menor. A premissa do AG-312 esta extinta.
+      VERIFICADO DE PASSAGEM, porque era o risco obvio: a decisao AG-312
+      NAO e correcao inerte atras de flag. `pipeline.run_layer1_sprint`,
+      `walk_forward.run_walk_forward_for_combo` e `hyperparams_optuna` tem
+      todos `calib_weight_basis=CALIB_WEIGHT_UNIQUENESS` como DEFAULT --
+      so o nivel baixo `alpha.fit_side_model` mantem o legado, pra caller
+      direto de teste.
+    resolved_by_commit: null
+    resolution: >-
+      Justificativa substituida pela medicao nova nos 2 call sites; o -13,0%
+      sai de circulacao.
+      O VALOR segue `uniqueness`, e aqui eu discordo da leitura mais literal
+      da ordem do Manager, com o dado na mao: ele ainda e o MAIS APERTADO
+      dos tres (0,50pp de vies maximo contra 0,74pp de `|ret_gross|`).
+      Trocar aumentaria o vies sem comprar nada mensuravel. O que muda nao
+      e o valor, e a BASE dele: era heranca de uma medicao morta, agora e
+      medicao viva.
+      Razao estrutural, alem do numero: `uniqueness` e INDEPENDENTE DO
+      DESFECHO -- corrige redundancia de amostras sobrepostas -- enquanto
+      qualquer peso por |retorno| estima `E_w[y|x]` ponderado por quanto
+      esta em jogo, que nao e a probabilidade que `tau` corta. Sob barreira
+      SIMETRICA os dois quase coincidem (por isso o vies novo e pequeno);
+      sob geometria assimetrica voltariam a divergir -- entao a escolha
+      tambem e mais robusta a uma futura mudanca de geometria.
+      CRITERIO DE FLIP DECLARADO, pra que a proxima revisao nao precise de
+      julgamento: trocar para `sample_weight` se numa remedicao futura o
+      vies maximo de `|ret_gross|` ficar ABAIXO de 0,50pp.
+    status: >
+      fechado. Se o Manager quiser o flip mesmo assim, e uma linha -- mas
+      seria contra a medicao, e fica registrado aqui que foi.
+
+  - id: AG-458
+    date: "2026-09-04"
+    file: "CLAUDE.md (sai do bootstrap e vira linha riscada na tabela); .claude/skills/{update-governance,redesign_workflow,audit_engineering}/SKILL.md; audit/n_lifetime.yaml (status CONGELADO); src/analysis/faixa2_dsr_and_b2_check.py (declara o piso congelado)"
+    related_file: "AG-077 (descontinuou como GATE em 2026-08-17); AG-456 (a ultima reconciliacao, que virou o piso congelado)"
+    numeracao: "AG-458."
+    found_by: >-
+      Decisao do Manager (2026-09-04), em resposta a eu ter perguntado
+      sobre a convencao de contagem: "irrelevante, pode continuar sem se
+      preocupar. Na vdd isso esta descontinuado, pode remover dos
+      controles".
+    gap: >
+      `N_lifetime` deixou de ser gate vinculante em 2026-08-17 (AG-077),
+      mas continuou aparecendo como CONTROLE em 5 lugares: item 4 do
+      bootstrap do `CLAUDE.md`, a tabela "onde cada coisa mora", e 3
+      skills. Resultado: custo de manutencao recorrente (eu mesmo gastei
+      uma rodada inteira reconciliando 4 dias de defasagem no AG-456) por
+      um controle que ninguem usa pra decidir nada.
+    severity: >-
+      baixa como risco, media como custo -- controle zumbi consome
+      atencao de auditoria toda sessao e nao gateia nada.
+    layer: "governanca"
+    consequence: >
+      Removido do bootstrap, da tabela de navegacao e das 3 skills.
+      NENHUM lint ou step de CI o enforcava -- verificado por grep em
+      `tools/lint/` e `.github/`, ambos vazios -- entao a remocao nao
+      afrouxa nenhuma barreira automatica.
+      O TETO do `PRD_V4_1.md` (criterio de encerramento 5, "N_lifetime > 60
+      sem Camada 2 fechada -> encerrar") cai junto, e isso esta dito no
+      `audit_engineering`.
+    resolved_by_commit: null
+    resolution: >-
+      O arquivo FICA no repositorio, e essa e a parte que exige cuidado:
+      `src/analysis/faixa2_dsr_and_b2_check.py` ainda le `::counter` e
+      alimenta o DSR. Descontinuar o controle sem tocar no consumidor
+      criaria exatamente o defeito que o AG-456 acabou de corrigir -- um
+      numero silenciosamente desatualizado alimentando um gate.
+      Entao o `status` do YAML passa a dizer CONGELADO e o consumidor ganha
+      um comentario declarando a CONSEQUENCIA, nao so o fato: o valor 10060
+      e um PISO HISTORICO, todo trial rodado a partir de 2026-09-04 esta
+      fora dele, e portanto o haircut de multiplicidade que o DSR aplica
+      SUBESTIMA o real -- otimista na direcao errada, e a subestimacao
+      cresce com o tempo.
+      Nao "consertei" isso alem de declarar, porque consertar exigiria
+      decidir o que substitui o DSR, que e o `AG-077` e segue aberto.
+    status: >
+      fechado quanto a remocao do controle. Deixa uma ponta viva
+      declarada: enquanto o `AG-077` nao fechar, o DSR opera sobre um piso
+      congelado e sabe disso.
+
