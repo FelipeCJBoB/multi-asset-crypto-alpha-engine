@@ -7035,3 +7035,89 @@ failed.
 `experiments/capital_feasibility_report.json`,
 `tests/golden/fixtures/cpcv_single_symbol_baseline.json`,
 `audit/n_lifetime.yaml` e `config/constants.yaml::label_tp_touch_source`.
+
+## 2026-09-05 — Duas tentativas pré-registradas sobre a regra de regime de ATR, dois SEM PODER; a segunda por aritmética que eu podia ter feito antes (AG-459..AG-463) <!-- check-sprint-log: skip -->
+
+**O que estava em jogo.** O `AG-461` mediu que o lift do modelo cresce com <!-- check-sprint-log: skip -->
+o ATR e que o terço de maior ATR entrega +14,17 bps sobre 2.332 trades. <!-- check-sprint-log: skip -->
+Isso não era evidência — o balde foi escolhido depois de ver o resultado, e
+esta sessão já tinha confundido seleção sobre ruído com achado três vezes
+(`AG-441`, `AG-450`, `AG-451`). A resposta foi pré-registrar: desenho e <!-- check-sprint-log: skip -->
+critério commitados **sozinhos**, antes de qualquer número existir, com a
+ordem verificável por `git log`.
+
+**1ª tentativa (`AG-462`, registro em `75ecef9`): SEM PODER.** Limiar <!-- check-sprint-log: skip -->
+absoluto de ATR derivado só na metade antiga dos folds. 3 de 5 combos
+ficaram indeterminados por c3 (menos de 200 trades filtrados na metade
+recente: n=3, n=53, n=78). **O critério fez exatamente o trabalho que <!-- check-sprint-log: skip -->
+existia pra fazer**: sem ele, a leitura natural da tabela seria "4 de 5 <!-- check-sprint-log: skip -->
+superam o controle, +189,54 bps em XRPUSDT/R3 — a regra funciona", e os <!-- check-sprint-log: skip -->
+números que sustentam essa leitura têm n=3. <!-- check-sprint-log: skip -->
+Causa medida do baixo poder, e é achado próprio: **o ATR caiu em 5 de 5 <!-- check-sprint-log: skip -->
+combos** entre as metades (razão média 0,838; BTCUSDT/R2 em 0,694), e o <!-- check-sprint-log: skip -->
+breakeven **subiu em 5 de 5** (até +2,57pp) porque o custo é fixo em bps e a <!-- check-sprint-log: skip -->
+barreira encolheu junto com a volatilidade. Parte da deterioração que este
+projeto vinha atribuindo ao modelo é o regime de volatilidade — variável que
+nenhuma medição anterior tinha isolado. Fonte: `experiments/ag462_regra_atr_preregistrada.json`.
+
+**2ª tentativa (`AG-463`, registro em `f11803e`), autorizada pelo Manager: <!-- check-sprint-log: skip -->
+SEM PODER de novo.** Limiar vira quantil recalculado dentro de cada fold; <!-- check-sprint-log: skip -->
+unidade de análise vira (combo, fold) pareado; um 4º critério, mais
+exigente, entra. O registro declara no topo que é a 2ª tentativa e por quê —
+sem isso o pré-registro vira teatro. c3 exigia 30 folds válidos e sobraram
+**16**. Fonte: `experiments/ag463_regra_atr_quantil.json`.
+
+**Desta vez o defeito é de desenho, e era calculável antes de rodar.** O <!-- check-sprint-log: skip -->
+filtro **não** esvaziou a amostra — os `n_filt` por fold são saudáveis (158 <!-- check-sprint-log: skip -->
+a 478 em BTCUSDT/R2). O que faltou foram folds: a metade recente tem 7, 5, <!-- check-sprint-log: skip -->
+6, 6 e 6 folds nos 5 combos, **teto teórico de 30, exatamente igual ao piso <!-- check-sprint-log: skip -->
+que travei**. c3 só era atingível com zero perda — e o registro do `AG-462`, <!-- check-sprint-log: skip -->
+que eu mesmo escrevi, já declarava "6 a 9 folds por metade recente". Travei
+um piso sabendo o numerador e não fiz a soma. Ao contrário do `AG-462`, isso <!-- check-sprint-log: skip -->
+não dependia de nenhum número que só aparece rodando.
+
+**Achado colateral que vale mais que o teste, e é medido.** SOLUSDT/R2 <!-- check-sprint-log: skip -->
+entrou como SEM_REGRA porque nenhum `q` da grade dá `ret_net` positivo na
+metade antiga — e a curva **piora monotonamente** com o quantil: −12,04 → <!-- check-sprint-log: skip -->
+−21,19 → −23,53 → −15,92 → −15,93 → −38,33 bps. É evidência **contrária** à <!-- check-sprint-log: skip -->
+hipótese, não ausência de evidência: em 1 dos 5 combos o filtro de ATR alto
+mede o sinal oposto ao previsto, e mede ao longo da grade inteira. Registrado
+em `audit/evidence_ledger.yaml` como vermelho.
+
+**Antes disso, `AG-459`: Optuna sobre os labels novos, autorizado pelo <!-- check-sprint-log: skip -->
+Manager — teto medido, ainda 0/20.** E `AG-460`: `N_lifetime` sai dos <!-- check-sprint-log: skip -->
+controles de fato, com `faixa2_dsr_and_b2_check.py` declarando que o DSR
+calculado é um **teto** ("o DSR real é menor ou igual a este valor"), não uma
+aprovação. `AG-077` já estava fechado desde 2026-08-17 — eu tinha afirmado o <!-- check-sprint-log: skip -->
+contrário; o sucessor é `AG-374`.
+
+**Estado do `AG-449`.** Segue ABERTO, com a leitura do `AG-461` intacta: o <!-- check-sprint-log: skip -->
+lift entregue (+1,25pp out-of-time) é da mesma ordem do exigido (+2,3 a <!-- check-sprint-log: skip -->
++6,4pp) e a diferença não se distingue de zero em nenhum dos dois sentidos. <!-- check-sprint-log: skip -->
+O que mudou: seleção por regime de volatilidade deixou de ser "a alavanca que
+resta" — em 1 combo ela mede o sinal contrário, e o dado disponível não <!-- check-sprint-log: skip -->
+suporta o teste que decidiria. Com 5 combos e 6 a 9 folds por metade recente, <!-- check-sprint-log: skip -->
+nenhum desenho com fold como unidade chega a 30 folds com folga. **Não cabe <!-- check-sprint-log: skip -->
+3ª tentativa por iniciativa minha.** As saídas são do Manager: (a) usar todos <!-- check-sprint-log: skip -->
+os folds e perder a separação temporal — trocar rigor por poder na direção
+errada; (b) ampliar o universo além dos 5 candidatos, com relabel e retreino <!-- check-sprint-log: skip -->
+fora de produção; (c) parar. Recomendo (c).
+
+**Lição de processo, registrada porque quase custou um veredito inventado.**
+A 1ª execução do `AG-463` abortou no `_valida_registro()` e eu reportei ao <!-- check-sprint-log: skip -->
+Manager que estava rodando: o `| tail -40` do meu próprio comando engoliu o <!-- check-sprint-log: skip -->
+traceback e devolveu exit 0. A causa era ortográfica — o registro está em
+português (`t > 2,0`) e o código gerava `t > 2.0` — e a correção foi
+normalizar o separador **no verificador**, nunca no YAML pré-registrado. Duas
+coisas: a salvaguarda funcionou (recusou rodar sob qualquer suspeita de
+divergência), e exit code atrás de pipe não é evidência de que algo rodou.
+Fonte: `scripts/measure_ag463_regra_atr_quantil.py`.
+
+**Fontes desta seção** — todo número acima é rastreável a um destes:
+`audit/architecture_gaps_log.yaml` (AG-459..AG-463),
+`audit/pre_registro/ag462_regra_atr_critico.yaml`,
+`audit/pre_registro/ag463_regra_atr_quantil_v2.yaml`,
+`audit/evidence_ledger.yaml`,
+`experiments/ag462_regra_atr_preregistrada.json`,
+`experiments/ag463_regra_atr_quantil.json`,
+`experiments/ag449_lift_by_atr_regime.json`.

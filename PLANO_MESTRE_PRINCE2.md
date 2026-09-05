@@ -6766,6 +6766,119 @@ candidatos (incluindo se/como re-promover hiperparâmetro sob o seed
 corrigido de `AG-399`) segue com o Manager.
 
 ---
+### 15.44 Fase A do roadmap MFE/MAE — o alvo passa a descrever o trade que a execução faz; 3 retratações; `N_lifetime` descontinuado como controle (2026-09-04)
+
+Sessão de execução, não de auditoria: fechar a lista de 10 correções
+pendentes, rodar a Fase A (rebuild único de labels) e limpar governança.
+`AG-450` a `AG-458`, 5 entradas novas no `audit/evidence_ledger.yaml`,
+suíte completa `3031 passed, 0 failed`. Narrativa completa em
+`docs/SPRINT_LOG.md` (seção 2026-09-04).
+
+**A correção que vale mais que toda a busca de geometria.** A regra B11
+do Label Engine ("barreiras avaliadas em `mark_1m`") é certa pro SL e
+errada pro TP — `take_profit` é `LIMIT`/`GTC`, ordem passiva que só
+executa onde alguém NEGOCIA, e o item 8 da própria docstring do módulo
+já traduzia `§9.1` assim desde sempre. Migrado (`AG-451`), `ret_net`
+melhora nas 15 de 15 combinações, média +1,899 bps. O critério de
+escolha da ponta não foi "qual dá o número melhor": sob barreiras
+simétricas o P(TP) teórico de martingale é 0,50, e o erro médio contra
+ele cai 5,6x, com o SINAL do erro corrigindo junto.
+
+**Três retratações minhas, todas com a mesma forma:** medir um lado de
+uma comparação e tratar o resultado como efeito líquido. (i) apresentei
+como medição uma tautologia de MFE, reincidência do `AG-122`
+(`AG-441`); (ii) previ que corrigir o fill do TP reduziria o edge em
+~0,8 bps quando ele SUBIU 1,9 (`AG-451`); (iii) afirmei que o gradiente
+de geometria favorecia SL apertado e que o ótimo estava na fronteira da
+grade — propagada a correção do TP para o sweep vetorizado, o ranking
+inverteu e o ótimo é interior (`AG-454` corrigindo `AG-450`).
+
+**Decisão de governança do Manager: `N_lifetime` descontinuado como
+CONTROLE** (`AG-458`). Não era gate vinculante desde 2026-08-17
+(`AG-077`), mas seguia como item 4 do bootstrap do `CLAUDE.md`, na
+tabela de navegação e em 3 skills — custo de manutenção recorrente por
+um controle que não gateia nada. Removido dos 5 lugares; nenhum lint ou
+step de CI o enforçava. O arquivo permanece porque
+`src/analysis/faixa2_dsr_and_b2_check.py` ainda lê `::counter`, agora
+CONGELADO em 10.060 com a consequência declarada no consumidor: o
+haircut de multiplicidade do DSR subestima o real, e a subestimação
+cresce com o tempo. Ponta viva deixada de propósito — fechá-la é o
+`AG-077`, que segue aberto.
+
+**Decisão do Manager revertida por medição, a pedido dele.** O `AG-312`
+(calibrador ponderado só por `uniqueness`, 2026-08-26) sustentava-se num
+viés de −13,0% cujo mecanismo o `AG-452` extinguiu. Manager recusou
+manter a decisão com uma nota e mandou remedir: em 20 células o viés
+máximo cai de 6,91pp para 0,74pp. O valor segue `uniqueness`, agora por
+medição (é o mais apertado, 0,50pp, e é independente do desfecho) e não
+por herança, com critério de flip declarado (`AG-457`).
+
+**Estado do mandato, sem maquiagem.** Os gates seguem 0/20 antes e
+depois da Fase A. O `AG-449` (o vetor de features não discrimina)
+continua ABERTO e subordinando todos os outros, e esta sessão adicionou
+o terceiro caminho independente chegando nele: multi-seed 0/10,
+geometria com teto de fração de 1 bps, e agora o alvo corrigido — label
+mensuravelmente melhor, mesmo 0/20. A Fase A comprou corretude real; não
+comprou poder preditivo, e nunca prometeu.
+
+---
+### 15.45 Pré-registro posto à prova: duas tentativas sobre a regra de regime de ATR, dois SEM PODER — e a segunda por um erro meu que era aritmética (2026-09-05)
+
+Sessão de método, não de resultado. `AG-459` a `AG-463`, 1 entrada nova
+no `audit/evidence_ledger.yaml`. Narrativa em `docs/SPRINT_LOG.md`
+(seção 2026-09-05).
+
+**O que o pré-registro comprou, e que nenhum outro controle deste
+projeto compra.** O `AG-461` mediu que o terço de maior ATR entrega
++14,17 bps com 4 de 5 combos positivos. O balde foi escolhido depois de
+ver o resultado — e esta sessão já tinha confundido seleção sobre ruído
+com achado três vezes. A resposta foi commitar desenho e critério
+**sozinhos**, antes de qualquer número existir, com a ordem verificável
+por `git log` em vez de por afirmação minha.
+
+Na 1ª tentativa (`AG-462`) o critério de amostra barrou 4 falsos
+positivos sustentados por n=3, n=53 e n=78 trades. Sem ele, a leitura
+natural da tabela seria "a regra funciona, +189,54 bps em XRPUSDT/R3".
+**O controle funcionou contra o interesse de quem o escreveu**, que é a
+única prova que um pré-registro pode dar de si mesmo.
+
+**Achado colateral maior que o teste, medido na 1ª tentativa.** O ATR
+caiu em 5 de 5 combos entre as metades do walk-forward (razão média
+0,838) e o breakeven exigido pelo custo SUBIU em 5 de 5, até +2,57pp.
+Parte da deterioração que este projeto vinha atribuindo ao modelo é o
+regime de volatilidade — variável observável em tempo real que nenhuma
+medição anterior tinha isolado.
+
+**A 2ª tentativa foi autorizada pelo Manager e falhou por defeito meu.**
+O registro (`AG-463`) declara no topo que é a 2ª tentativa, o veredito
+da 1ª e o que mudou — sem isso o pré-registro vira teatro. Mas travei o
+piso de amostra em 30 folds quando a metade recente dos 5 combos tem 7,
+5, 6, 6 e 6: **teto teórico de 30, exatamente igual ao piso**. Só era
+atingível com zero perda, e o registro anterior — que eu mesmo escrevi
+— já declarava "6 a 9 folds por metade recente". O teste nasceu sem
+poder, e diferentemente do `AG-462` isso não dependia de nenhum número
+que só aparece rodando. Um pré-registro trava contra viés de
+interpretação; não protege contra desenho ruim, e esta é a lição que
+custou uma rodada.
+
+**Consequência para o mandato.** O `AG-449` segue ABERTO com a leitura
+do `AG-461` intacta: o lift entregue (+1,25pp out-of-time) é da mesma
+ordem do exigido (+2,3 a +6,4pp) e a diferença não se distingue de zero
+nos dois sentidos. O que mudou é que seleção por regime de volatilidade
+deixou de ser "a alavanca que resta": em SOLUSDT/R2 ela mede o sinal
+CONTRÁRIO ao previsto, monotonicamente ao longo de toda a grade de
+quantil (−12,04 a −38,33 bps), e o dado disponível não suporta o teste
+que decidiria — com 5 combos, nenhum desenho com fold como unidade
+chega a 30 folds com folga.
+
+**Decisão escalada ao Manager, com recomendação.** Não cabe 3ª tentativa
+por iniciativa minha: rodar variantes até uma passar é precisamente o
+que o pré-registro existe para impedir. As saídas são (a) usar todos os
+folds e perder a separação temporal — trocar rigor por poder na direção
+errada; (b) ampliar o universo além dos 5 candidatos, exigindo relabel e
+retreino fora de produção; (c) parar de gastar tentativa nesta pergunta.
+**Recomendo (c)** até que exista outro motivo para tocar em (b).
+
 ## Fontes desta pesquisa
 
 - [PRINCE2.com — Os 7 princípios, temas e processos](https://www.prince2.com/eur/blog/the-7-principles-themes-and-processes-of-prince2)

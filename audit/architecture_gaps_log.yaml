@@ -30014,3 +30014,92 @@ entries:
       registro tem que declarar que e a 2a tentativa e por que o desenho
       mudou.
 
+
+  - id: AG-463
+    date: "2026-09-05"
+    file: "audit/pre_registro/ag463_regra_atr_quantil_v2.yaml (registro, commit f11803e -- ANTES); scripts/measure_ag463_regra_atr_quantil.py; experiments/ag463_regra_atr_quantil.json"
+    related_file: "AG-462 (1a tentativa, SEM_PODER); AG-461; AG-449"
+    numeracao: "AG-463."
+    found_by: >-
+      2a tentativa PRE-REGISTRADA sobre a hipotese do AG-461, autorizada
+      explicitamente pelo Manager ("Autorizado", 2026-09-05). O registro
+      declara no topo que e a 2a tentativa, qual foi o veredito da 1a e o
+      que mudou no desenho -- exigencia que eu mesmo tinha escrito no
+      status do AG-462 pra que a serie de tentativas fosse contavel sem
+      procurar.
+    gap: >
+      O AG-462 deu SEM_PODER porque usava limiar ABSOLUTO de ATR e o ATR
+      caiu em 5 de 5 combos entre as metades, esvaziando a amostra recente.
+      Esta versao troca o limiar por QUANTIL recalculado DENTRO de cada
+      fold (a fracao selecionada deixa de depender do nivel de
+      volatilidade) e troca a unidade de analise de COMBO (n=5) para
+      (COMBO, FOLD) PAREADO, alem de somar um 4o criterio mais exigente.
+    severity: >-
+      alta -- era declaradamente a ultima alavanca conhecida do AG-449.
+    layer: "models/analysis -- diagnostico, nada de producao alterado"
+    consequence: >
+      VEREDITO: **SEM PODER** de novo. c3 exigia >= 30 folds validos e
+      sobraram **16**.
+        combo         q     folds validos  dif media   ret filt   n_filt por fold
+        BTCUSDT/R2   0,6        7            +0,68      -6,97     158..478
+        SOLUSDT/R2   --      SEM_REGRA          --         --     --
+        SOLUSDT/R3   0,3        0               --         --     todos < 20
+        XRPUSDT/R2   0,3        6            +3,23      +5,06     77..455
+        XRPUSDT/R3   0,4        3           +18,03     +50,15     78, 54, 36
+        agregado: dif media +4,89 bps | ret filt +8,25 bps | 3 de 5 positivos
+      Os `t` nem foram computados: o codigo curto-circuita quando c3 falha,
+      por desenho do registro. Os numeros agregados acima NAO sao evidencia
+      de nada, e estao aqui exatamente porque a leitura tentadora ("+4,89
+      bps de ganho, 3 de 5 combos positivos, +50 bps em XRPUSDT/R3") e a
+      mesma armadilha que o c3 barrou na 1a tentativa. Mesmo combo,
+      XRPUSDT/R3, carregando o numero grande sobre 3 folds -- padrao
+      identico ao do AG-462.
+    resolved_by_commit: null
+    resolution: >-
+      A CAUSA DO BAIXO PODER MUDOU, e a nova causa e um DEFEITO DE DESENHO
+      MEU que era calculavel ANTES de rodar. Desta vez o filtro NAO
+      esvaziou a amostra -- os n_filt por fold sao saudaveis (158 a 478 em
+      BTCUSDT/R2, 77 a 455 em XRPUSDT/R2). O que faltou foram FOLDS.
+      A metade recente tem 7, 5, 6, 6 e 6 folds nos 5 combos: **teto
+      teorico de 30**, exatamente igual ao piso que travei em c3. Ou seja,
+      c3 so era atingivel se NENHUM fold e NENHUM combo fosse perdido --
+      e o proprio registro do AG-462, que eu escrevi, ja declarava "a
+      metade recente de cada combo tem 6 a 9 folds". Eu travei um piso
+      sabendo o numerador e nao fiz a soma. O teste nasceu sem poder e
+      isso nao dependia de nenhum numero que so aparece rodando, ao
+      contrario do AG-462.
+      ACHADO COLATERAL QUE VALE MAIS QUE O TESTE, e este e MEDIDO:
+      SOLUSDT/R2 entrou como SEM_REGRA porque nenhum `q` da grade da
+      ret_net positivo na metade antiga -- e a curva PIORA de forma
+      monotona com o quantil:
+        q=0,0: -12,04 | q=0,3: -21,19 | q=0,4: -23,53 | q=0,5: -15,92
+        q=0,6: -15,93 | q=0,7: -38,33  (bps)
+      Isso e evidencia CONTRARIA a hipotese naquele combo, nao ausencia de
+      evidencia: filtrar por ATR alto piora, e piora direcionalmente ao
+      longo de toda a grade. A hipotese do AG-461 previa o oposto.
+    status: >
+      ABERTO, e NAO cabe 3a tentativa por iniciativa minha. Duas
+      tentativas, dois SEM_PODER, e o segundo por aritmetica que eu podia
+      ter feito antes.
+      O registro travava: "Se c3 falhar, e SEM_PODER de novo, e ai o
+      problema e de dado disponivel, nao de hipotese." Isso agora esta
+      MEDIDO e e mais forte do que parecia: com 5 combos e 6 a 9 folds por
+      metade recente, NENHUM desenho que use o fold-da-metade-recente como
+      unidade chega a 30 folds com folga. O dado disponivel nao suporta
+      este teste nesta forma, e nenhum ajuste de quantil muda isso.
+      As 3 saidas reais, todas decisao do Manager e nenhuma delas barata:
+        (a) usar TODOS os folds em vez de so a metade recente -- dobra a
+            amostra e perde a separacao temporal, que era precisamente o
+            que o pre-registro comprava; seria trocar poder por rigor na
+            direcao errada;
+        (b) ampliar o universo alem dos 5 candidatos (mais simbolos e
+            grades) -- exige relabel e retreino de combos fora de
+            producao, e ainda assim herda a nao-independencia dos folds;
+        (c) aceitar que a pergunta nao e respondivel com o dado atual e
+            parar de gastar tentativa nela.
+      Minha recomendacao e (c) ate que exista outro motivo pra tocar em
+      (b). O AG-449 segue ABERTO com a mesma leitura do AG-461: o lift
+      entregue (+1,25pp out-of-time) e da mesma ordem do exigido (+2,3 a
+      +6,4pp) e a diferenca nao se distingue de zero -- e agora tambem se
+      sabe que selecao por regime de volatilidade nao e a alavanca que
+      fecha esse gap, porque em 1 dos 5 combos ela mede o sinal contrario.

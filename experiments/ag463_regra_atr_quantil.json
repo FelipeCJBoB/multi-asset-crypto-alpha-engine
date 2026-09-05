@@ -1,0 +1,359 @@
+{
+  "task": "AG-463 -- teste PRE-REGISTRADO da regra de ATR por quantil (2a tentativa)",
+  "pre_registro": "audit/pre_registro/ag463_regra_atr_quantil_v2.yaml",
+  "tentativa_anterior": "AG-462 (SEM_PODER)",
+  "veredito": "SEM_PODER",
+  "criterios": {
+    "c1_ganho_pareado": false,
+    "c2_edge_absoluto_positivo": false,
+    "c3_amostra_suficiente": false,
+    "c4_nao_e_um_combo_so": false,
+    "t_ganho_pareado": NaN,
+    "t_edge_absoluto": NaN,
+    "dif_media_bps": 4.886055727672332,
+    "ret_filt_medio_bps": 8.249665045586605,
+    "n_folds_validos": 16,
+    "n_combos_com_dif_positiva": 3
+  },
+  "por_combo": [
+    {
+      "symbol": "BTCUSDT",
+      "resolution_id": "R2",
+      "sem_regra": false,
+      "derivacao": {
+        "curva": [
+          {
+            "q": 0.0,
+            "ret_bps": -5.2959255635532045,
+            "n_folds": 7
+          },
+          {
+            "q": 0.3,
+            "ret_bps": -4.423692742518403,
+            "n_folds": 7
+          },
+          {
+            "q": 0.4,
+            "ret_bps": -2.850717763229188,
+            "n_folds": 7
+          },
+          {
+            "q": 0.5,
+            "ret_bps": -0.35904713387698095,
+            "n_folds": 7
+          },
+          {
+            "q": 0.6,
+            "ret_bps": 2.2566048424536054,
+            "n_folds": 7
+          },
+          {
+            "q": 0.7,
+            "ret_bps": 0.16009095242537105,
+            "n_folds": 7
+          }
+        ],
+        "q_escolhido": 0.6
+      },
+      "teste": {
+        "n_folds_validos": 7,
+        "dif_media_bps": 0.675800227135692,
+        "ret_filt_medio_bps": -6.970025833381008,
+        "pares": [
+          {
+            "fold_id": 12,
+            "ret_ctrl": -5.802436597896773,
+            "ret_filt": -5.341466142702104,
+            "dif": 0.46097045519466917,
+            "n_filt": 158
+          },
+          {
+            "fold_id": 13,
+            "ret_ctrl": -5.4674236678054315,
+            "ret_filt": -4.826101374551494,
+            "dif": 0.6413222932539373,
+            "n_filt": 478
+          },
+          {
+            "fold_id": 14,
+            "ret_ctrl": -7.540100949911123,
+            "ret_filt": -7.733964797185042,
+            "dif": -0.19386384727391892,
+            "n_filt": 380
+          },
+          {
+            "fold_id": 15,
+            "ret_ctrl": -10.618823686914816,
+            "ret_filt": -6.428997946949644,
+            "dif": 4.189825739965172,
+            "n_filt": 87
+          },
+          {
+            "fold_id": 16,
+            "ret_ctrl": -8.843512372083712,
+            "ret_filt": -11.647438195158404,
+            "dif": -2.8039258230746924,
+            "n_filt": 194
+          },
+          {
+            "fold_id": 17,
+            "ret_ctrl": -4.972573343289876,
+            "ret_filt": -2.5194179291116967,
+            "dif": 2.4531554141781795,
+            "n_filt": 298
+          },
+          {
+            "fold_id": 18,
+            "ret_ctrl": -10.275911805715168,
+            "ret_filt": -10.29279444800867,
+            "dif": -0.01688264229350267,
+            "n_filt": 157
+          }
+        ]
+      }
+    },
+    {
+      "symbol": "SOLUSDT",
+      "resolution_id": "R2",
+      "derivacao": {
+        "curva": [
+          {
+            "q": 0.0,
+            "ret_bps": -12.041073370643886,
+            "n_folds": 5
+          },
+          {
+            "q": 0.3,
+            "ret_bps": -21.191885036002656,
+            "n_folds": 5
+          },
+          {
+            "q": 0.4,
+            "ret_bps": -23.53225573807073,
+            "n_folds": 5
+          },
+          {
+            "q": 0.5,
+            "ret_bps": -15.914902097843285,
+            "n_folds": 5
+          },
+          {
+            "q": 0.6,
+            "ret_bps": -15.931004308122422,
+            "n_folds": 5
+          },
+          {
+            "q": 0.7,
+            "ret_bps": -38.32780084475674,
+            "n_folds": 5
+          }
+        ],
+        "q_escolhido": null
+      },
+      "sem_regra": true
+    },
+    {
+      "symbol": "SOLUSDT",
+      "resolution_id": "R3",
+      "sem_regra": false,
+      "derivacao": {
+        "curva": [
+          {
+            "q": 0.0,
+            "ret_bps": 14.150288413539755,
+            "n_folds": 6
+          },
+          {
+            "q": 0.3,
+            "ret_bps": 23.767476795375305,
+            "n_folds": 6
+          },
+          {
+            "q": 0.4,
+            "ret_bps": 38.036516077586896,
+            "n_folds": 6
+          },
+          {
+            "q": 0.5,
+            "ret_bps": 41.65348841843899,
+            "n_folds": 6
+          },
+          {
+            "q": 0.6,
+            "ret_bps": 56.30556103310993,
+            "n_folds": 6
+          },
+          {
+            "q": 0.7,
+            "ret_bps": 56.40167640905431,
+            "n_folds": 6
+          }
+        ],
+        "q_escolhido": 0.3
+      },
+      "teste": {
+        "n_folds_validos": 0,
+        "dif_media_bps": null,
+        "ret_filt_medio_bps": null,
+        "pares": []
+      }
+    },
+    {
+      "symbol": "XRPUSDT",
+      "resolution_id": "R2",
+      "sem_regra": false,
+      "derivacao": {
+        "curva": [
+          {
+            "q": 0.0,
+            "ret_bps": 7.8371044143760145,
+            "n_folds": 6
+          },
+          {
+            "q": 0.3,
+            "ret_bps": 12.527697300183192,
+            "n_folds": 6
+          },
+          {
+            "q": 0.4,
+            "ret_bps": 14.236683352335325,
+            "n_folds": 6
+          },
+          {
+            "q": 0.5,
+            "ret_bps": 16.73209388147913,
+            "n_folds": 6
+          },
+          {
+            "q": 0.6,
+            "ret_bps": 20.055166078796255,
+            "n_folds": 6
+          },
+          {
+            "q": 0.7,
+            "ret_bps": 25.489918767683964,
+            "n_folds": 6
+          }
+        ],
+        "q_escolhido": 0.3
+      },
+      "teste": {
+        "n_folds_validos": 6,
+        "dif_media_bps": 3.227932135720851,
+        "ret_filt_medio_bps": 5.055479810349757,
+        "pares": [
+          {
+            "fold_id": 6,
+            "ret_ctrl": -1.411306969923516,
+            "ret_filt": -2.368046169092136,
+            "dif": -0.95673919916862,
+            "n_filt": 186
+          },
+          {
+            "fold_id": 7,
+            "ret_ctrl": -8.369435556096269,
+            "ret_filt": -9.305130884936295,
+            "dif": -0.9356953288400263,
+            "n_filt": 210
+          },
+          {
+            "fold_id": 8,
+            "ret_ctrl": 47.09060489119361,
+            "ret_filt": 70.20632797222979,
+            "dif": 23.11572308103618,
+            "n_filt": 77
+          },
+          {
+            "fold_id": 9,
+            "ret_ctrl": -14.449769466800637,
+            "ret_filt": -15.127507001572493,
+            "dif": -0.6777375347718557,
+            "n_filt": 82
+          },
+          {
+            "fold_id": 10,
+            "ret_ctrl": -4.9490762443223,
+            "ret_filt": -5.646389246066434,
+            "dif": -0.697313001744134,
+            "n_filt": 455
+          },
+          {
+            "fold_id": 11,
+            "ret_ctrl": -6.945730606277445,
+            "ret_filt": -7.426375808463884,
+            "dif": -0.48064520218643825,
+            "n_filt": 252
+          }
+        ]
+      }
+    },
+    {
+      "symbol": "XRPUSDT",
+      "resolution_id": "R3",
+      "sem_regra": false,
+      "derivacao": {
+        "curva": [
+          {
+            "q": 0.0,
+            "ret_bps": -0.29486099602508914,
+            "n_folds": 6
+          },
+          {
+            "q": 0.3,
+            "ret_bps": -1.7072194469765103,
+            "n_folds": 6
+          },
+          {
+            "q": 0.4,
+            "ret_bps": 1.5275583081085065,
+            "n_folds": 6
+          },
+          {
+            "q": 0.5,
+            "ret_bps": 3.671883188423397,
+            "n_folds": 6
+          },
+          {
+            "q": 0.6,
+            "ret_bps": 6.758193008314522,
+            "n_folds": 6
+          },
+          {
+            "q": 0.7,
+            "ret_bps": 30.177700858167373,
+            "n_folds": 6
+          }
+        ],
+        "q_escolhido": 0.4
+      },
+      "teste": {
+        "n_folds_validos": 3,
+        "dif_media_bps": 18.026232412827458,
+        "ret_filt_medio_bps": 50.15064756698473,
+        "pares": [
+          {
+            "fold_id": 8,
+            "ret_ctrl": 74.61412917528601,
+            "ret_filt": 125.32616449094216,
+            "dif": 50.71203531565615,
+            "n_filt": 78
+          },
+          {
+            "fold_id": 9,
+            "ret_ctrl": 24.657963627812226,
+            "ret_filt": 41.08960451686506,
+            "dif": 16.431640889052833,
+            "n_filt": 54
+          },
+          {
+            "fold_id": 10,
+            "ret_ctrl": -2.8988473406264172,
+            "ret_filt": -15.963826306853026,
+            "dif": -13.064978966226608,
+            "n_filt": 36
+          }
+        ]
+      }
+    }
+  ]
+}

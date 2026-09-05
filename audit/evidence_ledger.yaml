@@ -4854,3 +4854,39 @@ entries:
     = 16,3%. O que parecia divergencia de 2,25x era populacao diferente.
     E daqui que um sl_atr_mult derivado de dado sairia -- hoje ele e
     classe A e nunca foi derivado.
+
+- id_curto: filtro-atr-alto-piora-solusdt-r2-2026-09-05
+  data: "2026-09-05"
+  fase: >-
+    Teste PRE-REGISTRADO AG-463 (2a tentativa), derivacao do quantil na
+    metade ANTIGA dos folds do walk-forward ancorado. Esta linha registra
+    o ACHADO COLATERAL, nao o veredito -- o veredito foi SEM_PODER.
+  feature_ou_filtro: >-
+    filtro por quantil de atr_at_t0 recalculado dentro de cada fold,
+    operando so os trades acima do quantil q
+  symbol: "SOLUSDT"
+  tf: "R2"
+  lado: "long e short agregados (side_hat != 0)"
+  janela: "metade ANTIGA dos folds do walk-forward (~5 folds)"
+  regime: "todos"
+  metrica_tipo: >-
+    ret_net medio dos trades selecionados, em bps, por valor de q da
+    grade declarada a priori. Direcao da curva importa mais que o nivel:
+    a hipotese do AG-461 previa que ret_net SOBE com q.
+  metrica_valor: >-
+    q=0,0: -12,04 | q=0,3: -21,19 | q=0,4: -23,53 | q=0,5: -15,92 |
+    q=0,6: -15,93 | q=0,7: -38,33 (bps). Nenhum q positivo -- combo
+    entrou como SEM_REGRA. A curva PIORA com q ao longo de toda a grade.
+  n: "5 folds da metade antiga; trades por fold na casa das centenas"
+  fonte_arquivo: "experiments/ag463_regra_atr_quantil.json"
+  fonte_secao: "AG-463"
+  status: vermelho
+  nota: >-
+    Evidencia CONTRARIA a hipotese, nao ausencia de evidencia: em 1 dos 5
+    combos o filtro de ATR alto mede o SINAL OPOSTO ao previsto, e mede
+    direcionalmente ao longo da grade inteira, nao num ponto isolado.
+    NAO generaliza para os outros 4 combos e NAO refuta a hipotese
+    global -- o teste que responderia isso ficou SEM_PODER (16 folds
+    validos contra piso de 30). O que esta linha trava e que a hipotese
+    do AG-461 nao e universal entre combos, o que ja restringe qualquer
+    regra de regime construida sobre ela.
