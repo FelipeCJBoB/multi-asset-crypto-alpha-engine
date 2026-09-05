@@ -29937,3 +29937,80 @@ entries:
       condicionar por regime de volatilidade -- pendente de teste
       pre-registrado.
 
+  - id: AG-462
+    date: "2026-09-05"
+    file: "audit/pre_registro/ag462_regra_atr_critico.yaml (registro, commit 75ecef9 -- ANTES); scripts/measure_ag462_regra_atr_preregistrada.py; experiments/ag462_regra_atr_preregistrada.json"
+    related_file: "AG-461 (o achado post-hoc que este teste existia pra validar); AG-449; AG-439 (breakeven)"
+    numeracao: "AG-462."
+    found_by: >-
+      Teste PRE-REGISTRADO desenhado por mim e commitado SOZINHO antes de
+      qualquer numero existir (`git log`: 75ecef9 precede o resultado). O
+      Manager autorizou continuar; o desenho e o criterio foram travados
+      sem consulta porque a proposta ja estava na mesa e o valor do
+      pre-registro depende de ele existir ANTES.
+    gap: >
+      O AG-461 mediu que o terco de maior ATR entrega +14,17 bps com 4 de 5
+      combos positivos. Isso NAO era evidencia -- o balde foi escolhido
+      depois de ver o resultado. Este AG testa a mesma hipotese sob
+      separacao temporal: limiar derivado SO na metade antiga dos folds,
+      criterio avaliado SO na metade recente.
+    severity: >-
+      alta -- decide se resta alguma alavanca conhecida no AG-449.
+    layer: "models/analysis -- diagnostico, nada de producao alterado"
+    consequence: >
+      VEREDITO: **SEM PODER**. 3 de 5 combos ficaram INDETERMINADOS (menos
+      de 200 trades filtrados na metade recente), e o registro travava que
+      com 3 ou mais indeterminados nenhuma conclusao e tirada.
+        combo         limiar  n ctrl  ret ctrl  n filt  ret filt  indet
+        BTCUSDT/R2     0,005    4378    -6,92        3    +16,69   SIM
+        SOLUSDT/R2     0,004     463    -4,71      351     -3,32   nao
+        SOLUSDT/R3     0,005      84   -21,09       78    -23,43   SIM
+        XRPUSDT/R2     0,004    1803    -2,84      295    +15,60   nao
+        XRPUSDT/R3     0,012     299   +40,21       53   +189,54   SIM
+      O PRE-REGISTRO FEZ O TRABALHO QUE EXISTIA PRA FAZER, e este e o
+      registro mais importante deste AG: sem o criterio c3, a leitura
+      natural desta tabela seria "4 de 5 superam o controle, 3 de 5 com
+      ret_net filtrado positivo, +189,54 bps em XRPUSDT/R3 -- a regra
+      funciona". Os numeros que sustentariam essa leitura tem n=3, n=53 e
+      n=78 trades. Eu teria declarado sucesso sobre ruido pela 4a vez nesta
+      sessao, e desta vez o criterio barrou ANTES de eu ver os numeros.
+    resolved_by_commit: null
+    resolution: >-
+      Nenhuma acao corretiva: o teste nao falhou, ele nao teve poder. A
+      diferenca importa -- FRACASSO significaria "a alavanca nao existe";
+      SEM PODER significa "este desenho nao consegue responder".
+      CAUSA MEDIDA do baixo poder, e ela e um achado proprio: o ATR CAIU
+      em 5 de 5 combos entre a metade antiga e a recente.
+        combo        atr antigo  atr recente  razao   breakeven ant -> rec
+        BTCUSDT/R2      0,00433      0,00301  0,694    55,89% -> 58,46%
+        SOLUSDT/R2      0,00664      0,00532  0,802    53,86% -> 54,81%
+        SOLUSDT/R3      0,00945      0,00761  0,805    52,72% -> 53,37%
+        XRPUSDT/R2      0,00475      0,00454  0,956    55,38% -> 55,62%
+        XRPUSDT/R3      0,00696      0,00648  0,932    53,69% -> 53,96%
+        razao media 0,838 | 5 de 5 abaixo de 1,0
+      Um limiar derivado no regime ANTIGO corta quase tudo no regime
+      RECENTE -- por isso 3 combos ficaram sem amostra. O desenho tem um
+      defeito real que so aparece rodando: o limiar foi fixado em valor
+      ABSOLUTO de ATR, e o ATR nao e estacionario.
+      CONSEQUENCIA MAIS AMPLA, que vale mais que o teste: o breakeven SUBIU
+      em 5 de 5 combos entre as duas metades (ate +2,57pp em BTCUSDT/R2),
+      porque o custo e fixo em bps e a barreira encolheu junto com a
+      volatilidade. Parte da deterioracao que este projeto vinha atribuindo
+      ao modelo e, na verdade, o mercado ficando mais barato de operar em
+      termos de movimento -- e portanto mais caro em termos relativos.
+      Isso nao e desculpa: e uma variavel que nenhuma medicao anterior
+      tinha isolado, e ela e observavel em tempo real.
+    status: >
+      ABERTO. O proximo desenho tem que usar limiar RELATIVO (quantil de
+      ATR dentro da janela de teste) em vez de absoluto -- so assim a regra
+      seleciona a mesma FRACAO de barras em qualquer regime, e a amostra
+      nao desaparece quando a volatilidade cai. Isso e uma mudanca de
+      desenho, nao um ajuste de parametro depois de ver o resultado: o
+      motivo (ATR nao-estacionario, 5 de 5) foi MEDIDO, nao inferido do
+      fracasso.
+      NAO refaco o teste sem autorizacao do Manager: seria o 2o teste sobre
+      a mesma hipotese, e rodar variantes ate uma passar e precisamente o
+      que o pre-registro existe pra impedir. Se o Manager autorizar, o novo
+      registro tem que declarar que e a 2a tentativa e por que o desenho
+      mudou.
+

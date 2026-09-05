@@ -1,0 +1,339 @@
+{
+  "task": "AG-462 -- teste PRE-REGISTRADO da regra de regime de ATR",
+  "pre_registro": "audit/pre_registro/ag462_regra_atr_critico.yaml",
+  "veredito": "SEM_PODER",
+  "criterios": {
+    "c1_edge_positivo_t_maior_2": false,
+    "c2_supera_controle_4_de_5": false,
+    "c3_amostra_suficiente": false,
+    "t_stat_sobre_combos": NaN,
+    "n_indeterminados": 3
+  },
+  "por_combo": [
+    {
+      "symbol": "BTCUSDT",
+      "resolution_id": "R2",
+      "n_folds_total": 14,
+      "n_trades_total": 6481,
+      "derivacao": {
+        "n_trades": 2103,
+        "curva": [
+          {
+            "limiar": 0.0,
+            "ret_bps": -7.407548839858737,
+            "n": 2103
+          },
+          {
+            "limiar": 0.004,
+            "ret_bps": -7.273074085874478,
+            "n": 84
+          },
+          {
+            "limiar": 0.005,
+            "ret_bps": 16.508723670954396,
+            "n": 26
+          },
+          {
+            "limiar": 0.006,
+            "ret_bps": 13.218283050361226,
+            "n": 17
+          },
+          {
+            "limiar": 0.007,
+            "ret_bps": -29.270015704784214,
+            "n": 11
+          },
+          {
+            "limiar": 0.008,
+            "ret_bps": -76.93565560015827,
+            "n": 4
+          },
+          {
+            "limiar": 0.009,
+            "ret_bps": -142.93942543407707,
+            "n": 3
+          },
+          {
+            "limiar": 0.01,
+            "ret_bps": -142.93942543407707,
+            "n": 3
+          },
+          {
+            "limiar": 0.012,
+            "ret_bps": NaN,
+            "n": 0
+          }
+        ],
+        "limiar_escolhido": 0.005
+      },
+      "teste": {
+        "n_trades_controle": 4378,
+        "ret_bps_controle": -6.923416017688818,
+        "n_trades_filtrado": 3,
+        "ret_bps_filtrado": 16.691092453332985,
+        "supera_controle": true,
+        "indeterminado_c3": true
+      }
+    },
+    {
+      "symbol": "SOLUSDT",
+      "resolution_id": "R2",
+      "n_folds_total": 11,
+      "n_trades_total": 1118,
+      "derivacao": {
+        "n_trades": 655,
+        "curva": [
+          {
+            "limiar": 0.0,
+            "ret_bps": 3.0885390548923897,
+            "n": 655
+          },
+          {
+            "limiar": 0.004,
+            "ret_bps": 3.549865574015301,
+            "n": 624
+          },
+          {
+            "limiar": 0.005,
+            "ret_bps": 6.520734934486805,
+            "n": 506
+          },
+          {
+            "limiar": 0.006,
+            "ret_bps": 6.7228121440962205,
+            "n": 360
+          },
+          {
+            "limiar": 0.007,
+            "ret_bps": 2.8326530202745976,
+            "n": 292
+          },
+          {
+            "limiar": 0.008,
+            "ret_bps": 7.217146352435512,
+            "n": 216
+          },
+          {
+            "limiar": 0.009,
+            "ret_bps": 8.959440742987702,
+            "n": 164
+          },
+          {
+            "limiar": 0.01,
+            "ret_bps": 18.195232541246913,
+            "n": 108
+          },
+          {
+            "limiar": 0.012,
+            "ret_bps": 11.033273696055366,
+            "n": 41
+          }
+        ],
+        "limiar_escolhido": 0.004
+      },
+      "teste": {
+        "n_trades_controle": 463,
+        "ret_bps_controle": -4.706943314521926,
+        "n_trades_filtrado": 351,
+        "ret_bps_filtrado": -3.3151832705668554,
+        "supera_controle": true,
+        "indeterminado_c3": false
+      }
+    },
+    {
+      "symbol": "SOLUSDT",
+      "resolution_id": "R3",
+      "n_folds_total": 12,
+      "n_trades_total": 416,
+      "derivacao": {
+        "n_trades": 332,
+        "curva": [
+          {
+            "limiar": 0.0,
+            "ret_bps": -0.19505119177032515,
+            "n": 332
+          },
+          {
+            "limiar": 0.004,
+            "ret_bps": -0.19505119177032515,
+            "n": 332
+          },
+          {
+            "limiar": 0.005,
+            "ret_bps": 0.09842039160150327,
+            "n": 329
+          },
+          {
+            "limiar": 0.006,
+            "ret_bps": 0.4463088458663798,
+            "n": 315
+          },
+          {
+            "limiar": 0.007,
+            "ret_bps": 2.3043090387038214,
+            "n": 302
+          },
+          {
+            "limiar": 0.008,
+            "ret_bps": 3.1956777328160313,
+            "n": 289
+          },
+          {
+            "limiar": 0.009,
+            "ret_bps": 6.247657340567186,
+            "n": 270
+          },
+          {
+            "limiar": 0.01,
+            "ret_bps": 1.841478781060719,
+            "n": 240
+          },
+          {
+            "limiar": 0.012,
+            "ret_bps": 9.003893785716935,
+            "n": 163
+          }
+        ],
+        "limiar_escolhido": 0.005
+      },
+      "teste": {
+        "n_trades_controle": 84,
+        "ret_bps_controle": -21.086294277226497,
+        "n_trades_filtrado": 78,
+        "ret_bps_filtrado": -23.433456892547774,
+        "supera_controle": false,
+        "indeterminado_c3": true
+      }
+    },
+    {
+      "symbol": "XRPUSDT",
+      "resolution_id": "R2",
+      "n_folds_total": 12,
+      "n_trades_total": 3369,
+      "derivacao": {
+        "n_trades": 1566,
+        "curva": [
+          {
+            "limiar": 0.0,
+            "ret_bps": 5.964461290901424,
+            "n": 1566
+          },
+          {
+            "limiar": 0.004,
+            "ret_bps": 14.715997325499254,
+            "n": 898
+          },
+          {
+            "limiar": 0.005,
+            "ret_bps": 16.9306659303537,
+            "n": 780
+          },
+          {
+            "limiar": 0.006,
+            "ret_bps": 18.74389349953271,
+            "n": 713
+          },
+          {
+            "limiar": 0.007,
+            "ret_bps": 18.722074472229032,
+            "n": 641
+          },
+          {
+            "limiar": 0.008,
+            "ret_bps": 23.088034260926605,
+            "n": 565
+          },
+          {
+            "limiar": 0.009,
+            "ret_bps": 28.89457812997323,
+            "n": 462
+          },
+          {
+            "limiar": 0.01,
+            "ret_bps": 32.99403682813708,
+            "n": 360
+          },
+          {
+            "limiar": 0.012,
+            "ret_bps": 41.61120388645323,
+            "n": 196
+          }
+        ],
+        "limiar_escolhido": 0.004
+      },
+      "teste": {
+        "n_trades_controle": 1803,
+        "ret_bps_controle": -2.836526559890343,
+        "n_trades_filtrado": 295,
+        "ret_bps_filtrado": 15.59568394191566,
+        "supera_controle": true,
+        "indeterminado_c3": false
+      }
+    },
+    {
+      "symbol": "XRPUSDT",
+      "resolution_id": "R3",
+      "n_folds_total": 12,
+      "n_trades_total": 1245,
+      "derivacao": {
+        "n_trades": 946,
+        "curva": [
+          {
+            "limiar": 0.0,
+            "ret_bps": -2.112171198842819,
+            "n": 946
+          },
+          {
+            "limiar": 0.004,
+            "ret_bps": -2.1711365713983426,
+            "n": 920
+          },
+          {
+            "limiar": 0.005,
+            "ret_bps": -1.8090740317721512,
+            "n": 851
+          },
+          {
+            "limiar": 0.006,
+            "ret_bps": -1.7988144430022823,
+            "n": 783
+          },
+          {
+            "limiar": 0.007,
+            "ret_bps": -1.7251730026738448,
+            "n": 726
+          },
+          {
+            "limiar": 0.008,
+            "ret_bps": -1.8566286362263569,
+            "n": 652
+          },
+          {
+            "limiar": 0.009,
+            "ret_bps": -3.098222334183229,
+            "n": 610
+          },
+          {
+            "limiar": 0.01,
+            "ret_bps": -0.5669965316756288,
+            "n": 505
+          },
+          {
+            "limiar": 0.012,
+            "ret_bps": 11.963607459876378,
+            "n": 393
+          }
+        ],
+        "limiar_escolhido": 0.012
+      },
+      "teste": {
+        "n_trades_controle": 299,
+        "ret_bps_controle": 40.21379040125544,
+        "n_trades_filtrado": 53,
+        "ret_bps_filtrado": 189.53972423358377,
+        "supera_controle": true,
+        "indeterminado_c3": true
+      }
+    }
+  ]
+}
