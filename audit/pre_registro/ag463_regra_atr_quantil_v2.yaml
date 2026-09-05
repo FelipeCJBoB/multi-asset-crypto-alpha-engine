@@ -1,0 +1,171 @@
+schema_version: 1
+id: AG-463
+titulo: "Regra de regime de ATR por QUANTIL -- teste pre-registrado, 2a TENTATIVA"
+registrado_em: "2026-09-05"
+estado: REGISTRADO_ANTES_DE_RODAR
+
+# ============================================================================
+# DECLARACAO OBRIGATORIA -- ESTA E A SEGUNDA TENTATIVA
+# ============================================================================
+segunda_tentativa:
+  tentativa_anterior: AG-462
+  veredito_anterior: SEM_PODER
+  autorizacao: "Manager, 2026-09-05, explicita ('Autorizado')"
+  por_que_isto_precisa_estar_escrito: >
+    Rodar variantes de desenho ate uma passar e exatamente o vicio que o
+    pre-registro existe pra impedir. Se a 2a tentativa nao declarar que e a
+    2a, o registro vira teatro. Quem ler o resultado deste AG tem que
+    conseguir contar quantas vezes a mesma hipotese foi testada, sem
+    precisar procurar.
+  o_que_mudou_e_por_que:
+    - >
+      LIMIAR ABSOLUTO -> QUANTIL. No AG-462 o limiar era um valor fixo de
+      ATR derivado no periodo antigo. Rodando, mediu-se que o ATR CAIU em 5
+      de 5 combos entre as metades (razao media 0,838; BTCUSDT/R2 0,694),
+      entao um limiar absoluto do passado corta quase tudo no presente: 3
+      de 5 combos ficaram com 3, 53 e 78 trades. O quantil seleciona uma
+      FRACAO da janela, e a fracao nao depende do nivel de volatilidade.
+      O motivo dessa troca foi MEDIDO (ATR nao-estacionario, 5/5), nao
+      inferido do fracasso -- e a distincao que separa correcao de desenho
+      de ajuste de parametro apos ver o resultado.
+    - >
+      UNIDADE DE ANALISE: COMBO -> (COMBO, FOLD) PAREADO. O AG-462 testava
+      5 pontos. Com 5 pontos, qualquer criterio ou e frouxo demais pra
+      significar algo ou exigente demais pra ser atingivel. A unidade nova
+      e o fold da metade recente, e o teste e PAREADO (mesmo fold, com e
+      sem filtro) -- o pareamento elimina a variacao entre folds, que e a
+      maior fonte de ruido ja medida neste projeto.
+      Isto NAO e afrouxar o criterio: e trocar um teste sem poder por um
+      com poder, mantendo os limiares de significancia iguais ou mais
+      exigentes (ver `criterio_de_sucesso`, que ganhou um 4o criterio).
+  o_que_NAO_mudou: >
+    A hipotese e a mesma, a particao temporal e a mesma (metade antiga
+    deriva, metade recente avalia), o controle explicito continua, e os
+    limiares estatisticos NAO foram afrouxados -- t > 2,0 segue sendo
+    t > 2,0.
+
+# ============================================================================
+# HIPOTESE -- identica a do AG-462
+# ============================================================================
+hipotese: >
+  H1: condicionar a operacao ao regime de volatilidade ALTA DENTRO DA
+  JANELA produz edge liquido positivo out-of-time, porque o breakeven
+  exigido pelo custo cai com o ATR enquanto a win rate entregue nao cai.
+  H0: nao ha diferenca -- filtrar por quantil de ATR nao melhora o edge
+  em relacao a nao filtrar, e o edge filtrado nao se distingue de zero.
+
+mecanismo_declarado: >
+  Medido no AG-461/AG-462:
+    win rate INCONDICIONAL = 50,78% em 5 combos (amplitude 0,04pp)
+    breakeven(atr) cai de 60,1% (atr 0,0025) para 53,1% (atr 0,0084)
+    o breakeven SUBIU em 5/5 combos entre as metades porque o ATR caiu
+  A win rate incondicional e praticamente constante; o breakeven e
+  hiperbolico no ATR. Dentro de qualquer janela, as barras de ATR mais
+  alto sao as que exigem menos do modelo.
+
+# ============================================================================
+# DESENHO
+# ============================================================================
+desenho:
+  particao: >
+    Identica ao AG-462: folds de cada combo ordenados cronologicamente e
+    partidos ao meio. Metade ANTIGA deriva; metade RECENTE avalia. Nada da
+    metade recente e olhado antes do quantil estar fixado.
+  regra: >
+    Dentro de CADA fold da metade recente, calcula-se o quantil `q` do
+    `atr_at_t0` sobre os trades daquele fold, e opera-se apenas os trades
+    acima dele. O quantil e recalculado por fold DE PROPOSITO: e o que
+    torna a regra implementavel ao vivo sem conhecer o futuro, e o que
+    impede que uma mudanca de regime esvazie a amostra.
+  derivacao_do_quantil: >
+    Na metade ANTIGA, para cada `q` da grade, calcula-se o ret_net medio
+    dos trades acima do quantil `q` (quantil por fold, mesma mecanica).
+    Escolhe-se o MENOR `q` cujo ret_net medio seja positivo. Menor, nao
+    melhor -- mesma razao do AG-462: o maximo de uma curva ruidosa nao e
+    uma escolha, e uma amostragem do ruido.
+    Se NENHUM `q` da grade der positivo na metade antiga, o combo entra
+    como SEM_REGRA e nao contribui para o veredito (nem a favor nem
+    contra) -- isso e declarado aqui pra nao virar decisao na hora.
+  grade_de_quantil_declarada_a_priori:
+    - 0.0    # sem filtro -- CONTROLE
+    - 0.3
+    - 0.4
+    - 0.5
+    - 0.6
+    - 0.7
+  por_que_esta_grade: >
+    Teto em 0,7 de proposito: acima disso restam menos de 30% das barras e
+    o problema de amostra do AG-462 voltaria por outro caminho. Passo de
+    0,1 -- mais fino seria falsa precisao sobre uma curva que ja se sabe
+    ruidosa.
+
+# ============================================================================
+# CRITERIO DE SUCESSO -- 4 criterios conjuntivos, com definicao operacional
+# ============================================================================
+criterio_de_sucesso:
+  nota: >
+    Conjuntivos (E, nao OU). Limiares de significancia IDENTICOS aos do
+    AG-462; o que mudou foi a unidade que da poder ao teste, nao a barra.
+  c1_ganho_pareado: >
+    A diferenca `ret_net(filtrado) - ret_net(controle)`, calculada DENTRO
+    de cada fold da metade recente e depois agregada sobre os folds, e
+    POSITIVA com t > 2,0. Pareado: cada fold e sua propria referencia, o
+    que remove a variacao entre folds -- a maior fonte de ruido ja medida
+    neste projeto (dispersao de 38,7 bps entre celulas no AG-459).
+  c2_edge_absoluto_positivo: >
+    O `ret_net` medio dos trades filtrados, agregado sobre os folds da
+    metade recente, e POSITIVO com t > 2,0. Sem isto, "melhor que o
+    controle" poderia significar "menos negativo", que nao paga nada.
+  c3_amostra_suficiente: >
+    Cada fold precisa de >= 20 trades filtrados pra entrar no teste
+    (abaixo disso o fold e descartado, nao contado como zero). E o teste
+    exige >= 30 folds validos no total. Se sobrarem menos de 30, o
+    veredito e SEM_PODER e nenhuma conclusao e tirada -- mesma clausula
+    que salvou o AG-462 de um falso positivo.
+  c4_nao_e_um_combo_so: >
+    A diferenca media do c1 tem que ser POSITIVA em pelo menos 3 dos 5
+    combos, contados individualmente. Criterio NOVO em relacao ao AG-462:
+    com folds como unidade, um unico combo com muitos folds poderia
+    carregar o resultado sozinho -- e foi exatamente assim que o
+    `XRPUSDT/R3` com n=53 quase produziu um falso positivo na 1a
+    tentativa. Este criterio existe pra fechar essa porta.
+  veredito: >
+    SUCESSO exige c1 E c2 E c3 E c4. Qualquer outro resultado com c3
+    satisfeito e FRACASSO, e FRACASSO aqui significa que a ultima alavanca
+    conhecida do AG-449 fechou -- nao que cabe uma 3a tentativa. Se c3
+    falhar, e SEM_PODER de novo, e ai o problema e de dado disponivel, nao
+    de hipotese.
+
+# ============================================================================
+# LIMITACOES -- declaradas antes
+# ============================================================================
+limitacoes_declaradas:
+  - >
+    Folds do walk-forward ancorado NAO sao independentes: compartilham
+    treino. O AG-392 item 1 mediu a autocorrelacao lag-1 do AUC entre folds
+    em 4 de 5 series NEGATIVA (media -0,216), o que torna o teste
+    CONSERVADOR e nao anti-conservador -- mas isso foi medido sobre AUC,
+    nao sobre `ret_net`, e a extrapolacao nao esta verificada.
+  - >
+    Filtrar por quantil dentro do fold usa o ATR dos trades DAQUELE fold,
+    o que ao vivo exigiria a distribuicao da janela corrente. Isso e
+    implementavel (janela rolante), mas o que se mede aqui e a versao
+    idealizada -- a versao ao vivo perde alguma coisa e este teste NAO
+    mede quanto.
+  - >
+    Um resultado positivo aqui e evidencia de que a REGRA ajuda, nao de
+    que o motor e viavel. O gap de win rate medido no AG-461 (+1,25pp
+    entregue contra +2,3 a +6,4pp exigido) nao e fechado por selecao de
+    regime sozinha em nenhum cenario ja medido.
+  - >
+    `adverse_selection_bps` segue ASSUMED classe A (gate de build vermelho
+    por decisao, AG-442). O sinal do veredito nao depende dele
+    (invariancia medida no AG-445); a magnitude depende.
+  - >
+    Este teste NAO mede estabilidade do quantil escolhido. Um `q` que muda
+    a cada rodada nao e regra, e parametro livre. Fica fora do escopo.
+
+execucao:
+  script: scripts/measure_ag463_regra_atr_quantil.py
+  escreve: experiments/ag463_regra_atr_quantil.json
+  toca_producao: false
