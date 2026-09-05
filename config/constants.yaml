@@ -2992,14 +2992,26 @@ alpha_prune_max_gate_fpr:
 
 alpha_production_hyperparam_override:
   value:
-    SOLUSDT_R3: "20260903T192150Z"
-    XRPUSDT_R2: "20260903T192150Z"
-    XRPUSDT_R3: "20260903T192150Z"
-    BTCUSDT_R2: "20260903T192150Z"
-    SOLUSDT_R2: "20260903T192150Z"
+    SOLUSDT_R3: "20260905T024617Z"
+    XRPUSDT_R2: "20260905T024617Z"
+    XRPUSDT_R3: "20260905T024617Z"
+    BTCUSDT_R2: "20260905T024617Z"
+    SOLUSDT_R2: "20260905T024617Z"
   provenance: ASSUMED
   source: >
-    **[ATUALIZADO 2026-09-03, RODADA 2]** Decisão explícita do Manager
+    **[ATUALIZADO 2026-09-05, POS-FASE-A]** Manager autorizou "Optuna sobre
+    os labels novos" (2026-09-04). Campanha
+    `--control --tag pos_fase_a_ag451`, 10 studies x 150 trials sobre os
+    labels reconstruidos do `AG-451`/`AG-452`. O `--tag` era OBRIGATORIO: o
+    done-tracking do script rastreia so symbol/resolution_id/variant, nao
+    `config_hash` -- sem ele a campanha pularia celulas achando que ja
+    tinham rodado sobre os labels ANTIGOS.
+    `best_value` (objetivo do Optuna, NAO o gate) contra a campanha
+    anterior: 5 de 10 celulas melhoram, media -0,7065, e o agregado e
+    dominado por BTCUSDT/R2 desabando (-3,22 em C0 e -3,48 em C1). A
+    decisao real e o walk-forward, medido separadamente -- este campo so
+    aponta pro JSON vencedor.
+    **[HISTORICO -- ATUALIZADO 2026-09-03, RODADA 2]** Decisão explícita do Manager
     ("Full Optuna re-run ... Autorizado") — promove a campanha de
     controle (`--tag rate010_20260903`, seed corrigido `AG-399`, SEM
     corte de data, 1 seed × 150 trials) rodada sob `target_signal_

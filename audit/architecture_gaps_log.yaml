@@ -29698,3 +29698,77 @@ entries:
       declarada: enquanto o `AG-077` nao fechar, o DSR opera sobre um piso
       congelado e sabe disso.
 
+  - id: AG-459
+    date: "2026-09-05"
+    file: "experiments/t0_cutoff_control_campaign_results_pos_fase_a_ag451.json; experiments/alpha_optuna_confirmation_*_20260905T024617Z.json (5 novos); config/constants.yaml::alpha_production_hyperparam_override; experiments/alpha_walk_forward_*.json (regerados)"
+    related_file: "AG-451/AG-452 (os labels sobre os quais a busca rodou); AG-453 (a rodada anterior, com hiperparametros da busca velha); AG-449; AG-422 (o --tag que este AG teve que usar)"
+    numeracao: "AG-459."
+    found_by: >-
+      Autorizacao explicita do Manager (2026-09-04): "Optuna sobre os labels
+      novos = autorizado". Eu tinha registrado no AG-453 o contra-argumento
+      de que a dispersao entre seeds excede o efeito procurado; o Manager
+      autorizou mesmo assim, e o resultado confirma o contra-argumento.
+    gap: >
+      Nao e defeito: e a medicao do que uma busca de hiperparametro
+      PROPRIA aos labels corrigidos entrega. A campanha anterior tinha sido
+      otimizada sobre o `ret_net` velho, entao o "0/20 depois" do AG-453
+      nao era o teto do que os labels novos permitem -- ressalva que eu
+      mesmo declarei la e que este AG fecha.
+    severity: >-
+      alta como informacao de decisao, nula como defeito. Fecha a ultima
+      saida que restava antes do AG-449.
+    layer: "models (hyperparams) / analysis (gates)"
+    consequence: >
+      CAMPANHA: 10 studies x 150 trials, `--control --tag pos_fase_a_ag451`.
+      O `--tag` era OBRIGATORIO e quase foi esquecido: o done-tracking do
+      script rastreia so symbol/resolution_id/variant, NAO `config_hash` --
+      sem ele a campanha pularia celulas achando que ja tinham rodado sobre
+      os labels ANTIGOS, e o resultado seria uma mistura silenciosa.
+      OBJETIVO DO OPTUNA (`best_value`, in-sample sobre CPCV -- NAO e o
+      gate): 5 de 10 celulas melhoram, media -0,7065, agregado dominado por
+      BTCUSDT/R2 desabando (-3,2150 em C0, -3,4825 em C1).
+      WALK-FORWARD (a decisao real), delta de edge_bps por celula:
+        media -2,11 | min -29,12 (XRPUSDT/R2/C0) | max +9,57 (XRPUSDT/R3/C1)
+        4 de 10 positivos
+      GATES: 0/20 ao p bruto e 0/20 sob BH -- IGUAL as duas rodadas
+      anteriores. O gate Model ao p BRUTO sobe de 3 pra 5 celulas
+      (XRPUSDT/R3/C1 passa nos DOIS lados, p=0,0102 e p=0,0134, com as
+      AUCs mais altas ja vistas: 0,5125 e 0,5150), mas nenhuma sobrevive ao
+      FDR e o gate Alpha reprova as 20.
+      MESMA ASSINATURA DE RUIDO de tudo nesta sessao: amplitude de 38,7 bps
+      entre a pior e a melhor celula, contra um efeito medio de -2,11.
+    resolved_by_commit: null
+    resolution: >-
+      Hiperparametros novos MANTIDOS em producao, e a razao NAO e
+      desempenho -- e higiene de proveniencia: os antigos foram otimizados
+      contra um alvo com defeito conhecido (TP resolvido no mark, AG-451),
+      os novos contra o alvo corrigido. A diferenca de desempenho nao se
+      distingue de ruido nos dois sentidos, entao ela nao pode decidir; o
+      que decide e qual alvo cada conjunto viu.
+      EXCECAO DECLARADA, nao escondida: BTCUSDT/R2 piora nos DOIS eixos ao
+      mesmo tempo -- objetivo in-sample desaba (-3,2 e -3,5) E edge de
+      walk-forward cai (-1,82 e -2,36). Dois sinais na mesma direcao pra
+      uma celula so. E a mesma celula que ja falha `control_13` e
+      `control_11` (AG-448). Nao reverti so ela porque promover por celula
+      escolhendo a melhor de cada mundo e exatamente selecao sobre ruido.
+      PASSO MANUAL QUE MORDEU: `promote_control_campaign_to_production`
+      escreve os JSONs de confirmacao mas NAO atualiza
+      `constants.yaml::alpha_production_hyperparam_override` -- so imprime
+      o `run_stamp` e espera edicao manual. E o passo que eu tinha marcado
+      no artefato do roadmap como "onde nasce o erro de rodar tudo e nada
+      mudar", e ele apareceu de verdade nesta rodada. Sem a edicao, o
+      walk-forward teria rodado com os hiperparametros VELHOS e eu teria
+      reportado "a busca nova nao muda nada" -- conclusao certa pelo motivo
+      errado. Verificado explicitamente (`load_production_override` devolve
+      o run_stamp novo) antes de rodar.
+    status: >
+      fechado. QUARTO caminho independente convergindo no AG-449: (i)
+      multi-seed 0/10, (ii) geometria com teto de fracao de 1 bps, (iii)
+      alvo corrigido 0/20, (iv) agora busca de hiperparametro PROPRIA ao
+      alvo corrigido, tambem 0/20.
+      A ressalva metodologica que o AG-453 deixou aberta ("o 0/20 nao e o
+      teto do que os labels novos permitem sob busca propria") esta
+      FECHADA: e o teto, e ele e 0/20. Nao restam saidas de calibragem,
+      geometria, alvo ou hiperparametro -- todas foram medidas e nenhuma
+      move o gate. O que resta e o vetor de features, que e o AG-449.
+

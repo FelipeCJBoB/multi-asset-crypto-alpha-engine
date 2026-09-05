@@ -1,0 +1,56 @@
+{
+  "symbol": "BTCUSDT",
+  "resolution_id": "R2",
+  "source_campaign": "t0_cutoff_control_campaign_results_pos_fase_a_ag451 -- seed corrigido (AG-399), SEM corte de data, 1 seed, 150 trials -- NAO e confirmacao multi-seed como o processo ADR-007 anterior. Ver o --tag no nome do arquivo (se houver) pro contexto exato desta campanha (vetor de features/mecanismo de tau/etc. vigentes no momento em que rodou -- consultar audit/architecture_gaps_log.yaml pela data).",
+  "run_stamp": "20260905T024617Z",
+  "camada1": {
+    "winner": {
+      "hyper": {
+        "max_depth": 3,
+        "n_estimators": 393,
+        "learning_rate": 0.018473928606142706,
+        "subsample": 0.8780654334129141,
+        "subsample_freq": 8,
+        "feature_fraction": 0.8937008433317666,
+        "lambda_l2": 22.737857943503734,
+        "min_child_samples": 53,
+        "num_leaves": 4,
+        "min_sum_hessian_in_leaf": 0.9074588247883378,
+        "max_bin": 156,
+        "ess_regularization_n_obs_independentes_alvo": 37.613308772218474,
+        "ess_regularization_fator_conservador": 0.35059408742975967,
+        "regularization_basis": "ess_derived",
+        "early_stopping_mode": "three_way",
+        "ic_magnitude_floor_k": 2.0
+      },
+      "best_value": -3.286674410625379
+    },
+    "n_trials": 150,
+    "study_name": "alpha_hyperparams_BTCUSDT_R2_camada1_cpu_165b003b"
+  },
+  "camada0": {
+    "winner": {
+      "hyper": {
+        "max_depth": 3,
+        "n_estimators": 190,
+        "learning_rate": 0.07585430838774919,
+        "subsample": 0.5005664039001052,
+        "subsample_freq": 9,
+        "feature_fraction": 0.7394993339507446,
+        "lambda_l2": 42.52950883582206,
+        "min_child_samples": 89,
+        "num_leaves": 60,
+        "min_sum_hessian_in_leaf": 0.248992594168396,
+        "max_bin": 492,
+        "ess_regularization_n_obs_independentes_alvo": 26.246791867124095,
+        "ess_regularization_fator_conservador": 0.7192571267424035,
+        "regularization_basis": "ess_derived",
+        "early_stopping_mode": "three_way",
+        "ic_magnitude_floor_k": 2.0
+      },
+      "best_value": -2.920917487141575
+    },
+    "n_trials": 150,
+    "study_name": "alpha_hyperparams_BTCUSDT_R2_camada0_cpu_286fa994"
+  }
+}
