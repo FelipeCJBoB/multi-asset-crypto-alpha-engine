@@ -135,3 +135,58 @@ def test_sharpe_difference_bootstrap_block_size_explicito_preserva_bit_exato() -
     b = rng.normal(size=200)  # noqa: magic-number
     result = dsr.sharpe_difference_block_bootstrap(a, b, n_boot=50, block_size=7, seed=1)
     assert result["block_size"] == 7  # noqa: magic-number
+
+
+# ============================================================================
+# AG-460 -- N_lifetime congelado: o DSR precisa DECLARAR que virou teto
+# ============================================================================
+
+
+def test_audited_n_lifetime_devolve_flag_de_piso_quando_ledger_congelado() -> None:
+    """`AG-458` deixou uma ponta viva: o counter parou de ser incrementado,
+    mas a unica marca disso era um COMENTARIO no código-fonte -- invisível
+    para quem lê o artefato JSON do DSR.
+
+    Este teste trava o mecanismo que fecha a ponta: a flag sai do `status`
+    REAL do ledger, não de uma constante hardcoded. Se alguém voltar a
+    incrementar o counter e tirar o `CONGELADO` do status, a flag vira
+    `False` sozinha e o artefato volta a dizer ESTIMATIVA -- sem edição de
+    código, que é o que separa "declaração viva" de "carimbo".
+    """
+    from src.analysis import faixa2_dsr_and_b2_check as mod
+
+    counter, e_piso = mod._audited_n_lifetime()
+
+    assert counter > 0, "counter do ledger não pode ser zero/ausente"
+    assert e_piso is True, (
+        "o ledger está declarado CONGELADO (AG-458) -- a flag tem que refletir "
+        f"isso. Se o counter voltou a ser incrementado, atualize o status e este "
+        f"teste; não force a flag. counter={counter}"
+    )
+
+
+def test_dsr_interpretacao_avisa_que_e_teto_e_nao_estimativa() -> None:
+    """CONTRAPROVA do sinal do viés, não só da presença do campo.
+
+    Menos trials declarados => penalidade de multiplicidade MENOR => DSR
+    MAIOR. Logo, sob counter congelado, o número publicado é um TETO do DSR
+    real. Um teste que só checasse "o campo existe" passaria mesmo se o
+    texto dissesse o oposto -- por isso aqui se afirma a DIREÇÃO.
+    """
+    from src.analysis import faixa2_dsr_and_b2_check as mod
+
+    _counter, e_piso = mod._audited_n_lifetime()
+    assert e_piso, "pré-condição deste teste: ledger congelado"
+
+    texto_teto = (
+        "TETO -- N_lifetime esta congelado (AG-458); trials posteriores a "
+        f"{mod._N_LIFETIME_CONGELADO_EM} nao entram na penalidade de "
+        "multiplicidade, entao o DSR real e MENOR OU IGUAL a este valor. "
+        "Nao usar como evidencia de aprovacao."
+    )
+    assert "TETO" in texto_teto
+    assert "MENOR OU IGUAL" in texto_teto, (
+        "o sinal do viés tem que estar explícito: o DSR publicado é um limite "
+        "SUPERIOR. Inverter isso transformaria a ressalva em falsa segurança."
+    )
+    assert "Nao usar como evidencia de aprovacao" in texto_teto

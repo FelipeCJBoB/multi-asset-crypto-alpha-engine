@@ -68,19 +68,34 @@ _BOOTSTRAP_N_REPS = 2000  # noqa: magic-number
 # docstring daquela função para a reconciliação completa.
 
 
-def _audited_n_lifetime() -> int:
-    # AG-458 (2026-09-04) -- este counter esta CONGELADO. `N_lifetime` foi
-    # descontinuado como controle por decisao do Manager e ninguem mais o
-    # incrementa. O valor lido e um PISO HISTORICO (10060 na reconciliacao
-    # do AG-456), nao uma contagem viva: todo trial rodado depois de
-    # 2026-09-04 esta FORA dele. Consequencia direta pro DSR: o haircut de
-    # multiplicidade que esta funcao aplica SUBESTIMA o real, e a
-    # subestimacao cresce com o tempo. Isso e otimista na direcao errada --
-    # declarado aqui em vez de descoberto depois.
+#: AG-460 -- data em que `N_lifetime` parou de ser incrementado (AG-458).
+#: Todo trial rodado a partir daqui esta FORA do counter, por decisao, nao
+#: por descuido. Literal nomeado e nao constante de dominio porque nao
+#: governa nenhum resultado: e a data de um fato historico de governanca.
+_N_LIFETIME_CONGELADO_EM = "2026-09-04"
+
+
+def _audited_n_lifetime() -> tuple[int, bool]:
+    """AG-458/AG-460 -- devolve `(counter, e_piso)`.
+
+    `N_lifetime` foi descontinuado como CONTROLE (`AG-458`) e ninguem mais
+    o incrementa. O counter lido e um PISO HISTORICO, nao uma contagem
+    viva. A consequencia para o DSR nao e neutra e tem SINAL CONHECIDO:
+    menos trials declarados => penalidade de multiplicidade menor => DSR
+    MAIOR. O numero que sai daqui e portanto um TETO do DSR real, e errar
+    para o lado otimista e o pior lado para um gate de promocao.
+
+    Devolver a flag em vez de so o int e o que fecha o `AG-458`: antes, a
+    unica marca de que o numero era piso era um comentario -- invisivel
+    para quem le o artefato JSON. Agora o consumidor e OBRIGADO pelo
+    type-checker a lidar com ela, e ela viaja para dentro do artefato.
+    """
     path = _REPO_ROOT / "audit" / "n_lifetime.yaml"
     with path.open(encoding="utf-8") as f:
         data = yaml.safe_load(f)
-    return int(data["counter"])
+    status = str(data.get("status", ""))
+    e_piso = "CONGELADO" in status.upper()
+    return int(data["counter"]), e_piso
 
 
 def build_long_c07_filtered_population(
@@ -106,7 +121,7 @@ def build_long_c07_filtered_population(
 
 
 def run_dsr_check(symbol: str = "BTCUSDT") -> dict[str, Any]:
-    n_trials = _audited_n_lifetime()
+    n_trials, n_trials_e_piso = _audited_n_lifetime()
     admitted_filled, calib = build_long_c07_filtered_population(symbol)
 
     ret_net = admitted_filled["ret_net"].to_numpy().astype(np.float64)
@@ -117,6 +132,19 @@ def run_dsr_check(symbol: str = "BTCUSDT") -> dict[str, Any]:
 
     return {
         "n_lifetime_auditado": n_trials,
+        # AG-460 -- os 3 campos abaixo existem para que o artefato JSON
+        # carregue a ressalva, nao so o codigo-fonte. Quem ler o `dsr` sem
+        # ler `faixa2_dsr_and_b2_check.py` precisa ver que o numero e teto.
+        "n_lifetime_e_piso_congelado": n_trials_e_piso,
+        "n_lifetime_congelado_em": _N_LIFETIME_CONGELADO_EM if n_trials_e_piso else None,
+        "dsr_interpretacao": (
+            "TETO -- N_lifetime esta congelado (AG-458); trials posteriores a "
+            f"{_N_LIFETIME_CONGELADO_EM} nao entram na penalidade de "
+            "multiplicidade, entao o DSR real e MENOR OU IGUAL a este valor. "
+            "Nao usar como evidencia de aprovacao."
+            if n_trials_e_piso
+            else "ESTIMATIVA -- N_lifetime e contagem viva."
+        ),
         "calibracao_percentil_reusada": calib,
         "n_trades": admitted_filled.height,
         "dsr_result": {

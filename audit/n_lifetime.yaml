@@ -58,7 +58,19 @@
 # ============================================================================
 
 schema_version: 1
-status: "descontinuado_2026_08_17 -- nao bloqueia mais trabalho, ver AG-077 pro que substitui DSR/Gate 6"
+status: >-
+  CONGELADO 2026-09-04 (AG-458, decisao do Manager) -- descontinuado como
+  CONTROLE, nao so como gate. Nao bloqueava mais trabalho desde 2026-08-17
+  (AG-077); desde 2026-09-04 tambem nao precisa mais ser consultado nem
+  incrementado, e saiu do bootstrap do CLAUDE.md e das 3 skills que o citavam.
+  O arquivo FICA porque `src/analysis/faixa2_dsr_and_b2_check.py` ainda le
+  `::counter`. O valor 10060 e um PISO HISTORICO congelado na reconciliacao do
+  AG-456, nao uma contagem viva -- qualquer trial rodado a partir de
+  2026-09-04 NAO esta aqui, inclusive os 1.500 trials da campanha do AG-459.
+  Consequencia com SINAL CONHECIDO: menos trials declarados => penalidade de
+  multiplicidade menor => DSR MAIOR. O DSR calculado sobre este counter e um
+  TETO, nunca uma estimativa, e o artefato do AG-460 passou a declarar isso em
+  campo proprio (`dsr_interpretacao`), nao so em comentario de codigo.
 counter: 10060
 
 log:

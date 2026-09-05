@@ -29772,3 +29772,71 @@ entries:
       geometria, alvo ou hiperparametro -- todas foram medidas e nenhuma
       move o gate. O que resta e o vetor de features, que e o AG-449.
 
+  - id: AG-460
+    date: "2026-09-05"
+    file: "src/analysis/faixa2_dsr_and_b2_check.py (_audited_n_lifetime devolve tupla; 3 campos novos no artefato); audit/n_lifetime.yaml (status CONGELADO -- de fato desta vez); tests/unit/test_validation_dsr.py (2 testes novos)"
+    related_file: "AG-458 (a ponta viva que este AG fecha); AG-456 (a reconciliacao que virou o piso); AG-077 (FECHADO desde 2026-08-17, sucedido por AG-374); AG-374 (o sucessor, PARCIALMENTE fechado)"
+    numeracao: "AG-460."
+    found_by: >-
+      Ordem do Manager (2026-09-05): "Feche ag458 e ag077". Ao abrir os dois,
+      duas coisas apareceram -- uma correcao minha e um defeito meu.
+    gap: >
+      (1) DEFEITO MEU, achado pelo teste que escrevi para fechar o AG-458:
+      eu reportei ao Manager que o `status` do `n_lifetime.yaml` tinha
+      passado a CONGELADO no commit `8d34b21`. NAO TINHA. O `str.replace`
+      daquela edicao nao casou (o valor real estava entre aspas, o meu
+      padrao nao) e eu nao usei assert de contagem -- falhou em SILENCIO e
+      eu declarei feito. Confirmado por `git show HEAD:audit/n_lifetime.yaml`.
+      E a mesma classe de erro que a memoria de trabalho ja registra
+      ("string-replace que falha em silencio"), reincidente.
+      (2) A ponta que o AG-458 deixou aberta de proposito: o DSR le o
+      counter congelado, e a UNICA marca disso era um comentario no
+      codigo-fonte -- invisivel para quem le o artefato JSON, que e
+      exatamente quem decide olhando o numero.
+    severity: >-
+      alta -- (1) e proveniencia falsa (reportei estado que nao existia) e
+      (2) e um numero otimista sem ressalva legivel no ponto de leitura.
+    layer: "analysis (DSR) / governanca"
+    consequence: >
+      O sinal do vies e CONHECIDO e nao e neutro: menos trials declarados
+      => penalidade de multiplicidade menor => DSR MAIOR. O numero publicado
+      e um TETO do DSR real, e errar para o lado otimista e o pior lado
+      possivel para um gate de promocao. Sem a declaracao, alguem leria o
+      DSR como estimativa e o trataria como evidencia a favor.
+    resolved_by_commit: null
+    resolution: >-
+      `_audited_n_lifetime()` passa a devolver `(counter, e_piso)` -- tupla,
+      nao int. A mudanca de TIPO e o que fecha de verdade: o type-checker
+      OBRIGA todo consumidor a lidar com a flag, entao a ressalva nao pode
+      mais ser ignorada por omissao, que era o estado anterior.
+      A flag sai do `status` REAL do ledger, nao de um literal: se alguem
+      voltar a incrementar o counter e tirar o CONGELADO, o artefato volta a
+      dizer ESTIMATIVA sozinho, sem edicao de codigo. E o que separa
+      declaracao VIVA de carimbo.
+      3 campos novos viajam para dentro do JSON --
+      `n_lifetime_e_piso_congelado`, `n_lifetime_congelado_em` e
+      `dsr_interpretacao` (texto explicito: "TETO ... o DSR real e MENOR OU
+      IGUAL a este valor. Nao usar como evidencia de aprovacao").
+      2 testes: um trava que a flag vem do ledger real; o outro e
+      CONTRAPROVA DO SINAL, nao da presenca do campo -- um teste que so
+      checasse "o campo existe" passaria mesmo se o texto dissesse o
+      oposto, entao ele afirma a DIRECAO ("MENOR OU IGUAL").
+      E o `status` do ledger foi congelado DE FATO, com assert de contagem
+      desta vez.
+    status: >
+      fechado. FECHA o AG-458 (a ponta viva era esta).
+      CORRECAO DE REGISTRO sobre o AG-077, porque eu afirmei errado ao
+      Manager na mensagem anterior: o AG-077 NAO estava aberto -- esta
+      FECHADO desde 2026-08-17, e seu proprio `status` ja dizia isso
+      ("FECHADO -- ver resolution_final. Sucedido por AG-374"). Eu o citei
+      como divida em aberto sem reler o registro. Nao ha nada a fechar nele.
+      O que segue aberto e o SUCESSOR, `AG-374`, e ele NAO e sobre DSR: e a
+      definicao operacional do novo criterio de "pronto" (lucro em Live
+      Demo distinguivel de ruido). Termos (1) "lucro" e (2) "Live Demo"
+      estao definidos e travados; falta so o N MINIMO DE TRADES e a
+      semantica AND/OR entre janela e N -- explicitamente TBD por decisao
+      (B23: nao inventar numero sem base local), a resolver quando houver
+      medicao de ritmo real de sinal por celula ou um candidato real a Live
+      Demo, o que vier primeiro. Com 0/20 nos gates (AG-459), nenhum dos
+      dois gatilhos existe hoje.
+
