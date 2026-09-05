@@ -29840,3 +29840,100 @@ entries:
       Demo, o que vier primeiro. Com 0/20 nos gates (AG-459), nenhum dos
       dois gatilhos existe hoje.
 
+  - id: AG-461
+    date: "2026-09-05"
+    file: "scripts/measure_ag449_lift_by_atr_regime.py (NOVO); experiments/ag449_lift_by_atr_regime.json"
+    related_file: "AG-449 (o AG que esta dissecacao CORRIGE); AG-438 (discretizacao do calibrador, remedida aqui); AG-439 (breakeven com selecao adversa); AG-459"
+    numeracao: "AG-461."
+    found_by: >-
+      Ordem do Manager (2026-09-05): "pode comecar a dissecacao do AG-449".
+      Primeira medicao que ataca o AG-449 pelo mecanismo em vez de repetir
+      o veredito agregado.
+    gap: >
+      O AG-449 afirma "O VETOR DE FEATURES NAO DISCRIMINA". Medido com
+      rigor, isso esta ERRADO -- e o erro e meu, foi eu que escrevi.
+      A afirmacao nasceu de ler AUC ~0,50 como "igual ao acaso", sem nunca
+      comparar contra o proprio nulo nem contra o que o custo exige.
+    severity: >-
+      alta -- o AG-449 e o unico aberto que subordina todos os outros, e
+      sua premissa central estava mal formulada. Isso nao muda o veredito
+      de promocao (0/20 segue), mas muda COMPLETAMENTE onde procurar.
+    layer: "features / models -- diagnostico, nenhuma mudanca de producao"
+    consequence: >
+      (1) O VETOR DISCRIMINA. Teste de permutacao b4 (embaralha features no
+      conjunto de teste dos modelos JA TREINADOS, sem retreino -- verificado
+      no codigo antes de usar): AUC real vs permutado, 7 de 10 celulas com
+      z > 1,96, ZERO com o permutado vencendo, z ate 24,8 (BTCUSDT/R2).
+      Fora do tempo, 262 fold-lado do walk-forward: AUC menos 0,50 =
+      +0,00452, dp 0,0163, t = +4,50, com 59,5% dos folds acima de 0,50.
+      (2) O SINAL NAO DECAI. Spearman(tempo, AUC) por fold: media -0,120,
+      dp 0,375, t = -1,01, e as direcoes se CONTRADIZEM dentro do mesmo
+      ativo (XRP/R2 -0,52/-0,57 contra XRP/R3 +0,40/+0,38). E ruido entre
+      grades, nao deriva de regime. Descarta "o alfa existia e degradou".
+      (3) O NUMERO QUE DECIDE E O GAP DE WIN RATE, nao a AUC:
+        win rate INCONDICIONAL  50,77 / 50,80 / 50,74 / 50,81 / 50,78 %
+          -- 5 combos, 3 ativos, 2 grades, amplitude de 0,04pp. E piso de
+          MERCADO+GEOMETRIA, nao propriedade do modelo.
+        lift do modelo, CPCV in-fold      +2,96pp (dp 0,87)
+        lift do modelo, out-of-time       +1,25pp (dp 1,75, min -1,23)
+        razao CPCV/walk-forward           2,37x de superestimacao
+        breakeven exigido            53,06% a 57,14%
+      O lift out-of-time NAO se distingue de zero (t ~ 1,60 sobre 5 combos).
+      (4) O BREAKEVEN E FUNCAO DO ATR, e e ele que separa os combos -- o
+      custo e ~fixo em bps e a barreira escala com a volatilidade:
+        atr 0,0025 -> breakeven 60,1%  |  atr 0,0084 -> 53,1%
+        ATR CRITICO (breakeven = 53,5% entregue): 0,733% por barra
+      So SOLUSDT/R3 (0,839%) esta acima. Isso explica por que BTCUSDT/R2 e
+      o PIOR combo apesar de ter a MAIOR separacao de features do lote
+      (AUC 0,5526, o dobro dos outros): ele tem o menor ATR (0,357%), entao
+      o custo o mata antes de o sinal importar.
+      (5) SELETIVIDADE ESTA BLOQUEADA. Discretizacao do calibrador remedida
+      sob os labels NOVOS (o AG-438 mediu sob os antigos): mediana de 10
+      niveis distintos por fold-lado, minimo 2, 92,4% com <= 20 niveis;
+      massa exatamente EM tau com mediana 22,5%, p90 63,6%, max 99,0%. A
+      taxa realizada vai de 1,86% a 15,18% contra alvo de 10% -- dispersao
+      de 8x entre combos. O mecanismo sobreviveu ao rebuild da Fase A,
+      como esperado: ele e consequencia da AUC estar perto de 0,50.
+    resolved_by_commit: null
+    resolution: >-
+      Script novo mede o LIFT POR REGIME DE ATR out-of-time (tercos de ATR,
+      nao decis -- decil sobre trades SELECIONADOS deixaria baldes abaixo
+      do piso de 10 trades que o proprio projeto usa; balde com menos de 30
+      trades entra no JSON como `null`, nunca como numero que nao se
+      sustenta). Precisou de execucao propria porque
+      `run_walk_forward_campaign` nao expoe `keep_predictions` e o artefato
+      canonico grava `predictions=None` por desenho.
+      RESULTADO -- o lift CRESCE monotonicamente com o ATR:
+        balde 1 (ATR baixo):  lift -2,42pp (dp 8,52, t -0,64) | gap -8,48pp | ret -6,92 bps
+        balde 2:              lift +2,38pp (dp 3,53, t +1,50) | gap -1,60pp | ret -4,63 bps
+        balde 3 (ATR alto):   lift +2,78pp (dp 2,61, t +2,38) | gap +0,44pp | ret +14,17 bps
+      No balde 3, 4 de 5 combos tem `ret_net` positivo e o ponderado por n
+      da +14,17 bps sobre 2.332 trades.
+      DUAS RESSALVAS QUE MATAM QUALQUER CELEBRACAO, declaradas antes de
+      qualquer leitura otimista:
+      (a) O gap de +0,44pp do balde 3 tem dp 2,47 sobre 5 combos, t = +0,40
+      -- NAO se distingue de zero. A alavanca leva o resultado a ZERO, nao
+      a positivo.
+      (b) O balde 3 foi escolhido DEPOIS de ver o resultado. Com 3 baldes x
+      5 combos, escolher o melhor eixo post-hoc e EXATAMENTE a selecao
+      sobre ruido que esta sessao ja confundiu com achado 3 vezes
+      (AG-441, AG-450, AG-451). O numero honesto nao e "+14,17 bps": e "o
+      terco de maior ATR foi o melhor dos 3, e a diferenca nao passa da
+      barra de erro".
+      Um teste que valeria: PRE-REGISTRAR "operar so acima do ATR critico
+      de 0,733%" como regra, com criterio de sucesso declarado antes, e
+      medir. Nao foi feito -- e a proxima medicao, nao um achado.
+    status: >
+      ABERTO -- substitui a formulacao do AG-449, nao o fecha.
+      O AG-449 dizia "o vetor nao discrimina". A formulacao correta,
+      medida, e: **o vetor discrimina pouco e de forma estavel; o lift
+      out-of-time (+1,25pp) e da mesma ordem do que o custo exige (+2,3 a
+      +6,4pp), e a diferenca nao se distingue de zero em nenhum dos dois
+      sentidos.** O motor nao esta longe -- esta dentro da barra de erro,
+      que e um lugar diferente e exige tipo de evidencia diferente.
+      As 3 saidas ja fechadas por medicao: geometria (AG-450/454),
+      hiperparametro (AG-459), seletividade (item 5 acima). A saida que
+      RESTA e aumentar o lift, e o unico eixo com sinal direcional medido e
+      condicionar por regime de volatilidade -- pendente de teste
+      pre-registrado.
+

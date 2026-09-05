@@ -1,0 +1,228 @@
+{
+  "task": "AG-449 -- lift do modelo por regime de ATR (walk-forward, out-of-time)",
+  "n_buckets": 3,
+  "min_trades_por_balde": 30,
+  "nota": "win_rate_incondicional e a populacao COMPLETA de labels daquele balde; win_rate_selecionada e so o que o modelo disparou no walk-forward (out-of-time). lift = selecionada - incondicional, isolando o que o modelo adiciona sobre o piso de mercado. breakeven usa o ATR MEDIANO do balde -- cai com ATR porque o custo e ~fixo em bps e a barreira escala.",
+  "resultados": [
+    {
+      "symbol": "BTCUSDT",
+      "resolution_id": "R2",
+      "n_trades_selecionados": 6481,
+      "n_trades_incondicionais": 217000,
+      "baldes": [
+        {
+          "balde": 1,
+          "atr_mediano": 0.0024288671494715084,
+          "n_incondicional": 72332,
+          "n_selecionado": 5448,
+          "win_rate_incondicional": 0.5062351379748935,
+          "win_rate_selecionada": 0.5093612334801763,
+          "lift_pp": 0.31260955052827555,
+          "breakeven": 0.6042142711796433,
+          "gap_selecionada_menos_breakeven_pp": -9.485303769946707,
+          "ret_net_medio_bps": -6.930205360626372
+        },
+        {
+          "balde": 2,
+          "atr_mediano": 0.0035660607871024087,
+          "n_incondicional": 72333,
+          "n_selecionado": 961,
+          "win_rate_incondicional": 0.5075691593048816,
+          "win_rate_selecionada": 0.4984391259105099,
+          "lift_pp": -0.9130033394371684,
+          "breakeven": 0.571440539455184,
+          "gap_selecionada_menos_breakeven_pp": -7.300141354467415,
+          "ret_net_medio_bps": -7.930439753713341
+        },
+        {
+          "balde": 3,
+          "atr_mediano": 0.005394743156880077,
+          "n_incondicional": 72335,
+          "n_selecionado": 72,
+          "win_rate_incondicional": 0.5093108453722265,
+          "win_rate_selecionada": 0.5277777777777778,
+          "lift_pp": 1.8466932405551306,
+          "breakeven": 0.5474463764203273,
+          "gap_selecionada_menos_breakeven_pp": -1.966859864254955,
+          "ret_net_medio_bps": -7.109432328521662
+        }
+      ]
+    },
+    {
+      "symbol": "SOLUSDT",
+      "resolution_id": "R2",
+      "n_trades_selecionados": 1118,
+      "n_trades_incondicionais": 162065,
+      "baldes": [
+        {
+          "balde": 1,
+          "atr_mediano": 0.004239693974144134,
+          "n_incondicional": 54022,
+          "n_selecionado": 405,
+          "win_rate_incondicional": 0.5069601273555219,
+          "win_rate_selecionada": 0.5061728395061729,
+          "lift_pp": -0.07872878493490054,
+          "breakeven": 0.5602218561255002,
+          "gap_selecionada_menos_breakeven_pp": -5.404901661932737,
+          "ret_net_medio_bps": -7.191847330039767
+        },
+        {
+          "balde": 2,
+          "atr_mediano": 0.005859399539682774,
+          "n_incondicional": 54020,
+          "n_selecionado": 336,
+          "win_rate_incondicional": 0.5079229914846353,
+          "win_rate_selecionada": 0.5684523809523809,
+          "lift_pp": 6.0529389467745665,
+          "breakeven": 0.5437156654578142,
+          "gap_selecionada_menos_breakeven_pp": 2.4736715494566686,
+          "ret_net_medio_bps": 4.136896457987077
+        },
+        {
+          "balde": 3,
+          "atr_mediano": 0.008664932875726493,
+          "n_incondicional": 54023,
+          "n_selecionado": 377,
+          "win_rate_incondicional": 0.5090609555189456,
+          "win_rate_selecionada": 0.53315649867374,
+          "lift_pp": 2.409554315479445,
+          "breakeven": 0.5296426073519009,
+          "gap_selecionada_menos_breakeven_pp": 0.3513891321839102,
+          "ret_net_medio_bps": 3.6243482363748285
+        }
+      ]
+    },
+    {
+      "symbol": "SOLUSDT",
+      "resolution_id": "R3",
+      "n_trades_selecionados": 416,
+      "n_trades_incondicionais": 80934,
+      "baldes": [
+        {
+          "balde": 1,
+          "atr_mediano": 0.006087108842780169,
+          "n_incondicional": 26977,
+          "n_selecionado": 72,
+          "win_rate_incondicional": 0.5068762278978389,
+          "win_rate_selecionada": 0.3333333333333333,
+          "lift_pp": -17.354289456450562,
+          "breakeven": 0.542093653534798,
+          "gap_selecionada_menos_breakeven_pp": -20.876032020146468,
+          "ret_net_medio_bps": -40.25169835057169
+        },
+        {
+          "balde": 2,
+          "atr_mediano": 0.008390460937890185,
+          "n_incondicional": 26978,
+          "n_selecionado": 79,
+          "win_rate_incondicional": 0.5073022462747424,
+          "win_rate_selecionada": 0.569620253164557,
+          "lift_pp": 6.231800688981459,
+          "breakeven": 0.5306065433196481,
+          "gap_selecionada_menos_breakeven_pp": 3.901370984490893,
+          "ret_net_medio_bps": 12.365525894531904
+        },
+        {
+          "balde": 3,
+          "atr_mediano": 0.012328315467871852,
+          "n_incondicional": 26979,
+          "n_selecionado": 265,
+          "win_rate_incondicional": 0.5078764965343415,
+          "win_rate_selecionada": 0.5132075471698113,
+          "lift_pp": 0.5331050635469792,
+          "breakeven": 0.5208698295017479,
+          "gap_selecionada_menos_breakeven_pp": -0.7662282331936554,
+          "ret_net_medio_bps": 0.3216604551636482
+        }
+      ]
+    },
+    {
+      "symbol": "XRPUSDT",
+      "resolution_id": "R2",
+      "n_trades_selecionados": 3369,
+      "n_trades_incondicionais": 170287,
+      "baldes": [
+        {
+          "balde": 1,
+          "atr_mediano": 0.0032668581870273533,
+          "n_incondicional": 56761,
+          "n_selecionado": 2146,
+          "win_rate_incondicional": 0.5070206655978576,
+          "win_rate_selecionada": 0.5144454799627214,
+          "lift_pp": 0.7424814364863752,
+          "breakeven": 0.5778849497828117,
+          "gap_selecionada_menos_breakeven_pp": -6.3439469820090295,
+          "ret_net_medio_bps": -6.340177840591731
+        },
+        {
+          "balde": 2,
+          "atr_mediano": 0.004656980898778811,
+          "n_incondicional": 56763,
+          "n_selecionado": 378,
+          "win_rate_incondicional": 0.5092401740570442,
+          "win_rate_selecionada": 0.5026455026455027,
+          "lift_pp": -0.6594671411541575,
+          "breakeven": 0.5548830213864594,
+          "gap_selecionada_menos_breakeven_pp": -5.223751874095672,
+          "ret_net_medio_bps": -8.354737979180062
+        },
+        {
+          "balde": 3,
+          "atr_mediano": 0.007223059253004726,
+          "n_incondicional": 56763,
+          "n_selecionado": 845,
+          "win_rate_incondicional": 0.5081655303630886,
+          "win_rate_selecionada": 0.5810650887573965,
+          "lift_pp": 7.2899558394307835,
+          "breakeven": 0.5355192119776293,
+          "gap_selecionada_menos_breakeven_pp": 4.554587677976718,
+          "ret_net_medio_bps": 24.84047526166776
+        }
+      ]
+    },
+    {
+      "symbol": "XRPUSDT",
+      "resolution_id": "R3",
+      "n_trades_selecionados": 1245,
+      "n_trades_incondicionais": 84561,
+      "baldes": [
+        {
+          "balde": 1,
+          "atr_mediano": 0.004727805036250756,
+          "n_incondicional": 28186,
+          "n_selecionado": 216,
+          "win_rate_incondicional": 0.5082665152912793,
+          "win_rate_selecionada": 0.5509259259259259,
+          "lift_pp": 4.265941063464663,
+          "breakeven": 0.5540694589614424,
+          "gap_selecionada_menos_breakeven_pp": -0.31435330355165103,
+          "ret_net_medio_bps": -0.838350380386234
+        },
+        {
+          "balde": 2,
+          "atr_mediano": 0.00672921566070725,
+          "n_incondicional": 28188,
+          "n_selecionado": 256,
+          "win_rate_incondicional": 0.5078756917837378,
+          "win_rate_selecionada": 0.51953125,
+          "lift_pp": 1.1655558216262185,
+          "breakeven": 0.5381066698955529,
+          "gap_selecionada_menos_breakeven_pp": -1.8575419895552892,
+          "ret_net_medio_bps": -3.5232889952018343
+        },
+        {
+          "balde": 3,
+          "atr_mediano": 0.010235641237267109,
+          "n_incondicional": 28187,
+          "n_selecionado": 773,
+          "win_rate_incondicional": 0.5071486855642672,
+          "win_rate_selecionada": 0.5252263906856404,
+          "lift_pp": 1.8077705121373189,
+          "breakeven": 0.5251159191122995,
+          "gap_selecionada_menos_breakeven_pp": 0.011047157334087565,
+          "ret_net_medio_bps": 14.371093196384438
+        }
+      ]
+    }
+  ]
+}
