@@ -1,0 +1,139 @@
+schema_version: 1
+id: AG-462
+titulo: "Regra de regime de ATR -- teste PRE-REGISTRADO"
+registrado_em: "2026-09-05"
+estado: REGISTRADO_ANTES_DE_RODAR
+
+# ============================================================================
+# POR QUE ESTE ARQUIVO EXISTE, E POR QUE ELE E COMMITADO SOZINHO
+# ============================================================================
+por_que:
+  problema: >
+    O AG-461 mediu que o lift do modelo CRESCE com o ATR (balde 1: -2,42pp;
+    balde 2: +2,38pp; balde 3: +2,78pp) e que o terco de maior ATR entrega
+    ret_net de +14,17 bps sobre 2.332 trades, com 4 de 5 combos positivos.
+    Isso NAO e evidencia: o balde 3 foi escolhido DEPOIS de ver o resultado.
+    Com 3 baldes x 5 combos, escolher o melhor eixo post-hoc e exatamente a
+    selecao sobre ruido que esta sessao ja confundiu com achado 3 vezes
+    (AG-441, AG-450, AG-451).
+  o_que_este_registro_compra: >
+    Separa DERIVACAO de TESTE por construcao, e trava o criterio de sucesso
+    antes de qualquer numero existir. O commit deste arquivo precede o
+    commit do resultado -- a ordem e verificavel por `git log`, nao e uma
+    afirmacao minha. Se o resultado sair negativo, ele conta como negativo;
+    e o unico jeito de isso ser verdade e o criterio existir antes.
+
+# ============================================================================
+# HIPOTESE
+# ============================================================================
+hipotese: >
+  H1: condicionar a operacao a regime de volatilidade alta produz edge
+  liquido positivo out-of-time, porque o breakeven exigido pelo custo CAI
+  com o ATR (custo ~fixo em bps, barreira escala com a volatilidade)
+  enquanto a win rate entregue NAO cai.
+  H0: nao ha diferenca -- o edge da populacao filtrada nao supera o da
+  populacao completa, e nao se distingue de zero.
+
+mecanismo_declarado: >
+  Medido no AG-461, e e ele que gera a hipotese em vez de o contrario:
+    breakeven(atr=0,0025) = 60,1%   |  breakeven(atr=0,0084) = 53,1%
+    win rate INCONDICIONAL = 50,78% em 5 combos (amplitude 0,04pp)
+  A win rate incondicional e praticamente uma constante do mercado; o
+  breakeven e uma hiperbole no ATR. Logo existe um ATR acima do qual o
+  lift do modelo, mesmo pequeno, basta.
+
+# ============================================================================
+# DESENHO -- separacao temporal, nao escolha de balde
+# ============================================================================
+desenho:
+  particao: >
+    Os folds do walk-forward de cada combo sao ordenados cronologicamente e
+    partidos ao meio. A METADE ANTIGA e a unica fonte usada para DERIVAR o
+    limiar. A METADE RECENTE nunca e olhada antes de o limiar estar fixado,
+    e e a unica onde o criterio de sucesso e avaliado.
+  por_que_temporal_e_nao_aleatoria: >
+    Particao aleatoria de folds vazaria: folds vizinhos compartilham treino
+    (walk-forward ancorado) e regime de mercado. A particao temporal e a
+    unica que reproduz a pergunta real -- "a regra derivada no passado
+    funciona no futuro?".
+  derivacao_do_limiar: >
+    Na metade ANTIGA, para cada candidato de limiar numa grade declarada
+    abaixo, calcula-se o ret_net medio dos trades selecionados com
+    atr_at_t0 acima dele. Escolhe-se o MENOR limiar cujo ret_net medio seja
+    positivo. Menor, nao melhor: escolher o maximo da grade seria de novo
+    selecionar o pico de uma curva ruidosa. O menor limiar viavel e a
+    escolha conservadora e tem definicao operacional unica.
+  grade_de_limiar_declarada_a_priori:
+    - 0.000   # sem filtro -- controle
+    - 0.004
+    - 0.005
+    - 0.006
+    - 0.007
+    - 0.008
+    - 0.009
+    - 0.010
+    - 0.012
+  por_que_esta_grade: >
+    Cobre o ATR critico derivado por primeiros principios no AG-461
+    (0,00733 = onde breakeven iguala a win rate entregue) com folga dos dois
+    lados, em passos de 0,001 na regiao densa. Inclui 0,000 como CONTROLE
+    explicito -- sem ele, "a regra ajudou" nao teria contra o que ser lido.
+
+# ============================================================================
+# CRITERIO DE SUCESSO -- travado antes, com definicao operacional de cada termo
+# ============================================================================
+criterio_de_sucesso:
+  nota: >
+    CLAUDE.md exige definicao operacional de cada termo de uma regra de
+    decisao travada a priori -- senao a decisao real e tomada por julgamento
+    na hora de aplicar. Os 3 criterios abaixo sao conjuntivos (E, nao OU).
+  c1_edge_positivo: >
+    Na metade RECENTE, o ret_net medio dos trades que passam o filtro e
+    POSITIVO e distinguivel de zero: t > 2,0, onde t e calculado sobre os
+    COMBOS (n=5), nao sobre trades. Sobre trades o n seria dezenas de
+    milhares e qualquer efeito minusculo passaria; sobre combos o teste
+    responde "isto se repete em ativos diferentes?", que e a pergunta.
+  c2_supera_o_controle: >
+    O ret_net medio filtrado supera o do controle (limiar 0,000, mesma
+    metade recente) em pelo menos 4 dos 5 combos. Contagem, nao media --
+    um combo com muitos trades nao pode carregar o veredito sozinho.
+  c3_amostra_suficiente: >
+    A metade recente retem no minimo 200 trades filtrados POR COMBO. Abaixo
+    disso o combo entra como INDETERMINADO e NAO conta como sucesso nem
+    como fracasso em c2. Se 3 ou mais combos ficarem indeterminados, o
+    teste inteiro e declarado SEM PODER e nenhuma conclusao e tirada.
+  veredito: >
+    SUCESSO exige c1 E c2 E c3. Qualquer outro resultado e FRACASSO, e
+    fracasso significa que a ultima alavanca conhecida do AG-449 tambem
+    fechou -- nao que "precisa de mais um ajuste".
+
+# ============================================================================
+# O QUE ESTE TESTE NAO PROVA -- declarado antes pra nao virar ressalva a posteriori
+# ============================================================================
+limitacoes_declaradas:
+  - >
+    n=5 combos e pouco. Um t > 2,0 sobre 5 pontos e evidencia fraca por
+    construcao; o criterio existe pra impedir auto-engano, nao pra produzir
+    confianca alta.
+  - >
+    A metade recente de cada combo tem 6 a 9 folds. Reduzir a janela de
+    teste reduz o poder -- este desenho troca poder por honestidade de
+    proposito, e a troca esta declarada aqui em vez de ser descoberta
+    depois.
+  - >
+    Filtrar por ATR REDUZ o numero de trades, e menos trades significa mais
+    variancia no edge estimado. Um resultado positivo aqui e compativel com
+    "menos trades, mesma media, ruido maior" -- por isso c3 existe.
+  - >
+    O `adverse_selection_bps` que entra no `ret_net` segue ASSUMED classe A
+    (AG-442, gate de build vermelho por decisao). O SINAL do veredito nao
+    depende dele (invariancia medida no AG-445), a magnitude depende.
+  - >
+    Nada aqui testa se o limiar derivado e ESTAVEL. Um limiar que muda de
+    valor a cada rodada nao e uma regra, e um parametro livre. Isso fica
+    fora do escopo deste teste e e a medicao seguinte, se esta passar.
+
+execucao:
+  script: scripts/measure_ag462_regra_atr_preregistrada.py
+  escreve: experiments/ag462_regra_atr_preregistrada.json
+  toca_producao: false
