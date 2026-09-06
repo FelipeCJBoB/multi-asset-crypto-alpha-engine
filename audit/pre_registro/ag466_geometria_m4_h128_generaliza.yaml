@@ -1,0 +1,263 @@
+schema_version: 1
+id: AG-466
+titulo: "A celula (m=4, horizon_bars=128) derivada em SOLUSDT/R3 generaliza para 4 combos nao vistos?"
+registrado_em: "2026-09-06"
+estado: REGISTRADO_ANTES_DE_RODAR
+
+# ============================================================================
+# POR QUE A DERIVACAO JA ESTA LIMPA -- e o que torna este registro forte
+# ============================================================================
+separacao_derivacao_teste:
+  derivacao:
+    combo: "SOLUSDT/R3"
+    onde: "AG-464, experiments/ag464_geometria_fora_da_caixa.json"
+    commit: "425f599"
+    o_que_foi_derivado: >-
+      A celula (m simetrico = 4,00; horizon_bars = 128) foi escolhida como
+      argmax de uma grade de 15 celulas (5 valores de m x 3 horizontes)
+      medida EXCLUSIVAMENTE em SOLUSDT/R3.
+  teste:
+    combos: ["BTCUSDT/R2", "SOLUSDT/R2", "XRPUSDT/R2", "XRPUSDT/R3"]
+    por_que_sao_teste_genuino: >-
+      Nenhum dos 4 foi olhado sob geometria fora do grid do S1. A escolha
+      da celula esta commitada em 425f599, ANTES de qualquer numero destes
+      4 combos existir sob essa geometria -- a ordem e verificavel por
+      `git log`, nao e afirmacao minha. Isto e mais forte do que a
+      particao temporal usada no AG-462/463: la eu dividia a mesma serie;
+      aqui o conjunto de teste sao ativos e grades diferentes.
+  decisao_do_manager: >-
+    Manager escolheu explicitamente, 2026-09-06: "Os 5, m=4". Eu havia
+    recomendado m=3 (mais conservador, menos fragil ao horizonte). O
+    Manager optou por m=4 apos receber a comparacao tecnica medida. A
+    escolha e dele e esta registrada aqui pra que a leitura futura saiba
+    que m=4 NAO foi minha recomendacao -- nao como ressalva, como
+    rastreabilidade.
+
+# ============================================================================
+# ARITMETICA DE AMOSTRA -- FEITA ANTES DE ESCREVER OS PISOS (licao do AG-463)
+# ============================================================================
+aritmetica_a_priori:
+  por_que_esta_secao_existe: >-
+    O AG-463 deu SEM_PODER porque eu travei um piso de 30 folds quando o
+    teto teorico era exatamente 30 -- soma que eu podia ter feito antes e
+    nao fiz. Esta secao existe pra que esse erro nao se repita: os pisos
+    abaixo sao escolhidos DEPOIS de contar o que existe, e a folga esta
+    declarada.
+  etapa_1_geometria:
+    trades_por_combo:
+      BTCUSDT/R2: 217000
+      SOLUSDT/R2: 162065
+      XRPUSDT/R2: 170287
+      XRPUSDT/R3: 84561
+    erro_padrao_frac_tp_pp:
+      BTCUSDT/R2: 0.107
+      SOLUSDT/R2: 0.124
+      XRPUSDT/R2: 0.121
+      XRPUSDT/R3: 0.172
+    conclusao: >-
+      O maior 2*SE entre os 4 combos e 0,344pp (XRPUSDT/R3). O efeito
+      medido na derivacao foi +1,43pp de melhora de gap. O efeito e de 4 a
+      7 vezes o ruido da proporcao, entao a Etapa 1 tem poder de sobra POR
+      COMBO -- nao precisa agregar nada pra ter significancia.
+  etapa_2_lift:
+    folds_do_walk_forward_por_combo:
+      BTCUSDT/R2: 14
+      SOLUSDT/R2: 11
+      XRPUSDT/R2: 12
+      XRPUSDT/R3: 12
+    total_folds_disponiveis: 49
+    piso_declarado: 30
+    folga: 19
+    trades_selecionados_hoje_por_combo:
+      BTCUSDT/R2: 6481
+      SOLUSDT/R2: 1118
+      XRPUSDT/R2: 3369
+      XRPUSDT/R3: 1245
+    conclusao: >-
+      49 folds contra piso de 30 -- folga de 19, ao contrario do AG-463
+      onde teto e piso coincidiam. O combo mais raso e SOLUSDT/R2 com 1.118
+      trades em 11 folds (~102 por fold), bem acima do piso de 20 por fold.
+      RESSALVA HONESTA: o numero de trades SELECIONADOS depende do modelo
+      retreinado (`side_hat != 0`), que ainda nao existe -- os numeros
+      acima sao do modelo atual sobre o label atual. Se o modelo novo
+      selecionar muito menos, c3 pode falhar. Isso NAO e evitavel por
+      aritmetica previa, e por isso a clausula SEM_PODER continua existindo.
+  por_que_NAO_ha_particao_temporal_interna: >-
+    No AG-462/463 a metade antiga derivava e a recente testava, e foi essa
+    divisao que matou o poder (6 a 9 folds por metade). Aqui a separacao
+    derivacao-teste ja e feita por COMBO (SOLUSDT/R3 derivou; os outros 4
+    testam), entao todos os folds de cada combo de teste entram. E o que
+    duplica a amostra em relacao ao AG-463 sem afrouxar nada.
+
+# ============================================================================
+# HIPOTESE
+# ============================================================================
+hipotese: >-
+  H1: a celula (m=4, horizon_bars=128), derivada so em SOLUSDT/R3, produz
+  nos 4 combos nao vistos (a) uma reducao do gap entre win rate
+  incondicional e breakeven, e (b) um edge liquido out-of-time positivo
+  depois do relabel e retreino.
+  H0: a melhora medida em SOLUSDT/R3 e especifica daquele combo (ou do
+  ruido daquela grade de 15 celulas) e nao se reproduz nos outros 4.
+
+mecanismo_declarado: >-
+  O custo e ~fixo em bps e a barreira escala com m, entao o breakeven cai
+  com m enquanto a win rate INCONDICIONAL nao cai -- P(TP) de martingale
+  e 0,50 sob barreiras simetricas, independente de m (criterio ja usado no
+  AG-229). A condicao pra isso valer e a barreira ser ALCANCADA dentro do
+  horizonte, e e por isso que m e horizon_bars andam juntos: em
+  horizon_bars=32 a celula m=4 desmorona (frac_TIME 11%), em 128 ela e a
+  melhor (frac_TIME 0,21%).
+  Se o mecanismo e esse -- geometria e custo, nao idiossincrasia de ativo
+  -- ele tem que aparecer nos 4 combos. Se nao aparecer, o mecanismo
+  declarado esta errado e a leitura do AG-464 era ruido de grade.
+
+# ============================================================================
+# ETAPA 1 -- GEOMETRIA, SEM MODELO. Barata, e porta de entrada da Etapa 2.
+# ============================================================================
+etapa_1:
+  o_que_mede: >-
+    So aritmetica de label: reconstroi as barreiras dos 4 combos nao vistos
+    na celula de producao (m=1,5, hor=32) e na celula derivada (m=4,
+    hor=128), e compara `gap_pp = frac_TP - breakeven`. Nenhum modelo
+    entra. `frac_TP` aqui e o piso de mercado, sem selecao.
+  janela_do_sweep: >-
+    Dimensionada pelo span REAL do horizonte por chunk de trades, nunca por
+    `time_stop_ms` -- sem isso a busca trunca em 540 minutos e fabrica
+    `TIME` espurio (AG-465). Mesma mecanica ja usada no AG-464.
+  criterio_por_combo: >-
+    A melhora de `gap_pp` da celula de producao para a celula derivada tem
+    que ser >= 0,50pp. Definicao operacional do limiar: 0,50pp e maior que
+    o 2*SE de TODOS os 4 combos (o maior e 0,344pp em XRPUSDT/R3) e e
+    cerca de um terco do efeito observado na derivacao (+1,43pp). Nao e um
+    numero escolhido pra passar: e o menor numero redondo que domina o
+    ruido de todos os combos simultaneamente.
+  veredito:
+    SUCESSO: "4 de 4 combos com melhora >= 0,50pp"
+    PARCIAL: >-
+      3 de 4. Significa: o efeito e real mas NAO universal. A Etapa 2 roda
+      SO nos combos que passaram, e o piso de folds e reconferido contra
+      30 antes de rodar -- se os combos aprovados nao somarem 30 folds, o
+      veredito da Etapa 2 e SEM_PODER e nada e concluido.
+    FRACASSO: >-
+      2 ou menos. A Etapa 2 NAO roda, e o mecanismo declarado esta
+      refutado: a melhora do AG-464 era propriedade de SOLUSDT/R3 ou da
+      grade de 15 celulas, nao da geometria.
+
+# ============================================================================
+# ETAPA 2 -- LIFT, COM RELABEL E RETREINO. So roda se a Etapa 1 permitir.
+# ============================================================================
+etapa_2:
+  o_que_mede: >-
+    Se o lift do modelo SOBREVIVE ao label novo. Barreira 2,67x mais larga
+    e horizonte 4x maior e outro problema de predicao -- o lift de +1,25pp
+    medido no AG-461 foi sobre o label de PRODUCAO e nao se transfere por
+    suposicao.
+  procedimento:
+    - >-
+      Relabel dos combos aprovados na celula (tp_atr_mult=4, sl_atr_mult=4,
+      horizon_bars=128), escrito em `data/labels/{symbol}/{res}/v_ag466/`
+      -- caminho PARALELO, `v1` nao e tocado.
+    - >-
+      `build_modeling_frame(labels_version="v_ag466", ...)` e walk-forward
+      ancorado, com os hiperparametros de PRODUCAO
+      (`alpha_production_hyperparam_override`). SEM Optuna, declarado: re-
+      otimizar aqui adicionaria um grau de liberdade que o pre-registro nao
+      consegue travar, e o AG-459 ja mediu que o teto de hiperparametro e
+      baixo.
+    - >-
+      Comparacao PAREADA POR FOLD contra o walk-forward do label de
+      producao: mesmo `fold_id`, mesmo periodo, labels diferentes. O
+      pareamento remove a variacao entre folds, que e a maior fonte de
+      ruido ja medida neste projeto.
+  criterio_de_sucesso:
+    nota: >-
+      Conjuntivos (E, nao OU). Mesma estrutura do AG-463, que falhou por
+      AMOSTRA e nao por desenho -- os limiares nao foram afrouxados.
+    c1_ganho_pareado: >-
+      A diferenca `ret_net(label novo) - ret_net(label producao)`, calculada
+      dentro de cada fold e agregada sobre os folds, e POSITIVA com t > 2,0.
+    c2_edge_absoluto_positivo: >-
+      O `ret_net` medio dos trades selecionados sob o label novo, agregado
+      sobre os folds, e POSITIVO com t > 2,0. Sem isto, "melhor que
+      producao" poderia significar "menos negativo", que nao paga nada. E
+      a barra real: nenhuma medicao deste projeto jamais passou por ela.
+    c3_amostra_suficiente: >-
+      Cada fold precisa de >= 20 trades sob o label novo pra entrar
+      (abaixo disso o fold e descartado, nao contado como zero), e o teste
+      exige >= 30 folds validos no total. Disponiveis: 49 (folga de 19).
+      Se sobrarem menos de 30, o veredito e SEM_PODER.
+    c4_nao_e_um_combo_so: >-
+      A diferenca media do c1 tem que ser POSITIVA em pelo menos 3 dos 4
+      combos, contados individualmente.
+    veredito: >-
+      SUCESSO exige c1 E c2 E c3 E c4, e significa que existe evidencia
+      pra PROPOR mudanca de geometria de producao -- nao a mudanca em si,
+      que passa por decisao do Manager e pelos gates.
+      Qualquer outro resultado com c3 satisfeito e FRACASSO. FRACASSO aqui
+      fecha a via GEOMETRIA, que e a ultima via aberta do AG-449: as outras
+      quatro (hiperparametro, seletividade, regime de volatilidade, custo)
+      ja estao fechadas por medicao.
+      Se c3 falhar e SEM_PODER, e o problema volta a ser de dado
+      disponivel.
+
+# ============================================================================
+# LIMITACOES -- declaradas antes, pra nao virarem ressalva a posteriori
+# ============================================================================
+limitacoes_declaradas:
+  - >-
+    m=4 foi o ARGMAX de 15 celulas em SOLUSDT/R3. Testar o argmax em dados
+    novos e legitimo, mas o valor esperado do efeito em dados novos e MENOR
+    que o medido na derivacao (regressao a media). Uma melhora de 0,50pp
+    nos 4 combos, contra 1,43pp na derivacao, ja seria consistente com o
+    mecanismo -- e por isso o limiar e 0,50pp e nao 1,43pp.
+  - >-
+    Os hiperparametros de producao foram otimizados sobre o label de
+    PRODUCAO. Usa-los sobre o label novo os deixa desalinhados por
+    construcao, o que empurra o resultado da Etapa 2 PRA BAIXO. O teste e
+    portanto conservador nesse eixo -- e a alternativa (reotimizar) seria
+    pior, porque destravaria o criterio.
+  - >-
+    `horizon_bars` e COMPARTILHADO entre R1/R2/R3 por decisao do Manager
+    (PLANO_MESTRE §15.12.3-C.1). Mover 32 -> 128 para TODAS as resolucoes
+    preserva a convencao; fixar 128 so numa resolucao a quebraria. Medido
+    no AG-464: o holding em CONTAGEM DE BARRA e praticamente identico nos
+    5 combos e nas 2 resolucoes (mediana 1, p90 4-5, p95 6-7, p99 10-12),
+    apesar de barras R2 durarem ~21 min e R3 ~42 min -- o tempo-ate-o-toque
+    em barras e invariante de escala, que e exatamente o que justifica a
+    convencao compartilhada. Nada disso toca producao nesta rodada.
+  - >-
+    Com holding mediano de 11 barras (contra 1 na producao), a sobreposicao
+    entre labels cresce ~11x. Isso reduz `uniqueness` (peso de amostra do
+    treino e do calibrador, AG-457) e alarga a janela de purge do CPCV. O
+    tamanho EFETIVO de amostra cai mesmo com o numero de linhas constante,
+    e este teste NAO mede quanto. E o custo estatistico conhecido da
+    escolha de m=4 sobre m=3.
+  - >-
+    `time_stop` deixa de ser controle de risco significativo sob
+    horizon_bars=128 (frac_TIME 0,21% na derivacao). Ele ja quase nao
+    mordia na producao (0,05%), entao nao e perda nova -- mas passa a ser
+    explicito que o horizonte nao protege mais nada.
+  - >-
+    `adverse_selection_bps` segue ASSUMED classe A (gate de build vermelho
+    por decisao, AG-442). Medido no AG-464 que nem o valor 0 -- fisicamente
+    impossivel pra ordem passiva -- viabilizaria 4 dos 5 combos sob a
+    geometria de producao; sob a geometria nova essa invariancia NAO foi
+    reverificada e nao deve ser presumida.
+  - >-
+    Os labels de `v_ag466` terao `config_hash` divergente de
+    `config/constants.yaml`. `load_labels_v1` nao verifica config por
+    default (AG-225), entao o guardrail B15 NAO vai proteger esta rodada --
+    esta declarado aqui pra que ninguem leia o artefato como se fosse
+    producao.
+
+execucao:
+  etapa_1:
+    script: scripts/measure_ag466_etapa1_geometria_4_combos.py
+    escreve: experiments/ag466_etapa1_geometria.json
+    toca_producao: false
+  etapa_2:
+    script: scripts/measure_ag466_etapa2_lift_retreino.py
+    escreve: experiments/ag466_etapa2_lift.json
+    escreve_labels_em: "data/labels/{symbol}/{resolution_id}/v_ag466/labels.parquet"
+    toca_producao: false
