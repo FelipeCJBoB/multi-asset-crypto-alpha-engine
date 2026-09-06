@@ -6879,6 +6879,79 @@ errada; (b) ampliar o universo além dos 5 candidatos, exigindo relabel e
 retreino fora de produção; (c) parar de gastar tentativa nesta pergunta.
 **Recomendo (c)** até que exista outro motivo para tocar em (b).
 
+---
+### 15.46 A via que eu tinha fechado por engano é a única aberta: fora da caixa do grid, a aritmética fecha pela primeira vez (2026-09-06)
+
+`AG-464` e `AG-465`, 2 entradas novas no `audit/evidence_ledger.yaml`.
+Narrativa em `docs/SPRINT_LOG.md` (seção 2026-09-06).
+
+**O erro, e ele é de método, não de conta.** Ao responder "qual a
+resolução dos casos abertos" eu ia repetir que a geometria de barreira
+estava fechada por medição (`AG-450`/`AG-454`). Fui verificar o grid antes
+de afirmar, e ele não sustenta a afirmação: `SL_MULT ∈ {3/4, 3/2, 9/4}`,
+`R ∈ {1, 4/3, 2}`, a maior célula simétrica é `2,25/2,25` — e `2,25/2,25`
+foi o 1º colocado. O vencedor está encostado na parede do grid com o
+gradiente apontando para fora, e a docstring de
+`src/labels/barrier_geometry.py` declara que a grade é *"verificação de
+robustez AO REDOR do valor de produção já escolhido — não busca de novo
+ótimo"*. **A grade nunca foi uma busca, e eu li o resultado dela como se
+fosse.** É a 2ª vez nesta investigação que trato o resultado de uma GRADE
+como propriedade do ESPAÇO; a 1ª foi o `AG-450`, sobre o piso da mesma
+grade.
+
+**O que a medição fora da caixa mostra.** Varredura conjunta
+(`m` simétrico × `horizon_bars`) em SOLUSDT/R3, ~80,8 mil trades por
+célula. O gap que o modelo precisa fechar cai de **−1,97pp** na produção
+para **−0,54pp** em `m=4`/`hor=128`, contra um lift out-of-time já medido
+de **+1,25pp** (`AG-461`). Sete das quinze células ficam dentro do alcance
+do modelo que já existe. É a primeira vez nesta investigação que a
+aritmética fecha em alguma célula.
+
+**A interação que nenhuma varredura anterior podia ver.** Em `hor=32`,
+`m=4` desmorona: `frac_TIME` de 11% e gap de −5,93pp. Em `hor=128` a mesma
+geometria é a melhor célula, com `frac_TIME` de 0,21%. `m=6`/`hor=32` é a
+caricatura — `frac_TP` cai a 30,79% e a hipótese de martingale quebra por
+completo. Em horizonte curto, barreira larga não é "geometria ruim": é
+barreira não alcançada. **Toda leitura anterior de sweep de geometria
+neste projeto foi feita com `horizon_bars` fixo em 32**, o que a torna
+válida dentro daquele horizonte e não como afirmação sobre geometria.
+As duas constantes são classe A e nunca tinham sido varridas juntas.
+
+**Via CUSTO fechada por aritmética, sem gastar medição.** Eu ia propor
+medir `adverse_selection_bps` — 1,5 bps, `ASSUMED` classe A, proveniência
+literal *"placeholder... sem medição real"*, responsável por 34% a 40% do
+gap. O cruzamento responde não: quatro dos cinco combos exigiriam seleção
+adversa **negativa** e o quinto exige ≤ 0,14 bps. Medir não mudaria
+veredito nenhum, e saber disso custou uma conta em vez de uma campanha.
+
+**`AG-465`, achado no caminho.** `resolve_barriers_vectorized` dimensiona
+a janela vetorizada por `time_stop_ms` (540 min), mas sob dollar bar o
+horizonte real é `horizon_end_ms` — span mediano de 1.724 min e máximo de
+10.781. A guarda existente não detecta que a janela acabou antes do
+horizonte, então a busca trunca em silêncio e o toque tardio vira `TIME`.
+Exposição medida: 0,898% a 6,090% dos trades. O motor escalar
+`build_labels` não tem o defeito. Sem contornar isso, o `AG-464` teria
+medido o próprio defeito e confirmado falsamente a minha própria ressalva
+de que o time stop mataria a barreira larga.
+
+**O que este resultado não autoriza.** Não é edge. O `ret_net`
+incondicional é negativo nas quinze células; o +1,25pp foi medido sobre o
+label de PRODUÇÃO e sob barreira 2,7× mais larga com horizonte 4× maior o
+problema de predição é outro — só relabel e retreino respondem se o lift
+sobrevive. E escolher `m=4`/`hor=128` por ter sido o melhor de quinze
+células é a seleção post-hoc que já me queimou quatro vezes nesta
+investigação. **A validação tem que ser pré-registrada**, com combo,
+célula e critério travados em commit anterior ao resultado, e desta vez
+com o piso de amostra conferido por aritmética antes de rodar — que foi
+exatamente o que faltou no `AG-463`.
+
+**Decisão pendente do Manager.** O passo seguinte custa relabel e
+retreino, portanto não é meu para tomar. O que fica registrado é que a
+lista de vias fechadas do `AG-462`/`AG-463` estava errada por minha culpa:
+fechadas são hiperparâmetro, seletividade, regime de volatilidade e custo.
+Geometria conjunta com horizonte está aberta, e é a única via com sinal
+direcional medido a favor.
+
 ## Fontes desta pesquisa
 
 - [PRINCE2.com — Os 7 princípios, temas e processos](https://www.prince2.com/eur/blog/the-7-principles-themes-and-processes-of-prince2)

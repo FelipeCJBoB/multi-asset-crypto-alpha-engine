@@ -7121,3 +7121,90 @@ Fonte: `scripts/measure_ag463_regra_atr_quantil.py`.
 `experiments/ag462_regra_atr_preregistrada.json`,
 `experiments/ag463_regra_atr_quantil.json`,
 `experiments/ag449_lift_by_atr_regime.json`.
+
+## 2026-09-06 — Eu tinha fechado a geometria por engano; fora da caixa do grid o gap fecha pela primeira vez (AG-464/AG-465) <!-- check-sprint-log: skip -->
+
+**Como isto começou.** O Manager perguntou qual a resolução dos casos <!-- check-sprint-log: skip -->
+abertos. Fui verificar o grid do S1 antes de repetir que a geometria era
+via fechada — e a afirmação não sobreviveu à verificação.
+
+**Retratação, a 5ª desta investigação.** Eu afirmei ao Manager, e escrevi <!-- check-sprint-log: skip -->
+dentro do `AG-462`, que a geometria estava fechada por medição
+(`AG-450`/`AG-454`). O grid do S1 é `SL_MULT ∈ {3/4, 3/2, 9/4}` ×
+`R ∈ {1, 4/3, 2}`; a maior célula **simétrica** que ele contém é
+`2,25/2,25` — exatamente o 1º colocado em R2 e R3 após a correção do TP. O <!-- check-sprint-log: skip -->
+vencedor encostou na parede do grid no eixo `sl`, com o gradiente
+apontando para fora, e `src/labels/barrier_geometry.py` declara o desenho:
+*"verificação de robustez AO REDOR do valor de produção já escolhido — não
+busca de novo ótimo"*. A grade nunca foi uma busca, e eu li o resultado
+dela como se fosse. É a 2ª vez que trato o resultado de uma GRADE como <!-- check-sprint-log: skip -->
+propriedade do ESPAÇO — a 1ª foi o `AG-450`, sobre o piso da mesma grade. <!-- check-sprint-log: skip -->
+
+**A aritmética que eu devia ter feito antes.** O custo é ~fixo em bps e a
+barreira escala com `m`, então o breakeven cai com `m` enquanto a win rate
+incondicional não cai (P(TP) de martingale = 0,50 sob barreiras <!-- check-sprint-log: skip -->
+simétricas, critério já usado no `AG-229`). Existe um `m` onde a conta <!-- check-sprint-log: skip -->
+fecha, e ele estava fora da caixa.
+
+**Medido em SOLUSDT/R3, grade conjunta (m × horizon_bars), 80.692 a <!-- check-sprint-log: skip -->
+80.879 trades por célula.** `gap_pp` = `frac_TP − breakeven`, isto é, <!-- check-sprint-log: skip -->
+quanto o modelo ainda precisa adicionar; o lift out-of-time medido é
++1,25pp (`AG-461`). <!-- check-sprint-log: skip -->
+
+| `m` | `hor` | frac_TP | breakeven | gap_pp | frac_TIME | bps/trade | bps/barra | | <!-- check-sprint-log: skip -->
+|---|---|---|---|---|---|---|---|---| <!-- check-sprint-log: skip -->
+| 1,50 | 32 | 50,74% | 52,71% | −1,97 | 0,05% | −5,782 | −5,782 | **PRODUÇÃO** | <!-- check-sprint-log: skip -->
+| 2,25 | 32 | 50,56% | 51,81% | −1,25 | 0,35% | −4,642 | −1,547 | teto do grid | <!-- check-sprint-log: skip -->
+| 3,00 | 32 | 49,42% | 51,36% | −1,93 | 2,40% | −4,629 | −0,771 | | <!-- check-sprint-log: skip -->
+| 4,00 | 32 | 45,09% | 51,02% | −5,93 | 11,02% | −3,908 | −0,355 | | <!-- check-sprint-log: skip -->
+| 6,00 | 32 | 30,79% | 50,68% | −19,89 | 39,35% | −5,050 | −0,202 | | <!-- check-sprint-log: skip -->
+| 2,25 | 128 | 50,72% | 51,80% | −1,09 | 0,02% | −4,667 | −1,556 | | <!-- check-sprint-log: skip -->
+| 3,00 | 128 | 50,56% | 51,35% | −0,80 | 0,07% | −4,644 | −0,774 | | <!-- check-sprint-log: skip -->
+| 4,00 | 128 | 50,48% | 51,02% | −0,54 | 0,21% | −3,583 | −0,326 | **melhor** | <!-- check-sprint-log: skip -->
+| 6,00 | 128 | 49,07% | 50,68% | −1,60 | 3,00% | −1,694 | −0,068 | | <!-- check-sprint-log: skip -->
+
+**Três leituras.** (1) O gap cai de −1,97pp para −0,54pp: `50,48% + 1,25 = <!-- check-sprint-log: skip -->
+51,73%` contra breakeven de `51,02%`, sobra +0,71pp — 7 das 15 células <!-- check-sprint-log: skip -->
+ficam dentro do alcance do lift que o modelo já entrega, e é a primeira
+vez nesta investigação que a aritmética fecha em alguma célula. (2) A
+ressalva que declarei antes de rodar era real e era o horizonte: em
+`hor=32`, `m=4` desmorona (`frac_TIME` 11%, gap −5,93pp); em `hor=128` a <!-- check-sprint-log: skip -->
+mesma geometria é a melhor célula. `m=6/hor=32` é a caricatura — `frac_TP` <!-- check-sprint-log: skip -->
+cai a 30,79% e a martingale quebra. **`m` e `horizon_bars` só fazem <!-- check-sprint-log: skip -->
+sentido varridos juntos**, e nunca foram. (3) A superfície é suave, com <!-- check-sprint-log: skip -->
+ótimo interior em `m=4` — estrutura, não pico de ruído.
+
+**O que isto não é.** Não é edge. O `ret_net` incondicional é negativo nas
+15 células; o +1,25pp foi medido sobre o label de PRODUÇÃO e sob barreira <!-- check-sprint-log: skip -->
+2,7× mais larga com horizonte 4× maior o problema de predição é outro; é <!-- check-sprint-log: skip -->
+um combo, sem separação temporal, sem pré-registro. E escolher
+`m=4/hor=128` por ter sido o melhor de 15 células é a seleção post-hoc que
+já me queimou no `AG-441`, `AG-450`, `AG-451` e `AG-461`. A validação tem <!-- check-sprint-log: skip -->
+que ser pré-registrada, e desta vez com o piso de amostra conferido por
+aritmética antes de rodar (lição do `AG-463`). <!-- check-sprint-log: skip -->
+
+**Via CUSTO fechada por aritmética, sem gastar medição.** Eu ia propor
+medir `adverse_selection_bps` (1,5 bps, `ASSUMED` classe A, proveniência <!-- check-sprint-log: skip -->
+literal *"placeholder... sem medição real"*), que explica 34% a 40% do <!-- check-sprint-log: skip -->
+gap. O cruzamento responde não: 4 dos 5 combos exigiriam seleção adversa
+**negativa** e o 5º exige ≤ 0,14 bps. Medir não mudaria veredito nenhum. <!-- check-sprint-log: skip -->
+
+**`AG-465` — defeito de janela achado no caminho.** <!-- check-sprint-log: skip -->
+`resolve_barriers_vectorized` deriva `window_bars` de `time_stop_ms` (540
+min), mas sob dollar bar o horizonte real é `horizon_end_ms` — 32 barras <!-- check-sprint-log: skip -->
+R3, span mediano 1.724 min, máximo 10.781. O `valid_mask` não detecta que <!-- check-sprint-log: skip -->
+a janela acabou antes do horizonte, então a busca trunca em silêncio e o
+toque tardio vira `TIME`. Exposição medida: 0,898% a 6,090% dos trades. O <!-- check-sprint-log: skip -->
+motor escalar `build_labels` não tem o defeito. **A direção do viés
+importa**: a truncagem penaliza a barreira larga, logo `2,25/2,25` venceu o <!-- check-sprint-log: skip -->
+`AG-454` apesar do handicap, não por causa dele. Contornado localmente no <!-- check-sprint-log: skip -->
+script do `AG-464` (janela dimensionada pelo span real, por chunk); sem o <!-- check-sprint-log: skip -->
+contorno eu teria medido o próprio defeito e concluído falsamente que o
+time stop mata a barreira larga — que era a minha própria hipótese.
+
+**Fontes desta seção** — todo número acima é rastreável a um destes:
+`audit/architecture_gaps_log.yaml` (AG-464, AG-465),
+`audit/evidence_ledger.yaml` (2 entradas novas de 2026-09-06),
+`experiments/ag464_geometria_fora_da_caixa.json`,
+`src/labels/barrier_geometry.py`, `src/labels/barrier_sweep.py`,
+`src/analysis/feasibility.py`, `config/constants.yaml`.

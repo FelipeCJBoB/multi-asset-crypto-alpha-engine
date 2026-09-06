@@ -30103,3 +30103,181 @@ entries:
       +6,4pp) e a diferenca nao se distingue de zero -- e agora tambem se
       sabe que selecao por regime de volatilidade nao e a alavanca que
       fecha esse gap, porque em 1 dos 5 combos ela mede o sinal contrario.
+
+  - id: AG-464
+    date: "2026-09-06"
+    file: "scripts/measure_ag464_geometria_fora_da_caixa.py; experiments/ag464_geometria_fora_da_caixa.json; src/labels/barrier_geometry.py (grid); audit/architecture_gaps_log.yaml::AG-450/AG-454 (o que e retratado)"
+    related_file: "AG-449; AG-461; AG-442 (adverse_selection_bps); AG-445 (edge por unidade de tempo); AG-465 (defeito de janela achado no caminho)"
+    numeracao: "AG-464."
+    found_by: >-
+      Manager perguntou qual a resolucao para os casos abertos. Ao montar a
+      resposta fui verificar o grid do S1 antes de repetir a afirmacao de
+      que a geometria estava fechada -- e a afirmacao nao se sustentou.
+    gap: >
+      RETRATACAO, a 5a desta investigacao e a 2a vez que trato o resultado
+      de uma GRADE como se fosse propriedade do ESPACO (a 1a foi o AG-450,
+      sobre o piso da mesma grade). Eu afirmei ao Manager -- e escrevi
+      dentro do AG-462 -- que a geometria era via FECHADA por medicao
+      (AG-450/454). Falso. O grid do S1 e
+      SL_MULT in {3/4, 3/2, 9/4} x R in {1, 4/3, 2}; a maior celula
+      SIMETRICA que ele contem e 2,25/2,25 -- que foi o 1o colocado em
+      R2 e R3 depois da correcao do TP (AG-454). O vencedor encostou na
+      PAREDE do grid no eixo sl, com o gradiente apontando pra fora, e a
+      docstring de barrier_geometry.py:15 declara o desenho em letra
+      maiuscula: "verificacao de robustez AO REDOR do valor de producao ja
+      escolhido -- nao busca de novo otimo". A grade nunca foi uma busca,
+      e eu li o resultado dela como se fosse.
+      A aritmetica que eu deveria ter feito antes: o custo e ~fixo em bps e
+      a barreira escala com m, entao o breakeven CAI com m enquanto a
+      win rate INCONDICIONAL nao cai (P(TP) de martingale = 0,50 sob
+      barreiras simetricas -- criterio ja usado no AG-229). Logo existe um
+      m onde a conta fecha, e ele estava fora da caixa.
+    severity: >-
+      alta -- fechei por engano a unica via que a medicao agora mostra aberta.
+    layer: "labels/analysis -- diagnostico, nada de producao alterado"
+    consequence: >
+      MEDIDO em SOLUSDT/R3, grade CONJUNTA (m simetrico) x (horizon_bars),
+      80.692 a 80.879 trades por celula, os dois lados agregados.
+      gap_pp = frac_TP - breakeven, ou seja quanto o MODELO ainda precisa
+      adicionar. O lift out-of-time medido no AG-461 e +1,25pp.
+        m     hor       frac_TP  breakeven  gap_pp  frac_TIME  bps/trade  bps/barra
+        1,50   32        50,74%     52,71%   -1,97      0,05%     -5,782     -5,782  PRODUCAO
+        2,25   32        50,56%     51,81%   -1,25      0,35%     -4,642     -1,547  teto do grid S1
+        3,00   32        49,42%     51,36%   -1,93      2,40%     -4,629     -0,771
+        4,00   32        45,09%     51,02%   -5,93     11,02%     -3,908     -0,355
+        6,00   32        30,79%     50,68%  -19,89     39,35%     -5,050     -0,202
+        2,25  128        50,72%     51,80%   -1,09      0,02%     -4,667     -1,556
+        3,00  128        50,56%     51,35%   -0,80      0,07%     -4,644     -0,774
+        4,00  128        50,48%     51,02%   -0,54      0,21%     -3,583     -0,326
+        6,00  128        49,07%     50,68%   -1,60      3,00%     -1,694     -0,068
+      TRES LEITURAS, em ordem de importancia:
+      (1) O gap cai de -1,97pp (producao) para -0,54pp (m=4, hor=128).
+          Com lift de +1,25pp: 50,48% + 1,25 = 51,73% contra breakeven de
+          51,02% -- sobra +0,71pp. SETE das 15 celulas ficam dentro do
+          alcance do lift que o modelo JA entrega. E a primeira vez nesta
+          investigacao que a aritmetica fecha em alguma celula.
+      (2) A ressalva que eu levantei ANTES de rodar era real, e era
+          exatamente o horizonte. Em hor=32, m=4 desmorona (frac_TIME 11%,
+          gap -5,93pp); em hor=128 a MESMA geometria e a melhor celula
+          (frac_TIME 0,21%). m=6/hor=32 e a caricatura: frac_TP cai a
+          30,79% e a hipotese de martingale quebra por completo. m e
+          horizon_bars so fazem sentido varridos JUNTOS -- as duas sao
+          classe A e nunca foram.
+      (3) A superficie e SUAVE, nao um pico. Em hor=128 os gaps sao -1,94 /
+          -1,09 / -0,80 / -0,54 / -1,60 com otimo INTERIOR em m=4. Isso e
+          estrutura, nao ruido de celula.
+      Assimetria por lado na melhor celula (m=4, hor=128): long -1,547 bps,
+      short -5,616 bps, frac_TP 50,25% vs 50,70%, holding mediano 11 barras
+      nos dois. A assimetria de ret_net nao vem de frac_TP e nao foi
+      investigada aqui.
+    resolved_by_commit: null
+    resolution: >-
+      NENHUMA mudanca de producao, e a razao importa: isto NAO e edge.
+      (a) O ret_net INCONDICIONAL e negativo nas 15 celulas -- tudo
+      depende de o modelo entregar o lift.
+      (b) O +1,25pp foi medido sobre o label de PRODUCAO. Horizonte 4x
+      maior e barreira 2,7x mais larga e outro problema de predicao: o
+      lift pode subir (mais sinal em horizonte longo) ou sumir (mais
+      dificil prever mais longe). So relabel + retreino responde, e
+      nenhuma extrapolacao daqui e legitima.
+      (c) Um combo, um simbolo, sem separacao temporal, sem pre-registro.
+      (d) Escolher m=4/hor=128 porque foi o melhor de 15 celulas e
+      PRECISAMENTE a selecao post-hoc que ja me queimou no AG-441,
+      AG-450, AG-451 e AG-461. O proximo passo tem que ser
+      PRE-REGISTRADO antes de rodar, com o combo, a celula e o criterio
+      travados em commit anterior ao resultado -- mesma disciplina do
+      AG-462/463, e desta vez com o piso de amostra conferido por
+      aritmetica ANTES (licao do AG-463).
+      O bps/barra (funcao objetivo do AG-445) melhora 85x entre producao
+      e m=6/hor=128, mas parte disso e mecanico: segurar mais tempo por
+      trade paga o custo fixo menos vezes. O efeito colateral -- menos
+      trades por ano, e portanto menos giro de capital -- NAO foi medido
+      aqui e nao pode ser ignorado na decisao.
+    status: >
+      ABERTO. Reabre a via GEOMETRIA, que eu tinha fechado por engano, e
+      corrige a lista de vias fechadas do AG-462/AG-463: fechadas por
+      medicao sao hiperparametro (AG-459), seletividade (AG-461 item 5),
+      regime de volatilidade (AG-462/463) e CUSTO (medido nesta rodada:
+      mesmo com adverse_selection_bps = 0, que e fisicamente impossivel
+      pra ordem passiva, 4 dos 5 combos seguem inviaveis e o 5o exige
+      <= 0,14 bps -- medir a constante do AG-442 nao mudaria veredito
+      nenhum, e isso aposenta a via por aritmetica sem gastar medicao).
+      Geometria conjunta com horizonte NAO esta fechada e e agora a unica
+      via com sinal direcional medido.
+      PROXIMO PASSO, sujeito a autorizacao do Manager: desenho
+      PRE-REGISTRADO de validacao com relabel + retreino, porque sem
+      retreino nao ha como saber se o lift sobrevive ao label novo.
+
+  - id: AG-465
+    date: "2026-09-06"
+    file: "src/labels/barrier_sweep.py:288 (window_bars); src/analysis/s1_tp_sl_sensitivity.py (caller); scripts/measure_ag464_geometria_fora_da_caixa.py (contorno local)"
+    related_file: "AG-031/B1 (time_stop_ms); AG-116 (horizon_bars sob dollar bar); AG-234; AG-450/AG-454 (resultados afetados)"
+    numeracao: "AG-465."
+    found_by: >-
+      Achado ao dimensionar a janela do sweep do AG-464 -- eu precisava
+      saber quanto de mark_1m carregar por chunk e fui conferir de onde
+      window_bars sai. Nao foi auditoria dirigida: foi consequencia de
+      nao aceitar um parametro sem saber o que ele governa.
+    gap: >
+      resolve_barriers_vectorized deriva o tamanho da janela vetorizada
+      de time_stop_ms (window_bars = ceil(time_stop_ms/60_000) + 60),
+      mas sob DOLLAR BAR o horizonte real do label e horizon_end_ms --
+      contagem de barra (AG-116), nao relogio. Com os valores de producao a
+      janela e de 540 minutos, enquanto o horizonte de 32 barras R3 tem
+      span MEDIANO de 1.724 minutos e MAXIMO de 10.781.
+      O valid_mask = time_w <= horizon_end so descarta o que passa do
+      horizonte; ele NAO detecta que a janela acabou ANTES dele. A guarda
+      existente (min(n_valid_bars) < 1) nunca dispara nesse caso, porque
+      todas as 540 barras da janela satisfazem a mascara. Resultado: a
+      busca de barreira e TRUNCADA em silencio, e o trade que teria tocado
+      TP/SL entre o minuto 540 e o horizonte verdadeiro e classificado como
+      TIME -- com t1 = horizon_end (tarde) mas exit_price colhido na
+      ultima barra da janela (cedo), duas pontas inconsistentes.
+      Mesma classe do AG-005 e do AG-004: uma constante de RELOGIO
+      governando uma decisao que sob dollar bar e de CONTAGEM DE BARRA.
+    severity: >-
+      media -- silencioso, e o impacto medido e pequeno na geometria de
+      producao mas cresce exatamente onde a barreira e mais larga.
+    layer: "labels -- afeta o sweep de grade, nao o motor escalar de producao"
+    consequence: >
+      EXPOSICAO MEDIDA: fracao de trades cuja duracao (t1 - t_entry) excede
+      a janela de 540 minutos, sob a geometria de PRODUCAO:
+        BTCUSDT/R2   3.364 de 217.000   1,550%
+        SOLUSDT/R2   1.456 de 162.065   0,898%
+        SOLUSDT/R3   3.835 de  80.934   4,738%
+        XRPUSDT/R2   2.211 de 170.287   1,298%
+        XRPUSDT/R3   5.150 de  84.561   6,090%
+      build_labels (motor ESCALAR, o que gera
+      data/labels/*/v1/labels.parquet) NAO tem este defeito -- ele resolve
+      barreira em laco por barra sem janela fixa. O defeito e do caminho
+      VETORIZADO, usado so pela varredura de grade
+      (s1_tp_sl_sensitivity, faixa2_caminho_b).
+      DIRECAO DO VIES, e ela importa pra leitura do AG-454: a truncagem
+      transforma toque tardio em TIME, o que penaliza justamente as
+      celulas de barreira LARGA (as que demoram mais a tocar). Ou seja,
+      2,25/2,25 venceu o ranking do AG-454 APESAR do handicap, nao por
+      causa dele -- o vies nao explica aquele resultado, reforca.
+    resolved_by_commit: null
+    resolution: >-
+      Contornado LOCALMENTE no scripts/measure_ag464_geometria_fora_da_caixa.py:
+      a janela e dimensionada pelo span REAL do horizonte, por chunk de
+      trades (time_stop_ms=span_ms + 60_000), com chunk de 1.500 trades
+      pra segurar memoria -- a janela chega a ~11k barras de 1m sob
+      horizonte de 128 barras, e 40k trades x 11k floats estouraria.
+      Sem esse contorno o AG-464 teria medido o PROPRIO DEFEITO e concluido
+      "time stop mata a barreira larga", que era exatamente a hipotese que
+      eu tinha declarado como ressalva -- o defeito a teria confirmado
+      falsamente.
+      CORRECAO DE VERDADE, nao feita aqui: resolve_barriers_vectorized
+      deveria derivar window_bars de horizon_end_ms quando ele e
+      fornecido (max(horizon_end - t_entry)), em vez de sempre de
+      time_stop_ms, e a guarda deveria comparar a COBERTURA da janela
+      contra o horizonte em vez de so contar barras validas.
+    status: >
+      ABERTO. Nao corrigi o modulo nesta rodada de proposito: mexer em
+      barrier_sweep.py invalida os goldens de paridade
+      (test_reproduz_build_labels_*) e os resultados publicados do
+      AG-450/454, e isso e trabalho de escopo proprio com recaptura de
+      baseline -- nao cabe pendurado num diagnostico. Fica registrado com
+      a exposicao medida e a direcao do vies, que e o que permite ler os
+      resultados existentes sem refaze-los.
