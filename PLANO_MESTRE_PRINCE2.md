@@ -6952,6 +6952,85 @@ fechadas são hiperparâmetro, seletividade, regime de volatilidade e custo.
 Geometria conjunta com horizonte está aberta, e é a única via com sinal
 direcional medido a favor.
 
+---
+### 15.47 A geometria replica em 4 de 4 e o lift não converte: fecha a última via do AG-449, e o gargalo medido muda de natureza (2026-09-07)
+
+`AG-466`, teste pré-registrado em duas etapas, 2 entradas novas no
+`audit/evidence_ledger.yaml`. Narrativa em `docs/SPRINT_LOG.md` (seção
+2026-09-07).
+
+**O desenho mais forte desta investigação, e ele veio de uma escolha do
+Manager.** A célula `m=4`/`horizon_bars=128` foi derivada como argmax de 15
+células medidas só em SOLUSDT/R3, e a derivação já estava commitada
+(`425f599`). Ao decidir "os 5, m=4", o Manager abriu um teste que eu não
+tinha proposto: os outros quatro combos nunca haviam sido olhados fora do
+grid do S1, então são conjunto de teste genuíno — ativos e grades
+diferentes, não a metade recente da mesma série, que era a partição fraca
+das duas tentativas anteriores.
+
+**A Etapa 1 replicou, e replicou mais forte do que a derivação.** Quatro de
+quatro combos reduziram a exigência de win rate, com melhora de +1,90 a
++3,94 pontos percentuais contra +1,43 no combo de derivação. Isso é o
+oposto da regressão à média que declarei como limitação — e confirma o
+mecanismo em vez de contradizê-lo, porque a melhora é inversamente
+proporcional ao ATR: quanto menor o ATR, mais alto o breakeven e maior o
+ganho ao alargar a barreira. Custo fixo em bps machuca mais onde a barreira
+é menor em preço, que é exatamente a previsão declarada antes de rodar.
+
+**A Etapa 2 falhou, e a falha não foi por pouco no eixo que importa.** Com
+relabel e retreino, o edge agregado ficou positivo pela primeira vez neste
+projeto (+6,74 bps) — e com `t` de 0,915 isso não é edge, é ruído com sinal
+favorável. O critério que barrou primeiro foi o de consistência: 2 dos 4
+combos, contra piso de 3. Um combo apontou na direção contrária de forma
+acentuada.
+
+**O achado que sobrevive ao fracasso é sobre o que impede medir, não sobre
+o motor.** O desvio-padrão do `ret_net` entre folds vai de 13,6 a 77,5 bps
+contra médias de um dígito — ruído de 1,4 a 4,5 vezes o efeito. Sob essa
+dispersão, o menor efeito detectável com os 37 folds disponíveis é +14,73
+bps; detectar o efeito medido exigiria cerca de 177 folds, quase cinco
+vezes o que existe. **O gargalo do `AG-449` não é nenhum parâmetro do
+motor.** As cinco vias conhecidas estão fechadas por medição —
+hiperparâmetro, seletividade, regime de volatilidade, custo e agora
+geometria — e nenhuma delas atacava a razão sinal-ruído por fold, porque
+nenhuma delas podia.
+
+**Disciplina que funcionou, e vale registrar porque custou duas falhas para
+aprender.** A aritmética de amostra foi feita antes de escrever os pisos: o
+`AG-463` morreu porque travei um piso de 30 folds quando o teto teórico era
+exatamente 30, e aqui o `c3` passou com 37 de 47. O pré-registro foi
+commitado sozinho antes de qualquer número existir, e o veredito de
+FRACASSO foi honrado como estava escrito, incluindo a consequência
+declarada de fechar a via.
+
+**Duas coisas contra mim, registradas por inteiro.** Primeira: o próprio
+pré-registro continha uma afirmação falsa — declarei que o guardrail B15
+não protegeria a rodada, e ele protegeu, travando a Etapa 2 no primeiro
+combo. A correção está no `AG-466`, não no YAML commitado, que fica
+intacto. Segunda: sob esta dispersão, média por fold produz número positivo
+grande em qualquer direção — o label de produção aparece com +26,31 bps num
+combo sem contradizer os gates 0/20. Toda citação futura de `ret_net` médio
+sem a dispersão ao lado está errada por construção, e é reincidência de um
+padrão que este projeto já registrou duas vezes.
+
+**Mudança em código de produção, feita no meio do experimento e declarada
+como tal.** `build_modeling_frame` ganhou `experiment_label_config`, que
+troca a referência do B15 sem desligá-lo — a conferência continua rodando e
+uma config errada do caller ainda levanta. Existe porque o override
+sancionado por combo carrega só a geometria de barreira, sem onde declarar
+o horizonte. Coberto por teste que exige a exceção quando a config não
+corresponde aos labels, com fonte única de config entre relabel e
+verificação, e log em WARNING para que nenhum artefato produzido por esse
+caminho seja confundido com produção.
+
+**Decisão pendente, e ela é de escopo.** Não proponho quarta tentativa
+sobre esta hipótese. O que a medição coloca na mesa do Manager é uma
+pergunta diferente das anteriores: ou se aceita que o dado disponível não
+distingue o efeito de zero e o motor não avança por esta rota, ou se muda o
+que gera a amostra — mais ativos, mais histórico, ou uma unidade de análise
+que não seja o fold. Nenhuma dessas é ajuste de parâmetro, e nenhuma é
+minha para escolher.
+
 ## Fontes desta pesquisa
 
 - [PRINCE2.com — Os 7 princípios, temas e processos](https://www.prince2.com/eur/blog/the-7-principles-themes-and-processes-of-prince2)

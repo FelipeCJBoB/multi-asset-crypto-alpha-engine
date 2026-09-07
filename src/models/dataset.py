@@ -259,6 +259,7 @@ def build_modeling_frame(
     extra_feature_ids: tuple[str, ...] = (),
     use_geometry_by_combo: bool = False,
     regime_source: str = REGIME_SOURCE_QUANTILE_V1,
+    experiment_label_config: LabelConfig | None = None,
 ) -> ModelingFrame:
     """`extra_feature_ids` (AG-032, 2026-08-23) — colunas de feature ALÉM
     de `T1_FEATURE_IDS` a incluir em `mf.data`, ex. `C07_vol_pctile_
@@ -288,6 +289,27 @@ def build_modeling_frame(
     definição de regime/feature da janela — violaria a instrução do
     PRD_V4_1.md T0.5 ("sem alteração alguma"). Janela `None`/`None` (default)
     preserva o comportamento anterior byte a byte.
+
+    `experiment_label_config` (AG-466, 2026-09-06) — `LabelConfig` contra o
+    qual B15 (`verify_config_hash`) confere o hash dos labels, em vez do
+    resolvido de `constants.yaml`. **Não desliga o guardrail**: a
+    conferência continua rodando, e um caller que passe a config errada
+    ainda levanta `ConfigHashMismatchError`. O que muda é a REFERÊNCIA,
+    porque num experimento sobre geometria alternativa a config de execução
+    correta é a do experimento, não a global.
+
+    Existe porque `use_geometry_by_combo` (AG-260), o override sancionado,
+    carrega só `tp_atr_mult`/`sl_atr_mult` de
+    `config/barrier_geometry_by_combo.yaml` — um experimento que também
+    move `horizon_bars` não tem como se declarar por lá. A alternativa
+    seria reimplementar `build_modeling_frame` dentro do script de
+    experimento, que divergiria desta função em silêncio na primeira
+    mudança que não fosse propagada.
+
+    `None` (default) preserva o comportamento anterior byte a byte — nenhum
+    caller de produção passa este argumento, e o log em WARNING quando ele é
+    usado existe pra que um artefato produzido por este caminho nunca seja
+    confundido com produção.
 
     **Achado real, corrigido aqui (§15.6 item 4 do PLANO_MESTRE, preparação
     de engenharia multi-ativo, 2026-08-13):** até esta correção,
@@ -433,13 +455,38 @@ def build_modeling_frame(
     # `ConfigHashMismatchError`. O default `False` mantém o par
     # escrita/leitura no global, bit-exato -- os dois lados só migram
     # juntos, por decisão explícita, nunca um sem o outro.
-    execution_config = LabelConfig.from_constants(
-        estimator_id=vol_estimator_id,
-        tf=tf,
-        resolution_id=resolution_id,
-        symbol=symbol,
-        use_geometry_by_combo=use_geometry_by_combo,
-    )
+    # AG-466 -- `experiment_label_config` NÃO desliga B15: troca a
+    # REFERÊNCIA contra a qual o hash é conferido, e a conferência continua
+    # acontecendo (config errada do caller ainda levanta). Existe porque o
+    # override por combo (`use_geometry_by_combo`, AG-260) só carrega
+    # `tp_atr_mult`/`sl_atr_mult` — um experimento que também mexe em
+    # `horizon_bars` não tem como se declarar por lá, e a alternativa seria
+    # reimplementar `build_modeling_frame` fora daqui, que divergiria em
+    # silêncio. Log em WARNING de propósito: um artefato produzido por este
+    # caminho não é de produção, e isso tem que aparecer no log de quem
+    # rodar.
+    if experiment_label_config is not None:
+        execution_config = experiment_label_config
+        logger.warning(
+            "dataset.build_modeling_frame.b15_contra_config_de_experimento",
+            symbol=symbol,
+            resolution_id=resolution_id,
+            labels_version=labels_version,
+            config_hash_experimento=execution_config.config_hash,
+            detail=(
+                "AG-466 -- B15 verificado contra LabelConfig fornecido pelo caller, não "
+                "contra constants.yaml. Caminho de EXPERIMENTO offline; o frame "
+                "resultante não é insumo de produção."
+            ),
+        )
+    else:
+        execution_config = LabelConfig.from_constants(
+            estimator_id=vol_estimator_id,
+            tf=tf,
+            resolution_id=resolution_id,
+            symbol=symbol,
+            use_geometry_by_combo=use_geometry_by_combo,
+        )
     verify_config_hash(labels, execution_config)
     labels = labels.with_row_index("_pos")
     start, end = date_bounds(labels)

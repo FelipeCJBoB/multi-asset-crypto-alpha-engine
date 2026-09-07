@@ -30281,3 +30281,123 @@ entries:
       baseline -- nao cabe pendurado num diagnostico. Fica registrado com
       a exposicao medida e a direcao do vies, que e o que permite ler os
       resultados existentes sem refaze-los.
+
+  - id: AG-466
+    date: "2026-09-07"
+    file: "audit/pre_registro/ag466_geometria_m4_h128_generaliza.yaml (registro, commit d496398 -- ANTES); scripts/measure_ag466_etapa1_geometria_4_combos.py; scripts/measure_ag466_etapa2_lift_retreino.py; experiments/ag466_etapa1_geometria.json; experiments/ag466_etapa2_lift.json; src/models/dataset.py"
+    related_file: "AG-464 (derivacao da celula); AG-465 (defeito de janela); AG-449; AG-461; AG-462/AG-463 (as duas tentativas anteriores)"
+    numeracao: "AG-466."
+    found_by: >-
+      Teste PRE-REGISTRADO em duas etapas, autorizado pelo Manager
+      ("Os 5, m=4", 2026-09-06). Registro commitado sozinho em d496398,
+      antes de qualquer numero dos 4 combos de teste existir sob esta
+      geometria -- ordem verificavel por `git log`.
+    gap: >
+      O AG-464 mediu que a celula (m=4, horizon_bars=128) reduz o gap entre
+      win rate incondicional e breakeven de -1,97pp para -0,54pp. Aquilo foi
+      derivado como argmax de 15 celulas em UM combo (SOLUSDT/R3) e nao era
+      evidencia de nada. Este AG testa a mesma celula em 4 combos NUNCA
+      olhados sob geometria fora do grid do S1 -- conjunto de teste genuino,
+      ativos e grades diferentes, nao a metade recente da mesma serie.
+    severity: >-
+      alta -- decide a ultima via aberta do AG-449.
+    layer: "labels/models -- diagnostico; `v1` nunca tocado, producao inalterada"
+    consequence: >
+      ETAPA 1 (geometria pura, sem modelo): **SUCESSO, 4 de 4**. E o efeito
+      foi MAIOR no teste do que na derivacao, o oposto da regressao a media
+      que eu declarei como limitacao.
+        combo         gap producao  gap derivada  melhora   frac_TP  frac_TIME
+        BTCUSDT/R2       -5,47         -1,53      +3,94     50,83%     0,31%
+        SOLUSDT/R2       -3,06         -0,90      +2,15     50,55%     0,19%
+        XRPUSDT/R2       -3,97         -1,15      +2,82     50,65%     0,40%
+        XRPUSDT/R3       -2,57         -0,66      +1,90     50,59%     0,47%
+        (derivacao SOLUSDT/R3, AG-464:  -1,97 -> -0,54, +1,43)
+      POR QUE O EFEITO CRESCEU, e isso CONFIRMA o mecanismo declarado em vez
+      de ser sorte: a melhora e inversamente proporcional ao ATR. BTCUSDT/R2
+      tem o menor ATR (0,409%) e portanto o breakeven mais alto, logo o maior
+      ganho ao alargar a barreira; SOLUSDT/R3, que derivou a celula, tem o
+      maior ATR (0,950%) e era o que menos tinha a ganhar. Custo fixo em bps
+      machuca mais onde a barreira e menor em preco -- exatamente a previsao.
+      Duas verificacoes de sanidade: frac_TP fica em 50,55-50,83% nas quatro
+      celulas novas (a martingale segura) e frac_TIME fica abaixo de 0,50%
+      em todas (horizon_bars=128 e generoso o bastante nas DUAS resolucoes,
+      o que sustenta empiricamente a convencao compartilhada de §15.12.3-C.1).
+
+      ETAPA 2 (lift, com relabel e retreino): **FRACASSO**.
+        c1 ganho pareado t>2,0 ..... FALHA  t=0,624  dif media  +5,05 bps
+        c2 edge absoluto t>2,0 ..... FALHA  t=0,915  ret novo   +6,74 bps
+        c3 >=20 trades/fold, >=30 .. PASSA  37 folds validos de 47
+        c4 >=3 de 4 combos ......... FALHA  2 de 4
+        combo        folds   dif media   ret novo   ret producao
+        BTCUSDT/R2   12/14     +9,41       +3,46       -5,96
+        SOLUSDT/R2    7/11    +32,46      +19,92      -12,54
+        XRPUSDT/R2   11/12     -2,85       +0,56       +3,41
+        XRPUSDT/R3    7/10    -17,41       +8,90      +26,31
+      O SINAL AGREGADO E POSITIVO PELA PRIMEIRA VEZ NESTE PROJETO -- e nao
+      significa nada. +5,05 e +6,74 bps com t de 0,62 e 0,92.
+      DISPERSAO, que e a historia real (dp entre folds contra a media):
+        BTCUSDT/R2  dp 13,64  faixa -10,41 a  +37,77   8/12 folds com dif>0
+        SOLUSDT/R2  dp 66,06  faixa -35,26 a +118,82   4/7  folds com dif>0
+        XRPUSDT/R2  dp 36,40  faixa -55,71 a  +42,75   6/11 folds com dif>0
+        XRPUSDT/R3  dp 77,54  faixa -137,61 a +93,35   2/7  folds com dif>0
+      O ruido e de 1,4 a 4,5 vezes o efeito. O +32,46 de SOLUSDT/R2 sai de 4
+      folds positivos em 7 -- mesma forma do falso positivo que o c3 barrou
+      no AG-462.
+      O QUE O DADO SUPORTA, EM NUMERO: com dp=44,79 bps sobre 37 folds, o
+      menor efeito detectavel a t=2 e +14,73 bps. Medimos +6,74. Detectar um
+      efeito desse tamanho exigiria 177 folds -- quase 5x o disponivel. O
+      desenho nao estava errado; a razao sinal-ruido POR FOLD e que nao
+      comporta a pergunta.
+    resolved_by_commit: null
+    resolution: >-
+      MINHA AFIRMACAO FALSA NO PROPRIO PRE-REGISTRO, corrigida aqui e nao no
+      YAML commitado (que fica intacto, e o ponto dele): eu escrevi em
+      `limitacoes_declaradas` que "`load_labels_v1` nao verifica config por
+      default (AG-225), entao o guardrail B15 NAO vai proteger esta rodada".
+      Falso. `build_modeling_frame` chama `verify_config_hash` SEPARADAMENTE
+      (`src/models/dataset.py:443`), e a Etapa 2 travou com
+      `ConfigHashMismatchError` no primeiro combo. O guardrail funciona; quem
+      estava errado era eu.
+      MUDANCA EM CODIGO DE PRODUCAO, feita no meio do experimento e
+      declarada: `build_modeling_frame` ganhou
+      `experiment_label_config: LabelConfig | None = None`. Ele NAO desliga
+      B15 -- troca a REFERENCIA contra a qual o hash e conferido, e a
+      conferencia continua rodando. Existe porque o override sancionado
+      (`use_geometry_by_combo`, AG-260) carrega so tp/sl de um arquivo
+      GERADO que nao se edita a mao, e nao tem onde declarar `horizon_bars`;
+      a alternativa seria reimplementar `build_modeling_frame` dentro do
+      script, que divergiria em silencio na primeira mudanca nao propagada.
+      Tres coisas sustentam que nao e bypass: (a) o teste
+      `..._experiment_label_config_errado_ainda_levanta` passa uma config
+      que nao corresponde aos labels e EXIGE `ConfigHashMismatchError`;
+      (b) `_config_experimento()` e fonte unica -- o relabel escreve sob ela
+      e o B15 confere contra ela, nao ha como divergirem; (c) log em WARNING
+      quando o caminho e usado, pra que nenhum artefato dele seja confundido
+      com producao. Default `None` preserva o comportamento anterior byte a
+      byte.
+      Labels novos em `data/labels/{symbol}/{res}/v_ag466/` -- caminho
+      PARALELO, `v1` verificado intocado (mtimes de 2026-09-04). Nao sao
+      artefato de producao e tem `config_hash` divergente de
+      `constants.yaml` por desenho.
+    status: >
+      FECHA A VIA GEOMETRIA, como o registro travava antes de rodar: "FRACASSO
+      aqui fecha a via GEOMETRIA, que e a ultima aberta do AG-449". Honrado.
+      MAS a Etapa 1 SOBREVIVE ao fracasso e e achado real com replicacao 4/4:
+      a geometria REDUZ a exigencia de win rate, e reduz mais onde o ATR e
+      menor. O que falhou nao foi isso -- foi o modelo nao converter a folga
+      em edge distinguivel de zero. Sao afirmacoes diferentes e as duas ficam
+      no registro.
+      ESTADO DO AG-449 depois desta rodada: as cinco vias conhecidas estao
+      fechadas por medicao -- hiperparametro (AG-459), seletividade (AG-461),
+      regime de volatilidade (AG-462/463), custo (AG-464, por aritmetica) e
+      agora geometria (aqui). O gargalo nao e nenhum parametro do motor: e a
+      razao sinal-ruido por fold, que exigiria ~5x a amostra disponivel pra
+      distinguir o efeito medido de zero.
+      NAO proponho 3a variante desta hipotese nem 4a tentativa. Proxima
+      decisao e do Manager, e ela e de escopo, nao de parametro.
+      ACHADO DE LEITURA, contra mim: `ret_producao` de XRPUSDT/R3 aparece como
+      +26,31 bps. Nao contradiz os gates 0/20 -- com dp de 77,54 sobre 7 folds
+      o t fica muito abaixo de 2 -- mas mostra que media por fold nesta escala
+      produz numero positivo grande em qualquer direcao. Toda citacao futura
+      de `ret_net` medio deste projeto sem a dispersao ao lado esta errada por
+      construcao (reincidencia do padrao ja registrado em AG-429/AG-437).

@@ -4967,3 +4967,83 @@ entries:
     geometria neste projeto (AG-450/AG-454, grid do S1) foi feita com
     horizon_bars fixo em 32 -- valida dentro daquele horizonte, nao como
     afirmacao sobre geometria em geral. Esta e a lente que faltava.
+
+- id_curto: geometria-larga-reduz-breakeven-replica-4-de-4-2026-09-07
+  data: "2026-09-07"
+  fase: >-
+    AG-466 Etapa 1 -- teste PRE-REGISTRADO (registro em d496398) da celula
+    (m=4, horizon_bars=128) derivada em SOLUSDT/R3, aplicada a 4 combos
+    nunca olhados sob geometria fora do grid do S1.
+  feature_ou_filtro: >-
+    geometria de barreira simetrica tp=sl=4 ATR conjunta com horizonte de
+    128 barras, contra a producao tp=sl=1,5 ATR e horizonte de 32
+  symbol: "BTCUSDT, SOLUSDT, XRPUSDT"
+  tf: "R2 e R3"
+  lado: "long e short agregados"
+  janela: "historia completa de cada combo"
+  regime: "todos"
+  metrica_tipo: >-
+    melhora de `gap_pp` = (frac_TP - breakeven) da celula derivada menos o
+    da celula de producao. `frac_TP` e a win rate INCONDICIONAL, piso de
+    mercado sem modelo. Positivo significa que o modelo precisa adicionar
+    MENOS. Limiar declarado a priori: >= 0,50pp, que domina o 2*SE de todos
+    os combos (maior: 0,344pp).
+  metrica_valor: >-
+    4 de 4 combos passaram. BTCUSDT/R2 +3,94pp | XRPUSDT/R2 +2,82pp |
+    SOLUSDT/R2 +2,15pp | XRPUSDT/R3 +1,90pp. Derivacao (SOLUSDT/R3):
+    +1,43pp. frac_TP fica em 50,55-50,83% nas 4 celulas novas e frac_TIME
+    abaixo de 0,50% em todas.
+  n: "84.561 a 217.000 trades por combo"
+  fonte_arquivo: "experiments/ag466_etapa1_geometria.json"
+  fonte_secao: "AG-466"
+  status: verde
+  nota: >-
+    VERDE, e a replicacao e limpa: a escolha da celula estava commitada em
+    425f599 antes de qualquer numero destes 4 combos existir. O efeito foi
+    MAIOR no teste que na derivacao, o oposto da regressao a media que eu
+    declarei como limitacao -- e isso CONFIRMA o mecanismo em vez de ser
+    sorte, porque a melhora e inversamente proporcional ao ATR: BTCUSDT/R2
+    tem o menor ATR (0,409%) e o maior ganho; SOLUSDT/R3, que derivou, tem o
+    maior ATR (0,950%) e o menor. Custo fixo em bps machuca mais onde a
+    barreira e menor em preco.
+    ISTO NAO E EDGE: e a exigencia caindo, nao o modelo entregando. A Etapa
+    2, que testou se o lift converte a folga, deu FRACASSO.
+
+- id_curto: dispersao-por-fold-inviabiliza-o-teste-de-edge-2026-09-07
+  data: "2026-09-07"
+  fase: >-
+    AG-466 Etapa 2 -- relabel em caminho paralelo (v_ag466) e walk-forward
+    ancorado com hiperparametros de producao, pareado por fold contra o
+    label de producao.
+  feature_ou_filtro: >-
+    `ret_net` medio dos trades SELECIONADOS por fold, sob o label da celula
+    derivada, contra o mesmo fold sob o label de producao
+  symbol: "BTCUSDT, SOLUSDT, XRPUSDT"
+  tf: "R2 e R3"
+  lado: "long e short agregados (side_hat != 0)"
+  janela: "todos os folds do walk-forward de cada combo"
+  regime: "todos"
+  metrica_tipo: >-
+    dispersao do `ret_net` medio ENTRE folds, e o efeito minimo detectavel
+    que ela implica. Esta linha registra a DISPERSAO, nao o veredito.
+  metrica_valor: >-
+    dp entre folds por combo: BTCUSDT/R2 13,64 | XRPUSDT/R2 36,40 |
+    SOLUSDT/R2 66,06 | XRPUSDT/R3 77,54 bps, contra medias de +9,41,
+    -2,85, +32,46 e -17,41. Ruido de 1,4 a 4,5 vezes o efeito.
+    Agregado: dp=44,79 bps sobre 37 folds -> SE=7,36 -> menor efeito
+    detectavel a t=2 e +14,73 bps. Medido: +6,74 bps (t=0,915).
+    Detectar +6,74 bps a t=2 exigiria 177 folds, ~5x o disponivel.
+  n: "37 folds validos de 47 (piso de 20 trades por fold)"
+  fonte_arquivo: "experiments/ag466_etapa2_lift.json"
+  fonte_secao: "AG-466"
+  status: vermelho
+  nota: >-
+    O gargalo medido do AG-449 nao e nenhum parametro do motor -- e a razao
+    sinal-ruido POR FOLD. Nenhuma das cinco vias fechadas (hiperparametro,
+    seletividade, regime, custo, geometria) atacava isso.
+    ALERTA DE LEITURA que vale alem deste AG: sob esta dispersao, media por
+    fold produz numero positivo GRANDE em qualquer direcao -- o
+    `ret_producao` de XRPUSDT/R3 aparece como +26,31 bps sem contradizer os
+    gates 0/20, porque com dp de 77,54 sobre 7 folds o t fica muito abaixo
+    de 2. Toda citacao de `ret_net` medio deste projeto sem a dispersao ao
+    lado esta errada por construcao (reincidencia de AG-429/AG-437).

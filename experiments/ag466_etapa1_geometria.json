@@ -1,0 +1,119 @@
+{
+  "task": "AG-466 Etapa 1 -- a celula derivada em SOLUSDT/R3 generaliza (geometria pura, sem modelo)",
+  "pre_registro": "audit/pre_registro/ag466_geometria_m4_h128_generaliza.yaml",
+  "derivacao": {
+    "combo": "SOLUSDT/R3",
+    "commit": "425f599",
+    "ag": "AG-464"
+  },
+  "celula_producao": {
+    "m": 1.5,
+    "horizon_bars": 32
+  },
+  "celula_derivada": {
+    "m": 4.0,
+    "horizon_bars": 128
+  },
+  "limiar_melhora_pp": 0.5,
+  "veredito": "SUCESSO",
+  "n_combos_que_passaram": 4,
+  "por_combo": [
+    {
+      "symbol": "BTCUSDT",
+      "resolution_id": "R2",
+      "producao": {
+        "m": 1.5,
+        "horizon_bars": 32,
+        "n": 216941,
+        "frac_tp": 0.5077140789431228,
+        "frac_time": 0.0010924629277084554,
+        "breakeven": 0.5623923345363528,
+        "gap_pp": -5.467825559323003
+      },
+      "derivada": {
+        "m": 4.0,
+        "horizon_bars": 128,
+        "n": 216754,
+        "frac_tp": 0.5082535962427452,
+        "frac_time": 0.003100288806665621,
+        "breakeven": 0.5235649295577588,
+        "gap_pp": -1.5311333315013553
+      },
+      "melhora_pp": 3.936692227821648,
+      "passou": true
+    },
+    {
+      "symbol": "SOLUSDT",
+      "resolution_id": "R2",
+      "producao": {
+        "m": 1.5,
+        "horizon_bars": 32,
+        "n": 162009,
+        "frac_tp": 0.5079841243387713,
+        "frac_time": 0.0007221821009943892,
+        "breakeven": 0.5385393504734532,
+        "gap_pp": -3.055522613468198
+      },
+      "derivada": {
+        "m": 4.0,
+        "horizon_bars": 128,
+        "n": 161822,
+        "frac_tp": 0.5054751517099034,
+        "frac_time": 0.0019280443944581084,
+        "breakeven": 0.5145094036953639,
+        "gap_pp": -0.9034251985460484
+      },
+      "melhora_pp": 2.1520974149221495,
+      "passou": true
+    },
+    {
+      "symbol": "XRPUSDT",
+      "resolution_id": "R2",
+      "producao": {
+        "m": 1.5,
+        "horizon_bars": 32,
+        "n": 170227,
+        "frac_tp": 0.5081508808825862,
+        "frac_time": 0.000751937119258402,
+        "breakeven": 0.5478402112139203,
+        "gap_pp": -3.968933033133415
+      },
+      "derivada": {
+        "m": 4.0,
+        "horizon_bars": 128,
+        "n": 170040,
+        "frac_tp": 0.5064984709480123,
+        "frac_time": 0.003952011291460833,
+        "breakeven": 0.5180331448743121,
+        "gap_pp": -1.153467392629981
+      },
+      "melhora_pp": 2.815465640503434,
+      "passou": true
+    },
+    {
+      "symbol": "XRPUSDT",
+      "resolution_id": "R3",
+      "producao": {
+        "m": 1.5,
+        "horizon_bars": 32,
+        "n": 84501,
+        "frac_tp": 0.5077691388267594,
+        "frac_time": 0.0010414077939906036,
+        "breakeven": 0.5334197541971522,
+        "gap_pp": -2.5650615370392704
+      },
+      "derivada": {
+        "m": 4.0,
+        "horizon_bars": 128,
+        "n": 84315,
+        "frac_tp": 0.5059479333451936,
+        "frac_time": 0.004661092332325209,
+        "breakeven": 0.5125677843943273,
+        "gap_pp": -0.6619851049133652
+      },
+      "melhora_pp": 1.9030764321259053,
+      "passou": true
+    }
+  ],
+  "nota": "gap_pp = frac_TP - breakeven, onde frac_TP e a win rate INCONDICIONAL (piso de mercado, sem modelo). melhora_pp = gap da celula derivada menos gap da celula de producao; positivo significa que o modelo precisa adicionar MENOS. Nenhum modelo entra nesta etapa."
+}

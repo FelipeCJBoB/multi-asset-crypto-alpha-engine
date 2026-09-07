@@ -7208,3 +7208,92 @@ time stop mata a barreira larga — que era a minha própria hipótese.
 `experiments/ag464_geometria_fora_da_caixa.json`,
 `src/labels/barrier_geometry.py`, `src/labels/barrier_sweep.py`,
 `src/analysis/feasibility.py`, `config/constants.yaml`.
+
+## 2026-09-07 — A geometria replica 4 de 4 e o lift não converte: a última via do AG-449 fecha, e o gargalo medido é a dispersão (AG-466) <!-- check-sprint-log: skip -->
+
+**Desenho, e ele foi o mais forte desta investigação.** A célula `m=4` /
+`horizon_bars=128` foi derivada como argmax de 15 células medidas
+exclusivamente em SOLUSDT/R3, e essa derivação já estava commitada
+(`425f599`). Os outros quatro combos nunca tinham sido olhados fora do grid
+do S1 — conjunto de teste genuíno, ativos e grades diferentes, não a metade
+recente da mesma série. O registro foi commitado sozinho em `d496398`, e a <!-- check-sprint-log: skip -->
+escolha de `m=4` sobre os 5 combos foi decisão do Manager.
+
+**A aritmética que faltou no `AG-463` foi feita antes.** `SE(frac_TP)` de <!-- check-sprint-log: skip -->
+0,107 a 0,172pp por combo contra efeito esperado de +1,43pp; e 49 folds
+disponíveis contra piso de 30. No `AG-463` o teto era exatamente igual ao <!-- check-sprint-log: skip -->
+piso — desta vez o `c3` passou com 37 folds válidos de 47. <!-- check-sprint-log: skip -->
+
+**Etapa 1 — SUCESSO, 4 de 4, e o efeito foi MAIOR no teste que na <!-- check-sprint-log: skip -->
+derivação.** Melhora de `gap_pp`: BTCUSDT/R2 +3,94 · XRPUSDT/R2 +2,82 · <!-- check-sprint-log: skip -->
+SOLUSDT/R2 +2,15 · XRPUSDT/R3 +1,90, contra +1,43 na derivação. Isso é o <!-- check-sprint-log: skip -->
+oposto da regressão à média que declarei como limitação — e **confirma o
+mecanismo em vez de contradizê-lo**: a melhora é inversamente proporcional
+ao ATR. BTCUSDT/R2 tem o menor ATR (0,409%) e portanto o breakeven mais <!-- check-sprint-log: skip -->
+alto, logo o maior ganho ao alargar a barreira; SOLUSDT/R3, que derivou a
+célula, tem o maior ATR (0,950%) e era o que menos tinha a ganhar. Custo <!-- check-sprint-log: skip -->
+fixo em bps machuca mais onde a barreira é menor em preço. `frac_TP` fica
+em 50,55–50,83% nas quatro células novas e `frac_TIME` abaixo de 0,50% em <!-- check-sprint-log: skip -->
+todas — a martingale segura e `horizon_bars=128` é generoso o bastante nas <!-- check-sprint-log: skip -->
+duas resoluções, o que sustenta empiricamente a convenção compartilhada de
+§15.12.3-C.1.
+
+**Etapa 2 — FRACASSO.** Relabel em caminho paralelo (`v_ag466`, `v1` <!-- check-sprint-log: skip -->
+intocado) e walk-forward com hiperparâmetros de produção, pareado por fold.
+
+| combo | folds | dif média | ret novo | ret produção | |
+|---|---|---|---|---|---| <!-- check-sprint-log: skip -->
+| BTCUSDT/R2 | 12/14 | +9,41 | +3,46 | −5,96 | | <!-- check-sprint-log: skip -->
+| SOLUSDT/R2 | 7/11 | +32,46 | +19,92 | −12,54 | | <!-- check-sprint-log: skip -->
+| XRPUSDT/R2 | 11/12 | −2,85 | +0,56 | +3,41 | | <!-- check-sprint-log: skip -->
+| XRPUSDT/R3 | 7/10 | −17,41 | +8,90 | +26,31 | | <!-- check-sprint-log: skip -->
+
+`c1` t=0,624 · `c2` t=0,915 · `c3` PASSA · `c4` 2 de 4. **O sinal agregado é <!-- check-sprint-log: skip -->
+positivo pela primeira vez neste projeto — +5,05 e +6,74 bps — e não
+significa nada** com `t` de 0,62 e 0,92. <!-- check-sprint-log: skip -->
+
+**A dispersão é a história real, e é o achado que sobrevive.** Desvio-padrão
+entre folds de 13,64 / 36,40 / 66,06 / 77,54 bps contra médias de 9,41 / <!-- check-sprint-log: skip -->
+−2,85 / +32,46 / −17,41 — ruído de 1,4 a 4,5 vezes o efeito. Agregado: <!-- check-sprint-log: skip -->
+`dp=44,79` sobre 37 folds dá menor efeito detectável a `t=2` de **+14,73 <!-- check-sprint-log: skip -->
+bps**; medimos +6,74. Detectar um efeito desse tamanho exigiria **177 <!-- check-sprint-log: skip -->
+folds**, ~5× o disponível. O desenho não estava errado — a razão
+sinal-ruído por fold é que não comporta a pergunta.
+
+**Minha afirmação falsa dentro do próprio pré-registro, corrigida no AG e
+não no YAML commitado** (que fica intacto, é o ponto dele): declarei que
+"`load_labels_v1` não verifica config por default, então o guardrail B15 não
+vai proteger esta rodada". Falso — `build_modeling_frame` chama
+`verify_config_hash` separadamente (`src/models/dataset.py`), e a Etapa 2
+travou com `ConfigHashMismatchError` no primeiro combo. O guardrail funciona.
+
+**Mudança em código de produção, no meio do experimento e declarada.**
+`build_modeling_frame` ganhou `experiment_label_config`, que **não desliga
+B15** — troca a referência contra a qual o hash é conferido, e a conferência
+continua rodando. Existe porque `use_geometry_by_combo` (`AG-260`) carrega <!-- check-sprint-log: skip -->
+só `tp_atr_mult`/`sl_atr_mult` de um arquivo gerado que não se edita à mão,
+sem onde declarar `horizon_bars`. Três coisas sustentam que não é bypass: um
+teste que passa config errada e **exige** `ConfigHashMismatchError`; fonte
+única de config (`_config_experimento`) usada pelo relabel e pela
+verificação; e log em WARNING quando o caminho é usado.
+
+**Estado do `AG-449`: as cinco vias conhecidas estão fechadas por medição** <!-- check-sprint-log: skip -->
+— hiperparâmetro (`AG-459`), seletividade (`AG-461`), regime de volatilidade <!-- check-sprint-log: skip -->
+(`AG-462`/`AG-463`), custo (`AG-464`, por aritmética) e geometria (aqui). O <!-- check-sprint-log: skip -->
+gargalo não é nenhum parâmetro do motor: é a dispersão por fold. Não proponho
+quarta tentativa; a próxima decisão é de escopo e é do Manager.
+
+**Alerta de leitura, contra mim.** O `ret_producao` de XRPUSDT/R3 aparece
+como +26,31 bps sem contradizer os gates 0/20 — com `dp` de 77,54 sobre 7 <!-- check-sprint-log: skip -->
+folds o `t` fica muito abaixo de 2. Sob esta dispersão, média por fold
+produz número positivo grande em qualquer direção. Reincidência do padrão
+de `AG-429`/`AG-437`. <!-- check-sprint-log: skip -->
+
+**Fontes desta seção** — todo número acima é rastreável a um destes:
+`audit/pre_registro/ag466_geometria_m4_h128_generaliza.yaml`,
+`audit/architecture_gaps_log.yaml` (AG-466),
+`audit/evidence_ledger.yaml` (2 entradas novas de 2026-09-07),
+`experiments/ag466_etapa1_geometria.json`,
+`experiments/ag466_etapa2_lift.json`,
+`experiments/ag464_geometria_fora_da_caixa.json`,
+`src/models/dataset.py`, `tests/unit/test_models_dataset.py`.

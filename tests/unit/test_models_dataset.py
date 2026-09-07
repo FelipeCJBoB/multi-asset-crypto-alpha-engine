@@ -10,6 +10,7 @@ suíte que já roda ~100s no total."""
 
 from __future__ import annotations
 
+import dataclasses
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -533,6 +534,70 @@ def test_build_modeling_frame_config_hash_mismatch_levanta_confighashmismatcherr
 
     with pytest.raises(ConfigHashMismatchError, match="config_hash"):
         ds.build_modeling_frame()
+
+
+def test_build_modeling_frame_experiment_label_config_troca_a_referencia_do_b15(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """AG-466 -- `experiment_label_config` faz B15 conferir contra a config
+    do EXPERIMENTO. Labels sob uma geometria que `constants.yaml` nao
+    descreve (aqui `tp_atr_mult`/`sl_atr_mult` alterados) passam quando a
+    config e declarada, e o mesmo dado levanta sem ela -- as duas metades
+    juntas provam que a diferenca vem do parametro, nao do fixture."""
+    t0 = datetime(2024, 1, 1, 0, 15, tzinfo=UTC)
+    cfg_exp = dataclasses.replace(
+        LabelConfig.from_constants(estimator_id=None, tf="15m"),
+        tp_atr_mult=4.0,
+        sl_atr_mult=4.0,
+    )
+    monkeypatch.setattr(
+        cpcv, "load_labels_v1", lambda *a, **k: _one_row_labels_with_hash(t0, cfg_exp.config_hash)
+    )
+    monkeypatch.setattr(
+        features_build,
+        "build_t1_features",
+        lambda symbol, start, end, **kwargs: _one_row_bar_table(t0),
+    )
+    monkeypatch.setattr(
+        regime_build, "build_regimes", lambda symbol, start, end, **kwargs: _one_row_regime(t0)
+    )
+
+    ds.build_modeling_frame(experiment_label_config=cfg_exp)  # nao levanta
+
+    with pytest.raises(ConfigHashMismatchError, match="config_hash"):
+        ds.build_modeling_frame()
+
+
+def test_build_modeling_frame_experiment_label_config_errado_ainda_levanta(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """AG-466 -- o parametro NAO desliga B15. Uma config de experimento que
+    nao corresponde aos labels em disco continua levantando: o guardrail
+    segue rodando, so mudou contra o que ele compara. Sem este teste, o
+    parametro seria indistinguivel de um bypass."""
+    t0 = datetime(2024, 1, 1, 0, 15, tzinfo=UTC)
+    cfg_labels = dataclasses.replace(
+        LabelConfig.from_constants(estimator_id=None, tf="15m"), tp_atr_mult=4.0, sl_atr_mult=4.0
+    )
+    cfg_declarada_errada = dataclasses.replace(cfg_labels, tp_atr_mult=3.0)
+    assert cfg_labels.config_hash != cfg_declarada_errada.config_hash
+
+    monkeypatch.setattr(
+        cpcv,
+        "load_labels_v1",
+        lambda *a, **k: _one_row_labels_with_hash(t0, cfg_labels.config_hash),
+    )
+    monkeypatch.setattr(
+        features_build,
+        "build_t1_features",
+        lambda symbol, start, end, **kwargs: _one_row_bar_table(t0),
+    )
+    monkeypatch.setattr(
+        regime_build, "build_regimes", lambda symbol, start, end, **kwargs: _one_row_regime(t0)
+    )
+
+    with pytest.raises(ConfigHashMismatchError, match="config_hash"):
+        ds.build_modeling_frame(experiment_label_config=cfg_declarada_errada)
 
 
 def test_build_modeling_frame_verify_config_hash_usa_mesmo_vol_estimator_id_do_resto(
